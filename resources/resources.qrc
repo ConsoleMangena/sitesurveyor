@@ -1,0 +1,24 @@
+<RCC>
+  <qresource prefix="/icons">
+    <file>icons/home.svg</file>
+    <file>icons/zoom-in.svg</file>
+    <file>icons/zoom-out.svg</file>
+    <file>icons/fit.svg</file>
+    <file>icons/select.svg</file>
+    <file>icons/pan.svg</file>
+    <file>icons/zoom-window.svg</file>
+    <file>icons/crosshair.svg</file>
+    <file>icons/join.svg</file>
+    <file>icons/polar.svg</file>
+    <file>icons/settings.svg</file>
+    <file>icons/add-point.svg</file>
+    <file>icons/clear.svg</file>
+    <file>icons/grid.svg</file>
+    <file>icons/label.svg</file>
+    <file>icons/ortho.svg</file>
+    <file>icons/snap.svg</file>
+    <file>icons/line.svg</file>
+    <file>icons/polygon.svg</file>
+    <file>icons/osnap.svg</file>
+  </qresource>
+</RCC>
