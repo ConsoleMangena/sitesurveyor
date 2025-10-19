@@ -39,16 +39,50 @@
     <section class="features container">
       <div class="grid">
         <div class="card">
-          <h3>Precision drawing</h3>
-          <p>CAD-like canvas with snap, ortho, measurements, and layers.</p>
+          <h3>Drawing & selection</h3>
+          <ul>
+            <li>Line, polyline, rectangle, circle, arc</li>
+            <li>Select, pan, zoom window, lasso; zoom in/out, extents, home</li>
+            <li>Dynamic input for distance/angle while drawing</li>
+          </ul>
         </div>
         <div class="card">
-          <h3>Fast and native</h3>
-          <p>Built with Qt 6 and C++17 for performance on desktop.</p>
+          <h3>Coordinates & data</h3>
+          <ul>
+            <li>Add points; import/export CSV (name, X/Y/Z); clear project</li>
+            <li>Points table with per-point layer assignment</li>
+            <li>Center view on selected point</li>
+          </ul>
         </div>
         <div class="card">
-          <h3>Simple UI</h3>
-          <p>Clean, keyboard-friendly workflow for common surveying tasks.</p>
+          <h3>Layers</h3>
+          <ul>
+            <li>Create/rename/remove; set color, visible, locked</li>
+            <li>Set current layer; hide/isolate/lock selected layers; show all</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Survey tools</h3>
+          <ul>
+            <li>Distance, area, azimuth between named points</li>
+            <li>Polar input (from point + distance + azimuth), optional draw line</li>
+            <li>Join (polar) between two points; Traverse with multiple legs</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Aids & display</h3>
+          <ul>
+            <li>Grid, labels, crosshair; ortho, snap, object snap, polar tracking, otrack</li>
+            <li>Zoom percentage and live drawing distance readout</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>UI & panels</h3>
+          <ul>
+            <li>Dockable panels: points, layers, properties, command line, project plan</li>
+            <li>Toggle left/right/command panels; reset layout; dark mode</li>
+            <li>Settings for units (metric/imperial), angle format (DMS/decimal), Gauss order, 2D/3D</li>
+          </ul>
         </div>
       </div>
     </section>
@@ -79,8 +113,8 @@
 
   <footer class="site-footer">
     <div class="container small">
-      <p>© <span id="year"></span> SiteSurveyor. Licensed under an open source license.</p>
-      <p><a href="https://github.com/ConsoleMangena/sitesurveyor/releases">All releases</a> · <a href="https://github.com/ConsoleMangena/sitesurveyor">Repository</a></p>
+      <p>© <span id="year"></span> Eineva Incorporated. All rights reserved.</p>
+      <p>Built by Eineva Incorporated · <a href="https://github.com/ConsoleMangena/sitesurveyor/releases">All releases</a> · <a href="https://github.com/ConsoleMangena/sitesurveyor">Repository</a></p>
     </div>
   </footer>
 
