@@ -25,7 +25,13 @@ jobs:
         run: |
           dpkg-buildpackage -us -uc -b
           mkdir -p dist
+          # Move versioned artifacts
           mv ../*.deb ../*.changes ../*.buildinfo dist/ || true
+          # Create a stable filename for latest download link
+          deb_file=$(ls dist/*_amd64.deb | grep -v dbgsym | head -n1 || true)
+          if [ -n "$deb_file" ]; then
+            cp -f "$deb_file" dist/SiteSurveyor-Debian-amd64.deb
+          fi
           ls -l dist || true
 
       - name: Upload artifact
