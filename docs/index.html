@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SiteSurveyor Desktop — Downloads</title>
+  <meta name="description" content="Download SiteSurveyor Desktop for Windows and Debian/Ubuntu. Qt 6 CAD-style app for site surveying and planning." />
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <img class="logo" src="assets/logo.svg" alt="SiteSurveyor logo" />
+      <div class="titles">
+        <h1>SiteSurveyor Desktop</h1>
+        <p class="subtitle">Lightweight surveying & planning tool</p>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero container">
+      <h2>Download</h2>
+      <p class="muted">Latest release: <span id="version">checking…</span></p>
+      <div class="downloads">
+        <a id="winLink" class="btn primary" href="https://github.com/ConsoleMangena/sitesurveyor/releases/latest/download/SiteSurveyor-Windows.zip">
+          <span>Download for Windows</span>
+          <small class="muted">ZIP with EXE and Qt DLLs</small>
+        </a>
+        <a id="debLink" class="btn" href="https://github.com/ConsoleMangena/sitesurveyor/releases/latest/download/SiteSurveyor-Debian-amd64.deb">
+          <span>Download for Debian/Ubuntu (amd64)</span>
+          <small class="muted">.deb package</small>
+        </a>
+      </div>
+      <p class="muted">Having trouble? See <a href="#install">Install instructions</a>.</p>
+    </section>
+
+    <section class="features container">
+      <div class="grid">
+        <div class="card">
+          <h3>Precision drawing</h3>
+          <p>CAD-like canvas with snap, ortho, measurements, and layers.</p>
+        </div>
+        <div class="card">
+          <h3>Fast and native</h3>
+          <p>Built with Qt 6 and C++17 for performance on desktop.</p>
+        </div>
+        <div class="card">
+          <h3>Simple UI</h3>
+          <p>Clean, keyboard-friendly workflow for common surveying tasks.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="install" class="container install">
+      <h2>Install</h2>
+      <div class="grid two">
+        <div>
+          <h3>Windows</h3>
+          <ol>
+            <li>Download the ZIP above.</li>
+            <li>Extract it, then run <code>SiteSurveyor.exe</code>.</li>
+            <li>If SmartScreen warns, choose More info → Run anyway.</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Debian/Ubuntu</h3>
+          <ol>
+            <li>Download the .deb above.</li>
+            <li>Install with <code>sudo dpkg -i SiteSurveyor-*.deb</code>.</li>
+            <li>Launch “SiteSurveyor Desktop” from your menu.</li>
+          </ol>
+        </div>
+      </div>
+      <p class="muted">Source code and build instructions are on <a href="https://github.com/ConsoleMangena/sitesurveyor">GitHub</a>.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container small">
+      <p>© <span id="year"></span> SiteSurveyor. Licensed under an open source license.</p>
+      <p><a href="https://github.com/ConsoleMangena/sitesurveyor/releases">All releases</a> · <a href="https://github.com/ConsoleMangena/sitesurveyor">Repository</a></p>
+    </div>
+  </footer>
+
+  <script src="assets/app.js" defer></script>
+</body>
+</html>
