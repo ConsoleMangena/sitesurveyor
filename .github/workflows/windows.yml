@@ -26,7 +26,7 @@ jobs:
 
       - name: Configure CMake (VS 2022)
         shell: pwsh
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:Qt6_DIR"
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
 
       - name: Build
         shell: pwsh
@@ -35,7 +35,10 @@ jobs:
       - name: Deploy Qt runtime
         shell: pwsh
         run: |
-          $qtBin = Join-Path (Split-Path $env:Qt6_DIR -Parent) "bin"
+          $qtRoot = $env:QT_ROOT_DIR
+          if (-not $qtRoot -and $env:Qt6_DIR) { $qtRoot = (Split-Path $env:Qt6_DIR -Parent) }
+          if (-not $qtRoot) { throw "Qt root directory not set (QT_ROOT_DIR/Qt6_DIR)" }
+          $qtBin = Join-Path $qtRoot "bin"
           & "$qtBin\windeployqt.exe" --release --compiler-runtime "build\Release\SiteSurveyor.exe"
 
       - name: Package zip
