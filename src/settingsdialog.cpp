@@ -4,6 +4,8 @@
 
 #include <QCheckBox>
 #include <QDoubleSpinBox>
+#include <QComboBox>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -28,6 +30,21 @@ SettingsDialog::SettingsDialog(CanvasWidget* canvas, QWidget *parent)
 
     QLabel* gridSizeLabel = new QLabel("Grid spacing:", this);
 
+    // Engineering preferences
+    QLabel* unitsLabel = new QLabel("Units:", this);
+    m_unitsCombo = new QComboBox(this);
+    m_unitsCombo->addItem("Metric (m, m^2)", "metric");
+    m_unitsCombo->addItem("Imperial (ft, ft^2)", "imperial");
+
+    QLabel* angleLabel = new QLabel("Angle format:", this);
+    m_angleCombo = new QComboBox(this);
+    m_angleCombo->addItem("DMS (deg°min'sec\" )", "dms");
+    m_angleCombo->addItem("Decimal Degrees", "decimal");
+
+    QLabel* crsLabel = new QLabel("CRS:", this);
+    m_crsEdit = new QLineEdit(this);
+    m_crsEdit->setPlaceholderText("EPSG:4326");
+
     m_applyButton = new QPushButton("Apply", this);
     m_closeButton = new QPushButton("Close", this);
 
@@ -37,6 +54,18 @@ SettingsDialog::SettingsDialog(CanvasWidget* canvas, QWidget *parent)
     QHBoxLayout* gridSizeLayout = new QHBoxLayout();
     gridSizeLayout->addWidget(gridSizeLabel);
     gridSizeLayout->addWidget(m_gridSizeSpin);
+
+    QHBoxLayout* unitsLayout = new QHBoxLayout();
+    unitsLayout->addWidget(unitsLabel);
+    unitsLayout->addWidget(m_unitsCombo);
+
+    QHBoxLayout* angleLayout = new QHBoxLayout();
+    angleLayout->addWidget(angleLabel);
+    angleLayout->addWidget(m_angleCombo);
+
+    QHBoxLayout* crsLayout = new QHBoxLayout();
+    crsLayout->addWidget(crsLabel);
+    crsLayout->addWidget(m_crsEdit);
 
     QHBoxLayout* buttonsLayout = new QHBoxLayout();
     buttonsLayout->addStretch();
@@ -49,6 +78,9 @@ SettingsDialog::SettingsDialog(CanvasWidget* canvas, QWidget *parent)
     mainLayout->addWidget(m_gaussModeCheck);
     mainLayout->addWidget(m_use3DCheck);
     mainLayout->addLayout(gridSizeLayout);
+    mainLayout->addLayout(unitsLayout);
+    mainLayout->addLayout(angleLayout);
+    mainLayout->addLayout(crsLayout);
     mainLayout->addStretch();
     mainLayout->addLayout(buttonsLayout);
 
@@ -70,6 +102,21 @@ void SettingsDialog::loadFromCanvas()
     m_gridSizeSpin->setValue(m_canvas->gridSize());
     m_gaussModeCheck->setChecked(AppSettings::gaussMode());
     m_use3DCheck->setChecked(AppSettings::use3D());
+
+    // Preferences
+    const QString units = AppSettings::measurementUnits();
+    int ui = m_unitsCombo->findData(units);
+    if (ui < 0) ui = 0;
+    m_unitsCombo->setCurrentIndex(ui);
+    // Adjust grid suffix
+    m_gridSizeSpin->setSuffix(units.compare("imperial", Qt::CaseInsensitive) == 0 ? " ft" : " m");
+
+    const QString ang = AppSettings::angleFormat();
+    int ai = m_angleCombo->findData(ang);
+    if (ai < 0) ai = 0;
+    m_angleCombo->setCurrentIndex(ai);
+
+    m_crsEdit->setText(AppSettings::crs());
 }
 
 void SettingsDialog::applyChanges()
@@ -83,5 +130,13 @@ void SettingsDialog::applyChanges()
     AppSettings::setGaussMode(m_gaussModeCheck->isChecked());
     AppSettings::setUse3D(m_use3DCheck->isChecked());
     m_canvas->setGaussMode(m_gaussModeCheck->isChecked());
+
+    // Save engineering preferences
+    AppSettings::setMeasurementUnits(m_unitsCombo->currentData().toString());
+    AppSettings::setAngleFormat(m_angleCombo->currentData().toString());
+    AppSettings::setCrs(m_crsEdit->text().trimmed());
+    // Update grid suffix immediately to reflect units choice
+    const QString units = AppSettings::measurementUnits();
+    m_gridSizeSpin->setSuffix(units.compare("imperial", Qt::CaseInsensitive) == 0 ? " ft" : " m");
     emit settingsApplied();
 }

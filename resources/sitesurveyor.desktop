@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=SiteSurveyor Desktop
+GenericName=Surveying CAD
+Comment=SiteSurveyor Desktop - site surveying and planning tool
+Exec=SiteSurveyor
+Icon=sitesurveyor
+Terminal=false
+Type=Application
+Categories=Graphics;Science;Utility;
+Keywords=survey;cad;planning;geomatics;
+StartupWMClass=SiteSurveyor

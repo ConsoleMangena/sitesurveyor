@@ -1,24 +1,55 @@
 <RCC>
   <qresource prefix="/icons">
-    <file>icons/home.svg</file>
-    <file>icons/zoom-in.svg</file>
-    <file>icons/zoom-out.svg</file>
-    <file>icons/fit.svg</file>
-    <file>icons/select.svg</file>
-    <file>icons/pan.svg</file>
-    <file>icons/zoom-window.svg</file>
-    <file>icons/crosshair.svg</file>
-    <file>icons/join.svg</file>
-    <file>icons/polar.svg</file>
-    <file>icons/settings.svg</file>
-    <file>icons/add-point.svg</file>
-    <file>icons/clear.svg</file>
-    <file>icons/grid.svg</file>
-    <file>icons/label.svg</file>
-    <file>icons/ortho.svg</file>
-    <file>icons/snap.svg</file>
-    <file>icons/line.svg</file>
-    <file>icons/polygon.svg</file>
-    <file>icons/osnap.svg</file>
+    <file alias="home.svg">icons/home.svg</file>
+    <file alias="zoom-in.svg">icons/zoom-in.svg</file>
+    <file alias="zoom-out.svg">icons/zoom-out.svg</file>
+    <file alias="fit.svg">icons/fit.svg</file>
+    <file alias="select.svg">icons/select.svg</file>
+    <file alias="pan.svg">icons/pan.svg</file>
+    <file alias="zoom-window.svg">icons/zoom-window.svg</file>
+    <file alias="crosshair.svg">icons/crosshair.svg</file>
+    <file alias="join.svg">icons/join.svg</file>
+    <file alias="polar.svg">icons/polar.svg</file>
+    <file alias="settings.svg">icons/settings.svg</file>
+    <file alias="add-point.svg">icons/add-point.svg</file>
+    <file alias="clear.svg">icons/clear.svg</file>
+    <file alias="grid.svg">icons/grid.svg</file>
+    <file alias="label.svg">icons/label.svg</file>
+    <file alias="ortho.svg">icons/ortho.svg</file>
+    <file alias="snap.svg">icons/snap.svg</file>
+    <file alias="line.svg">icons/line.svg</file>
+    <file alias="polygon.svg">icons/polygon.svg</file>
+    <file alias="osnap.svg">icons/osnap.svg</file>
+    <file alias="credit-card.svg">icons/credit-card.svg</file>
+    <file alias="file-plus.svg">icons/file-plus.svg</file>
+    <file alias="folder-open.svg">icons/folder-open.svg</file>
+    <file alias="device-floppy.svg">icons/device-floppy.svg</file>
+    <file alias="file-import.svg">icons/file-import.svg</file>
+    <file alias="file-export.svg">icons/file-export.svg</file>
+    <file alias="logout-2.svg">icons/logout-2.svg</file>
+    <file alias="arrow-back-up.svg">icons/arrow-back-up.svg</file>
+    <file alias="arrow-forward-up.svg">icons/arrow-forward-up.svg</file>
+    <file alias="trash.svg">icons/trash.svg</file>
+    <file alias="eraser.svg">icons/eraser.svg</file>
+    <file alias="moon.svg">icons/moon.svg</file>
+    <file alias="ruler-measure.svg">icons/ruler-measure.svg</file>
+    <file alias="square.svg">icons/square.svg</file>
+    <file alias="lasso.svg">icons/lasso.svg</file>
+    <file alias="compass.svg">icons/compass.svg</file>
+    <file alias="key.svg">icons/key.svg</file>
+    <file alias="desktop.svg">icons/desktop.svg</file>
+    <file alias="eye.svg">icons/eye.svg</file>
+    <file alias="eye-off.svg">icons/eye-off.svg</file>
+    <file alias="lock.svg">icons/lock.svg</file>
+    <file alias="filter.svg">icons/filter.svg</file>
+    <file alias="search.svg">icons/search.svg</file>
+    <file alias="star.svg">icons/star.svg</file>
+    <file alias="circle.svg">icons/circle.svg</file>
+    <file alias="arc.svg">icons/arc.svg</file>
+    <file alias="rectangle.svg">icons/rectangle.svg</file>
+    <file alias="pin.svg">icons/pin.svg</file>
+  </qresource>
+  <qresource prefix="/styles">
+    <file alias="freecad-dark.qss">styles/freecad-dark.qss</file>
   </qresource>
 </RCC>

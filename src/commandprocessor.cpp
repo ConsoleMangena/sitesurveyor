@@ -93,6 +93,11 @@ QString CommandProcessor::addPoint(const QStringList& parts)
         std::swap(x, y);
     }
     
+    // Check for duplicate name
+    if (m_pointManager->hasPoint(name)) {
+        return QString("Coordinate %1 already exists").arg(name);
+    }
+    
     Point point(name, x, y, z);
     m_pointManager->addPoint(point);
     m_canvas->addPoint(point);
@@ -128,11 +133,16 @@ QString CommandProcessor::addPolarPoint(const QStringList& parts)
     
     bool ok;
     double distance = parts[3].toDouble(&ok);
-    if (!ok) return "Invalid distance";
+    if (!ok || distance <= 0) return "Invalid distance (must be positive)";
     double azimuth = parts[4].toDouble(&ok);
     if (!ok) return "Invalid azimuth";
     double z = parts[5].toDouble(&ok);
     if (!ok) return "Invalid Z coordinate";
+    
+    // Check for duplicate name
+    if (m_pointManager->hasPoint(newName)) {
+        return QString("Coordinate %1 already exists").arg(newName);
+    }
     
     Point newPoint = SurveyCalculator::polarToRectangular(fromPoint, distance, azimuth, z);
     newPoint.name = newName;
@@ -219,11 +229,12 @@ QString CommandProcessor::joinPolar(const QStringList& parts)
     QString azFwdBrg = toQuadrantBearing(azFwd);
     QString azBackBrg = toQuadrantBearing(azBack);
 
-    // Slope/grade
+    // Slope/grade (with proper zero check)
     bool is3D = AppSettings::use3D();
     double slopeDeg = 0.0;
     double gradePct = 0.0;
-    if (is3D && d2 > 1e-9) {
+    const double EPSILON = 1e-9;
+    if (is3D && d2 > EPSILON) {
         slopeDeg = SurveyCalculator::normalizeAngle(SurveyCalculator::radiansToDegrees(qAtan2(dz, d2)));
         gradePct = (dz / d2) * 100.0;
     }
@@ -354,17 +365,17 @@ QString CommandProcessor::showHelp()
 
     QString help;
     help += "Available Commands:\n";
-    help += QString("  %1           - Add a coordinate\n").arg(addUsage);
+    help += QString("  %1           - Add a coordinate (aliases: point, coordinate, coord)\n").arg(addUsage);
     help += "  polar <from> <name> <dist> <az> <z> - Add coordinate using polar data\n";
-    help += "  join <from> <to>                 - Polar join between coordinates (azimuths, distances, deltas, slope)\n";
-    help += "  distance <coord1> <coord2>       - Calculate distance between coordinates\n";
-    help += "  azimuth <from> <to>              - Calculate azimuth between coordinates\n";
+    help += "  join <from> <to>                 - Polar join between coordinates (aliases: joinpolar, jp)\n";
+    help += "  distance <coord1> <coord2>       - Calculate distance (alias: dist)\n";
+    help += "  azimuth <from> <to>              - Calculate azimuth (alias: az)\n";
     help += "  area <c1> <c2> <c3> [c4...]      - Calculate area of polygon\n";
     help += "  line <coord1> <coord2>           - Draw a line between coordinates\n";
-    help += "  list                             - List all coordinates\n";
-    help += "  delete <name>                    - Delete a coordinate\n";
+    help += "  list                             - List all coordinates (alias: ls)\n";
+    help += "  delete <name>                    - Delete a coordinate (aliases: del, removecoord)\n";
     help += "  clear                            - Clear all coordinates\n";
-    help += "  help                             - Show this help message\n\n";
+    help += "  help                             - Show this help message (alias: ?)\n\n";
     help += notes;
     return help;
 }

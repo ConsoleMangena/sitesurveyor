@@ -6,6 +6,8 @@
 class QCheckBox;
 class QDoubleSpinBox;
 class QPushButton;
+class QComboBox;
+class QLineEdit;
 class CanvasWidget;
 
 class SettingsDialog : public QDialog
@@ -31,6 +33,10 @@ private:
     QCheckBox* m_gaussModeCheck;
     QCheckBox* m_use3DCheck;
     QDoubleSpinBox* m_gridSizeSpin;
+    // Engineering preferences
+    QComboBox* m_unitsCombo;   // Metric/Imperial
+    QComboBox* m_angleCombo;   // DMS/Decimal
+    QLineEdit* m_crsEdit;      // EPSG code or proj string
     QPushButton* m_applyButton;
     QPushButton* m_closeButton;
 };

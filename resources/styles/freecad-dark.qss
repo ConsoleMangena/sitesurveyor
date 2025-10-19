@@ -1,0 +1,381 @@
+* {
+  color: #e8e8e8; /* Base text color for dark mode */
+  alternate-background-color: rgba(50,50,50,120);
+}
+
+QComboBox,
+QComboBox:editable,
+QComboBox:!editable,
+QLineEdit,
+QTextEdit,
+QPlainTextEdit,
+QAbstractSpinBox,
+QDateEdit,
+QDateTimeEdit,
+Gui--PropertyEditor--PropertyEditor QLabel {
+  background : #6e6e6e;
+}
+
+QComboBox:disabled,
+QAbstractSpinBox:disabled,
+QLineEdit:disabled,
+QTextEdit:disabled,
+QPlainTextEdit:disabled,
+QTimeEdit:disabled,
+QDateEdit:disabled,
+QDateTimeEdit:disabled {
+  color: palette(dark);
+}
+
+QTabWidget::pane {
+  background-color: transparent;
+  border: transparent;
+}
+
+Gui--OverlayTabWidget::pane {
+  background-color: rgba(100,100,100,150)
+}
+
+QTabBar {
+  border : none;
+}
+
+QTabBar::tab {
+  color: palette(bright-text);
+  background-color: rgba(100,100,100,50);
+  padding: 5px;
+}
+
+QTabBar::tab:selected {
+  background-color: rgba(100,100,100,150);
+}
+
+QTabBar::tab:hover {
+  background-color: rgba(150,150,150,150);
+}
+
+QHeaderView::section {
+  color: rgb(200,200,200);
+  background-color: rgba(50,50,50,100);
+  border: 1px solid rgb(100,100,100);
+  padding: 2px;
+}
+
+QToolTip {
+  background-color: rgba(100,100,100,180);
+  border: 1px solid palette(dark);
+  border-radius:2px;
+}
+
+Gui--OverlayToolButton {
+  background: transparent;
+  padding: 0px;
+  border: none;
+}
+
+Gui--OverlayToolButton::hover {
+  background: rgba(150,150,150,200);
+}
+
+Gui--OverlayToolButton::focus {
+  background: rgba(150,150,150,155);
+}
+
+Gui--OverlayToolButton::pressed {
+  background: rgba(50,50,50,80);
+  border: 1px inset palette(dark);
+}
+
+Gui--OverlayToolButton::checked {
+  background: rgba(50,50,50,80);
+  border: 1px inset palette(dark);
+}
+
+Gui--OverlayToolButton::checked:hover {
+  background: rgba(150,150,150,200);
+  border: 1px inset palette(dark);
+}
+
+QTreeView,
+QListView,
+QTableView {
+  background: rgb(100,100,100);
+  selection-background-color: rgba(94, 144, 250, 0.7);
+}
+
+QListView::item:selected,
+QTreeView::item:selected  {
+  background-color: rgba(94, 144, 250, 0.7);
+}
+
+Gui--PropertyEditor--PropertyEditor {
+  qproperty-groupTextColor: rgb(50, 50, 50);
+  qproperty-groupBackground: rgba(140, 140, 140, 0.7);
+}
+
+Gui--CallTipsList::item {
+  background-color: rgba(100, 100, 100, 200);
+}
+
+Gui--CallTipsList::item::selected {
+  background-color: rgb(94, 144, 250);
+}
+
+/*==================================================================================================
+Tasks panel (custom FreeCAD class)
+==================================================================================================*/
+/* Panel header */
+QSint--ActionGroup QFrame[class="header"] {
+  background-color: rgba(80, 80, 80, 0.1); /* Task Panel Header background color */
+}
+
+QSint--ActionGroup QToolButton[class="header"] {
+  color: #e0e0e0; /* Task Panel Header text color */
+}
+
+QSint--ActionGroup QFrame[class="content"] {
+  background-color: rgba(255,255,255,0.05); /* Task Panel background color */
+}
+
+/* ============================
+   Modern Dark UI Enhancements
+   Accent color: #2A82DA
+   ============================ */
+
+/* Global */
+QMainWindow, QWidget {
+  background-color: #2b2b2b;
+  color: #e8e8e8;
+}
+
+/* Canvas (custom widget) */
+CanvasWidget {
+  background-color: #1e1e1e;
+}
+
+/* Menu bar and menus */
+QMenuBar {
+  background-color: #333333;
+  border-bottom: 1px solid #404040;
+}
+QMenuBar::item {
+  padding: 4px 10px;
+  background: transparent;
+}
+QMenuBar::item:selected {
+  background: #3d3d3d;
+}
+QMenu {
+  background-color: #2f2f2f;
+  border: 1px solid #3f3f3f;
+}
+QMenu::item {
+  padding: 5px 20px;
+}
+QMenu::item:selected {
+  background: #2A82DA;
+  color: #ffffff;
+}
+
+/* Toolbars */
+QToolBar {
+  background-color: #2f2f2f;
+  border: none;
+  padding: 4px;
+  spacing: 6px;
+}
+QToolBar::separator {
+  background: #404040;
+  width: 1px;
+  margin: 4px;
+}
+/* Ensure SVG icons (using currentColor) render bright on dark toolbars */
+QToolBar QToolButton {
+  color: #dcdcdc;
+}
+QToolBar QToolButton:hover, QToolBar QToolButton:checked {
+  color: #ffffff;
+}
+QToolBar QToolButton:disabled {
+  color: #777777;
+}
+
+/* Dock widgets */
+QDockWidget {
+  border: 1px solid #3a3a3a;
+}
+QDockWidget::title {
+  background: #2f2f2f;
+  color: #d0d0d0;
+  padding: 6px 8px;
+  border-bottom: 1px solid #404040;
+}
+
+/* Buttons */
+QPushButton, QToolButton {
+  background: #3a3a3a;
+  border: 1px solid #555555;
+  padding: 4px 10px;
+  border-radius: 4px;
+  color: #e8e8e8;
+}
+QPushButton:hover, QToolButton:hover {
+  background: #444444;
+}
+QPushButton:pressed, QToolButton:pressed {
+  background: #2a2a2a;
+}
+QPushButton:checked, QToolButton:checked {
+  background: #2A82DA;
+  color: #ffffff;
+  border: 1px solid #2A82DA;
+}
+QPushButton:disabled, QToolButton:disabled {
+  color: #777777;
+  border-color: #333333;
+  background: #2c2c2c;
+}
+QPushButton:default {
+  border-color: #2A82DA;
+}
+
+/* Inputs */
+QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QComboBox {
+  background: #3a3a3a;
+  border: 1px solid #555555;
+  border-radius: 4px;
+  padding: 4px 6px;
+  color: #e8e8e8;
+  selection-background-color: #2A82DA;
+  selection-color: #ffffff;
+}
+QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled, QAbstractSpinBox:disabled, QComboBox:disabled {
+  color: #777777;
+  background: #2b2b2b;
+  border-color: #3a3a3a;
+}
+
+/* Combo dropdown */
+QComboBox QAbstractItemView {
+  background: #2f2f2f;
+  border: 1px solid #3f3f3f;
+  selection-background-color: #2A82DA;
+  selection-color: #ffffff;
+}
+
+/* Checkboxes and radios */
+QCheckBox::indicator, QRadioButton::indicator {
+  width: 14px;
+  height: 14px;
+  border: 1px solid #555555;
+  background: #3a3a3a;
+  border-radius: 3px;
+}
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+  background: #2A82DA;
+  border: 1px solid #2A82DA;
+}
+
+/* Tables and headers */
+QTableWidget, QTableView {
+  background: #2b2b2b;
+  alternate-background-color: #262626;
+  color: #e8e8e8;
+  gridline-color: #3f3f3f;
+  selection-background-color: #2A82DA;
+  selection-color: #ffffff;
+}
+QHeaderView::section {
+  color: #d0d0d0;
+  background-color: #3a3a3a;
+  border: 1px solid #505050;
+  padding: 4px 6px;
+}
+
+/* Status bar */
+QStatusBar {
+  background: #2f2f2f;
+  color: #cccccc;
+  border-top: 1px solid #404040;
+}
+QStatusBar QLabel {
+  color: #cccccc;
+}
+/* Status bar buttons (ORTHO/SNAP/OSNAP/GRID) */
+QStatusBar QToolButton {
+  background: #3a3a3a;
+  border: 1px solid #555555;
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: #e8e8e8;
+}
+QStatusBar QToolButton:hover { background: #444444; color: #ffffff; }
+QStatusBar QToolButton:checked { background: #2A82DA; color: #ffffff; border-color: #2A82DA; }
+QStatusBar QToolButton:disabled { color: #777777; border-color: #333333; background: #2c2c2c; }
+
+/* Scrollbars */
+QScrollBar:vertical {
+  background: #2b2b2b;
+  width: 12px;
+  margin: 0px;
+}
+QScrollBar::handle:vertical {
+  background: #555555;
+  min-height: 20px;
+  border-radius: 5px;
+}
+QScrollBar::handle:vertical:hover { background: #666666; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+
+QScrollBar:horizontal {
+  background: #2b2b2b;
+  height: 12px;
+  margin: 0px;
+}
+QScrollBar::handle:horizontal {
+  background: #555555;
+  min-width: 20px;
+  border-radius: 5px;
+}
+QScrollBar::handle:horizontal:hover { background: #666666; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+
+/* Tabs */
+QTabBar::tab {
+  border-radius: 4px 4px 0 0;
+  margin: 0 2px;
+}
+QTabBar::tab:selected {
+  background-color: #3a3a3a;
+}
+
+/* Group boxes */
+QGroupBox {
+  border: 1px solid #3f3f3f;
+  border-radius: 6px;
+  margin-top: 10px;
+}
+QGroupBox::title {
+  subcontrol-origin: margin;
+  left: 10px;
+  padding: 0 4px;
+  color: #d0d0d0;
+}
+
+/* Splitter handle for clearer separation */
+QSplitter::handle {
+  background: #2a2a2a;
+}
+QSplitter::handle:hover {
+  background: #343434;
+}
+
+/* Item views hover */
+QTreeView::item:hover, QListView::item:hover, QTableView::item:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+/* Links */
+QLabel { link: #2A82DA; }
+QTextBrowser { color: #e8e8e8; }
+QTextBrowser { selection-background-color: #2A82DA; selection-color: #ffffff; }

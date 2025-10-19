@@ -1,32 +1,42 @@
 #include <QApplication>
+#include <QGuiApplication>
+#include <QByteArray>
+#include <QFile>
+#include <QFont>
+#include <QIcon>
 #include "mainwindow.h"
+// License is now handled by a welcome page in MainWindow
 
 int main(int argc, char *argv[])
 {
+    // Avoid buggy platform theme plugins from overriding palettes and causing crashes
+    QGuiApplication::setDesktopSettingsAware(false);
+    // Explicitly disable platform theme plugin (e.g., qt6ct) which is crashing on palette queries
+    qputenv("QT_QPA_PLATFORMTHEME", QByteArray());
+
     QApplication app(argc, argv);
     
     app.setApplicationName("SiteSurveyor");
     app.setOrganizationName("Geomatics");
+    app.setWindowIcon(QIcon(":/icons/compass.svg"));
+    // Global programming font across the app (fallback chain)
+    {
+        QFont appFont;
+        appFont.setFamilies(QStringList()
+            << "JetBrains Mono"
+            << "Fira Code"
+            << "Cascadia Code"
+            << "Source Code Pro"
+            << "DejaVu Sans Mono"
+            << "Monospace");
+        appFont.setStyleHint(QFont::Monospace);
+        app.setFont(appFont);
+    }
     
-    // Set dark theme
-    app.setStyle("Fusion");
-    
-    QPalette darkPalette;
-    darkPalette.setColor(QPalette::Window, QColor(45, 45, 45));
-    darkPalette.setColor(QPalette::WindowText, Qt::white);
-    darkPalette.setColor(QPalette::Base, QColor(35, 35, 35));
-    darkPalette.setColor(QPalette::AlternateBase, QColor(55, 55, 55));
-    darkPalette.setColor(QPalette::ToolTipBase, Qt::white);
-    darkPalette.setColor(QPalette::ToolTipText, Qt::white);
-    darkPalette.setColor(QPalette::Text, Qt::white);
-    darkPalette.setColor(QPalette::Button, QColor(50, 50, 50));
-    darkPalette.setColor(QPalette::ButtonText, Qt::white);
-    darkPalette.setColor(QPalette::BrightText, Qt::red);
-    darkPalette.setColor(QPalette::Link, QColor(42, 130, 218));
-    darkPalette.setColor(QPalette::Highlight, QColor(42, 130, 218));
-    darkPalette.setColor(QPalette::HighlightedText, Qt::white);
-    app.setPalette(darkPalette);
-    
+    // Start with platform default style and palette (light by default).
+    // Dark mode will be applied by MainWindow's toggleDarkMode() via stylesheet only,
+    // so both modes share the same layout metrics.
+
     MainWindow window;
     window.showMaximized();
     

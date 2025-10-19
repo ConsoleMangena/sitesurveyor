@@ -136,14 +136,22 @@ QString JoinPolarDialog::formatJoinResult(const Point& from, const Point& to) co
     out += deltaLine + "\n";
     out += QString("  Distance 2D: %1 m\n").arg(QString::number(d2, 'f', 3));
     if (is3D) out += QString("  Distance 3D: %1 m\n").arg(QString::number(d3, 'f', 3));
-    out += QString("  Azimuth FWD: %1° (%2)  Bearing: %3\n")
+    // Azimuth (numeric 0-360) and complete-circle bearing (identical to azimuth but labeled as Bearing)
+    out += QString("  Azimuth FWD: %1° (%2)\n")
               .arg(QString::number(azFwd, 'f', 4))
-              .arg(azFwdDms)
-              .arg(azFwdBrg);
-    out += QString("  Azimuth BKW: %1° (%2)  Bearing: %3\n")
+              .arg(azFwdDms);
+    out += QString("  Bearing FWD (0–360): %1° (%2)\n")
+              .arg(QString::number(azFwd, 'f', 4))
+              .arg(azFwdDms);
+    out += QString("  Bearing FWD (quadrant): %1\n").arg(azFwdBrg);
+
+    out += QString("  Azimuth BKW: %1° (%2)\n")
               .arg(QString::number(azBack, 'f', 4))
-              .arg(azBackDms)
-              .arg(azBackBrg);
+              .arg(azBackDms);
+    out += QString("  Bearing BKW (0–360): %1° (%2)\n")
+              .arg(QString::number(azBack, 'f', 4))
+              .arg(azBackDms);
+    out += QString("  Bearing BKW (quadrant): %1\n").arg(azBackBrg);
     if (is3D) out += QString("  Slope angle: %1°  Gradient: %2%%\n")
                             .arg(QString::number(slopeDeg, 'f', 4))
                             .arg(QString::number(gradePct, 'f', 3));

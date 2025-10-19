@@ -1,6 +1,7 @@
 # Build directories
 build/
 cmake-build-*/
+obj-*/
 
 # Compiled Object files
 *.o
@@ -16,6 +17,8 @@ CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 Makefile
+# Qt/CMake local cache
+*.qmldir
 
 # IDE files
 .vscode/
@@ -26,3 +29,13 @@ Makefile
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Debian packaging outputs (keep debian/ metadata tracked)
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars
+debian/sitesurveyor-desktop/
+
+# Dist artifacts
+dist/

@@ -1,0 +1,13 @@
+Source: sitesurveyor-desktop
+Section: utils
+Priority: optional
+Maintainer: Consolation Mangena <consolationmangena@gmail.com>
+Build-Depends: debhelper-compat (= 13), cmake, qt6-base-dev, qt6-base-dev-tools
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+
+Package: sitesurveyor-desktop
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: SiteSurveyor Desktop - Qt6 app for site surveying and planning
+ A desktop application for site surveying and planning.

@@ -137,8 +137,11 @@ void PropertiesPanel::onLayerComboChanged(int idx)
     if (!m_lm) return;
     const QString name = m_layerCombo->itemText(idx);
     if (name.isEmpty()) return;
-    // If a line is selected, change its layer; otherwise, set current drawing layer
-    if (m_canvas && m_currentLine >= 0) {
+    // If there is any selection, apply layer to all selected; else fall back to single line or current layer
+    if (m_canvas && m_canvas->hasSelection()) {
+        m_canvas->setSelectedLayer(name);
+        updateLineInfo();
+    } else if (m_canvas && m_currentLine >= 0) {
         m_canvas->setLineLayer(m_currentLine, name);
         updateLineInfo();
     } else {
