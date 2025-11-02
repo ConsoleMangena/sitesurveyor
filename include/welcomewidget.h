@@ -4,7 +4,6 @@
 #include <QWidget>
 
 class QLineEdit;
-class QCheckBox;
 class QPushButton;
 class QLabel;
 class QComboBox;
@@ -12,6 +11,8 @@ class QTabWidget;
 class QListWidget;
 class QListWidgetItem;
 class QToolButton;
+class AppwriteClient;
+class QNetworkReply;
 
 class WelcomeWidget : public QWidget
 {
@@ -29,9 +30,12 @@ signals:
     void openPathRequested(const QString& path);
 
 private slots:
-    void saveKey();
-    void toggleShow(bool on);
+    void openAuthDialog();
+    void fetchLicense();
+    void saveAndContinue();
+    // UI helpers
     void openBuyPage();
+    void openStudentPage();
     void onDisciplineChanged(int index);
     void onCreateNew();
     void onOpenProject();
@@ -43,6 +47,8 @@ private slots:
     void refreshRecentList();
 
 private:
+    void updateAuthUI();
+    void markLicensedLocally();
     // Header
     QLabel* m_title{nullptr};
     QLabel* m_description{nullptr};
@@ -57,13 +63,21 @@ private:
     QListWidget* m_recentList{nullptr};
     QToolButton* m_pinButton{nullptr};
     QToolButton* m_unpinButton{nullptr};
-    // License panel (right column)
-    QLineEdit* m_keyEdit{nullptr};
-    QCheckBox* m_showCheck{nullptr};
+    // Account panel
+    AppwriteClient* m_appwrite{nullptr};
+    QPushButton* m_signInButton{nullptr};
+    // License/activation controls
     QPushButton* m_activateButton{nullptr};
     QPushButton* m_buyButton{nullptr};
+    QPushButton* m_studentButton{nullptr};
+    QLabel* m_accountLabel{nullptr};
     QLabel* m_statusLabel{nullptr};
     QComboBox* m_disciplineCombo{nullptr};
+    bool m_purchasePrompted{false};
+    bool m_verified{false};
+    // Realtime network op state to avoid UI overriding messages mid-request
+    bool m_netActive{false};
+    QString m_netOp;
 };
 
 #endif // WELCOMEWIDGET_H

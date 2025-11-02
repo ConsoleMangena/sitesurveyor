@@ -22,6 +22,11 @@ QByteArray licensePepper()
 // --- Recent / Pinned files (Welcome Start) ---
 static QString recentKey() { return QStringLiteral("ui/recentFiles"); }
 static QString pinnedKey() { return QStringLiteral("ui/pinnedFiles"); }
+// User profile keys
+static QString userFirstKey() { return QStringLiteral("user/first"); }
+static QString userLastKey()  { return QStringLiteral("user/last"); }
+static QString userNameKey()  { return QStringLiteral("user/name"); }
+static QString userEmailKey() { return QStringLiteral("user/email"); }
 
 QByteArray generateSalt(int len = 16)
 {
@@ -167,6 +172,40 @@ void AppSettings::pinFile(const QString& path, bool pin)
     setPinnedFiles(pins);
 }
 
+// --- User profile (cached) ---
+QString AppSettings::userFirstName()
+{
+    QSettings s; return s.value(userFirstKey()).toString();
+}
+void AppSettings::setUserFirstName(const QString& first)
+{
+    QSettings s; s.setValue(userFirstKey(), first.trimmed());
+}
+QString AppSettings::userLastName()
+{
+    QSettings s; return s.value(userLastKey()).toString();
+}
+void AppSettings::setUserLastName(const QString& last)
+{
+    QSettings s; s.setValue(userLastKey(), last.trimmed());
+}
+QString AppSettings::userName()
+{
+    QSettings s; return s.value(userNameKey()).toString();
+}
+void AppSettings::setUserName(const QString& name)
+{
+    QSettings s; s.setValue(userNameKey(), name.trimmed());
+}
+QString AppSettings::userEmail()
+{
+    QSettings s; return s.value(userEmailKey()).toString();
+}
+void AppSettings::setUserEmail(const QString& email)
+{
+    QSettings s; s.setValue(userEmailKey(), email.trimmed());
+}
+
 bool AppSettings::gaussMode()
 {
     QSettings s; // uses QApplication org/app name
@@ -201,6 +240,48 @@ void AppSettings::setDarkMode(bool enabled)
 {
     QSettings s;
     s.setValue("ui/darkMode", enabled);
+}
+
+int AppSettings::rightPanelWidth()
+{
+    QSettings s;
+    return s.value("ui/rightPanelWidth", 44).toInt();
+}
+
+void AppSettings::setRightPanelWidth(int w)
+{
+    QSettings s;
+    if (w < 24) w = 24;
+    if (w > 800) w = 800;
+    s.setValue("ui/rightPanelWidth", w);
+}
+
+bool AppSettings::autosaveEnabled()
+{
+    QSettings s;
+    return s.value("autosave/enabled", true).toBool();
+}
+
+void AppSettings::setAutosaveEnabled(bool on)
+{
+    QSettings s;
+    s.setValue("autosave/enabled", on);
+}
+
+int AppSettings::autosaveIntervalMinutes()
+{
+    QSettings s;
+    int m = s.value("autosave/intervalMin", 3).toInt();
+    if (m < 1) m = 1; if (m > 60) m = 60;
+    return m;
+}
+
+void AppSettings::setAutosaveIntervalMinutes(int minutes)
+{
+    QSettings s;
+    int m = minutes;
+    if (m < 1) m = 1; if (m > 60) m = 60;
+    s.setValue("autosave/intervalMin", m);
 }
 
 QStringList AppSettings::availableDisciplines()
@@ -246,18 +327,15 @@ void AppSettings::setLicenseKeyFor(const QString& disc, const QString& key)
 {
     QSettings s;
     const QString trimmed = key.trimmed();
-    // Create a fresh salt and digest for this discipline
     const QByteArray salt = generateSalt();
     const QByteArray digest = computeDigest(salt, trimmed);
     s.setValue(hashedSaltPath(disc), salt.toBase64());
     s.setValue(hashedDigestPath(disc), digest.toBase64());
-    // Ensure any legacy plaintext is removed
     s.remove(QString("license/keys/%1").arg(disc));
 }
 
 bool AppSettings::hasLicenseFor(const QString& disc)
 {
-    // Migrate any plaintext first
     migratePlainTextIfNeeded(disc);
     return hasHashedFor(disc);
 }
@@ -293,12 +371,13 @@ bool AppSettings::verifyLicenseFor(const QString& disc, const QString& key)
 {
     QSettings s;
     migratePlainTextIfNeeded(disc);
+    const QString trimmed = key.trimmed();
     const QByteArray saltB64 = s.value(hashedSaltPath(disc)).toByteArray();
     const QByteArray digB64  = s.value(hashedDigestPath(disc)).toByteArray();
     if (saltB64.isEmpty() || digB64.isEmpty()) return false;
     const QByteArray salt = QByteArray::fromBase64(saltB64);
     const QByteArray stored = QByteArray::fromBase64(digB64);
-    const QByteArray candidate = computeDigest(salt, key.trimmed());
+    const QByteArray candidate = computeDigest(salt, trimmed);
     return stored == candidate;
 }
 
@@ -360,4 +439,114 @@ void AppSettings::setEngineeringPresetApplied(bool applied)
 {
     QSettings s;
     s.setValue("eng/presetApplied", applied);
+}
+
+bool AppSettings::osnapEnd()
+{
+    QSettings s; return s.value("snap/end", true).toBool();
+}
+
+void AppSettings::setOsnapEnd(bool on)
+{
+    QSettings s; s.setValue("snap/end", on);
+}
+
+bool AppSettings::osnapMid()
+{
+    QSettings s; return s.value("snap/mid", true).toBool();
+}
+
+void AppSettings::setOsnapMid(bool on)
+{
+    QSettings s; s.setValue("snap/mid", on);
+}
+
+bool AppSettings::osnapNearest()
+{
+    QSettings s; return s.value("snap/nearest", true).toBool();
+}
+
+void AppSettings::setOsnapNearest(bool on)
+{
+    QSettings s; s.setValue("snap/nearest", on);
+}
+
+bool AppSettings::osnapIntersect()
+{
+    QSettings s; return s.value("snap/intersect", true).toBool();
+}
+
+void AppSettings::setOsnapIntersect(bool on)
+{
+    QSettings s; s.setValue("snap/intersect", on);
+}
+
+bool AppSettings::osnapPerp()
+{
+    QSettings s; return s.value("snap/perp", false).toBool();
+}
+
+void AppSettings::setOsnapPerp(bool on)
+{
+    QSettings s; s.setValue("snap/perp", on);
+}
+
+bool AppSettings::osnapTangent()
+{
+    QSettings s; return s.value("snap/tangent", false).toBool();
+}
+
+void AppSettings::setOsnapTangent(bool on)
+{
+    QSettings s; s.setValue("snap/tangent", on);
+}
+
+bool AppSettings::osnapCenter()
+{
+    QSettings s; return s.value("snap/center", false).toBool();
+}
+
+void AppSettings::setOsnapCenter(bool on)
+{
+    QSettings s; s.setValue("snap/center", on);
+}
+
+bool AppSettings::osnapQuadrant()
+{
+    QSettings s; return s.value("snap/quadrant", false).toBool();
+}
+
+void AppSettings::setOsnapQuadrant(bool on)
+{
+    QSettings s; s.setValue("snap/quadrant", on);
+}
+
+bool AppSettings::polarMode()
+{
+    QSettings s; return s.value("polar/mode", false).toBool();
+}
+
+void AppSettings::setPolarMode(bool on)
+{
+    QSettings s; s.setValue("polar/mode", on);
+}
+
+double AppSettings::polarIncrementDeg()
+{
+    QSettings s; return s.value("polar/incrementDeg", 15.0).toDouble();
+}
+
+void AppSettings::setPolarIncrementDeg(double deg)
+{
+    QSettings s; s.setValue("polar/incrementDeg", deg);
+}
+
+QColor AppSettings::osnapGlyphColor()
+{
+    QSettings s; QColor c = s.value("snap/glyphColor", QColor(255,255,0)).value<QColor>(); return c;
+}
+
+void AppSettings::setOsnapGlyphColor(const QColor& color)
+{
+    QSettings s; s.setValue("snap/glyphColor", color);
 }

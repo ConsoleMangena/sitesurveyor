@@ -10,6 +10,7 @@ class QTableWidget;
 class QTextEdit;
 class QPushButton;
 class QCheckBox;
+class QDoubleSpinBox;
 class PointManager;
 class CanvasWidget;
 struct Point;
@@ -38,6 +39,10 @@ private:
 
     QComboBox* m_startCombo{nullptr};
     QComboBox* m_closeCombo{nullptr};
+    QComboBox* m_adjustCombo{nullptr};
+    QDoubleSpinBox* m_scalePpm{nullptr};
+    QCheckBox* m_seaLevelCheck{nullptr};
+    QDoubleSpinBox* m_meanElev{nullptr};
     QTableWidget* m_legsTable{nullptr};
     QTextEdit* m_report{nullptr};
     QPushButton* m_addRowBtn{nullptr};
@@ -45,6 +50,7 @@ private:
     QPushButton* m_computeBtn{nullptr};
     QCheckBox* m_addPointsCheck{nullptr};
     QCheckBox* m_drawLinesCheck{nullptr};
+    QCheckBox* m_applyAdjustedCheck{nullptr};
 };
 
 #endif // TRAVERSEDIALOG_H

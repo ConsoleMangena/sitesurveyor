@@ -7,11 +7,13 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
-# Find Qt6
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
+# Find Qt (support Qt6 and Qt5)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Widgets Network)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Widgets Network)
 
-# Include directories
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+if(QT_VERSION_MAJOR EQUAL 6)
+    qt_standard_project_setup()
+endif()
 
 # Source files
 set(SOURCES
@@ -28,12 +30,18 @@ set(SOURCES
     src/polarinputdialog.cpp
     src/traversedialog.cpp
     src/projectplanpanel.cpp
+    src/intersectresectiondialog.cpp
+    src/levelingdialog.cpp
+    src/lsnetworkdialog.cpp
+    src/transformdialog.cpp
+    src/masspolardialog.cpp
     resources/resources.qrc
     src/layermanager.cpp
     src/layerpanel.cpp
     src/propertiespanel.cpp
-    src/licensedialog.cpp
     src/welcomewidget.cpp
+    src/appwriteclient.cpp
+    src/authdialog.cpp
 )
 
 # Header files
@@ -50,18 +58,36 @@ set(HEADERS
     include/polarinputdialog.h
     include/traversedialog.h
     include/projectplanpanel.h
+    include/intersectresectiondialog.h
+    include/levelingdialog.h
+    include/lsnetworkdialog.h
+    include/transformdialog.h
+    include/masspolardialog.h
     include/layermanager.h
     include/layerpanel.h
     include/propertiespanel.h
-    include/licensedialog.h
     include/welcomewidget.h
+    include/appwriteclient.h
+    include/authdialog.h
 )
 
 # Create executable
-qt6_add_executable(SiteSurveyor ${SOURCES} ${HEADERS})
+if(QT_VERSION_MAJOR EQUAL 6)
+    qt_add_executable(SiteSurveyor MANUAL_FINALIZATION ${SOURCES} ${HEADERS})
+else()
+    add_executable(SiteSurveyor ${SOURCES} ${HEADERS})
+endif()
 
-# Link libraries
-target_link_libraries(SiteSurveyor PRIVATE Qt6::Core Qt6::Widgets)
+# Includes and libraries
+target_include_directories(SiteSurveyor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+# GDAL for CRS transformations
+find_package(GDAL REQUIRED)
+if (GDAL_FOUND)
+    target_link_libraries(SiteSurveyor PRIVATE GDAL::GDAL)
+endif()
+
+target_link_libraries(SiteSurveyor PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
 
 # Windows: embed application icon in the executable (optional if ICO present)
 if(WIN32)
@@ -79,10 +105,20 @@ set_target_properties(SiteSurveyor PROPERTIES
     MACOSX_BUNDLE TRUE
 )
 
-# Place the executable in a predictable folder
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+# Place the executable in a predictable folder (non-macOS)
+if(NOT APPLE)
+    set_target_properties(SiteSurveyor PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+    )
+endif()
 
 # Install target and desktop integration
-install(TARGETS SiteSurveyor RUNTIME DESTINATION bin)
-install(FILES resources/sitesurveyor.desktop DESTINATION share/applications)
-install(FILES resources/icons/compass.svg DESTINATION share/icons/hicolor/scalable/apps RENAME sitesurveyor.svg)
+include(GNUInstallDirs)
+install(TARGETS SiteSurveyor RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES resources/sitesurveyor.desktop DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
+# Install official logo as the application icon
+install(FILES resources/logo/icons8-land-240.svg DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps RENAME sitesurveyor.svg)
+
+if(QT_VERSION_MAJOR EQUAL 6)
+    qt_finalize_executable(SiteSurveyor)
+endif()

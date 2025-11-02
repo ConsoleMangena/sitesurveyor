@@ -10,11 +10,15 @@
 #include "layermanager.h"
 #include "layerpanel.h"
 #include "propertiespanel.h"
-#include "licensedialog.h"
 #include "welcomewidget.h"
 #include "surveycalculator.h"
 #include "traversedialog.h"
 #include "projectplanpanel.h"
+#include "intersectresectiondialog.h"
+#include "levelingdialog.h"
+#include "lsnetworkdialog.h"
+#include "transformdialog.h"
+#include "masspolardialog.h"
 #include <QMenuBar>
 #include <QMenu>
 #include <QToolBar>
@@ -42,10 +46,29 @@
 #include <QUndoStack>
 #include <QFrame>
 #include <QStackedWidget>
+#include <QTabWidget>
 #include <QFile>
 #include <QTextStream>
 #include <QEvent>
 #include <QSignalBlocker>
+#include <QSizePolicy>
+#include <QTimer>
+#include <QStandardPaths>
+#include <QDir>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QSaveFile>
+#include <QDateTime>
+#include <QWidgetAction>
+#include <limits>
+#include <QtMath>
+#include <QSet>
+#include <QGraphicsOpacityEffect>
+#include <QPropertyAnimation>
+#include <QEasingCurve>
+#include <QToolTip>
+#include <QPointer>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
@@ -61,6 +84,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     if (menuBar()) {
         menuBar()->setNativeMenuBar(false);
     }
+    // Modern tooltips styling
+    if (qApp) {
+        const QString tipCss = "QToolTip { background-color: #2b2b2b; color: #f0f0f0; border: 1px solid #555; padding: 4px; }";
+        qApp->setStyleSheet(qApp->styleSheet() + " " + tipCss);
+    }
 
     // Initialize components
     m_pointManager = new PointManager(this);
@@ -73,7 +101,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     m_joinDialog = nullptr;
     m_polarDialog = nullptr;
     m_traverseDialog = nullptr;
-    m_licenseDialog = nullptr;
     m_layerPanel = nullptr;
     m_projectPlanPanel = nullptr;
     m_projectPlanDock = nullptr;
@@ -101,9 +128,342 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     setupConnections();
     // Determine initial UI state based on license
     updateLicenseStateUI();
+    // Always show Start page (Welcome) on app launch
     updatePanelToggleStates();
     
     updateStatus();
+
+    // Autosave/recovery
+    tryRecoverAutosave();
+    setupAutosave();
+}
+
+void MainWindow::exportGeoJSON()
+{
+    const QString fileName = QFileDialog::getSaveFileName(this, "Export GeoJSON",
+                                                          QString(),
+                                                          "GeoJSON (*.geojson *.json);;All Files (*)");
+    if (fileName.isEmpty()) return;
+
+    // Build FeatureCollection
+    QJsonObject root;
+    root["type"] = QStringLiteral("FeatureCollection");
+
+    // Optional CRS (non-standard for RFC 7946; include as property for reference)
+    QJsonObject props;
+    props["crs"] = AppSettings::crs();
+    props["units"] = AppSettings::measurementUnits();
+    root["properties"] = props;
+
+    QJsonArray features;
+
+    // Points
+    const QVector<Point> pts = m_pointManager->getAllPoints();
+    for (const auto& p : pts) {
+        QJsonObject f;
+        f["type"] = QStringLiteral("Feature");
+        QJsonObject geom;
+        geom["type"] = QStringLiteral("Point");
+        QJsonArray coords; coords.append(p.x); coords.append(p.y); // GeoJSON is [x, y]
+        geom["coordinates"] = coords;
+        f["geometry"] = geom;
+        QJsonObject fp;
+        fp["name"] = p.name;
+        fp["z"] = p.z;
+        fp["layer"] = m_canvas ? m_canvas->pointLayer(p.name) : QStringLiteral("0");
+        f["properties"] = fp;
+        features.append(f);
+    }
+
+    // Lines
+    if (m_canvas) {
+        int lc = m_canvas->lineCount();
+        for (int i = 0; i < lc; ++i) {
+            QPointF a, b;
+            if (!m_canvas->lineEndpoints(i, a, b)) continue;
+            QJsonObject f;
+            f["type"] = QStringLiteral("Feature");
+            QJsonObject geom;
+            geom["type"] = QStringLiteral("LineString");
+            QJsonArray coords;
+            {
+                QJsonArray a0; a0.append(a.x()); a0.append(a.y()); coords.append(a0);
+                QJsonArray a1; a1.append(b.x()); a1.append(b.y()); coords.append(a1);
+            }
+            geom["coordinates"] = coords;
+            f["geometry"] = geom;
+            QJsonObject fp; fp["layer"] = m_canvas->lineLayer(i);
+            f["properties"] = fp;
+            features.append(f);
+        }
+    }
+
+    root["features"] = features;
+
+    QJsonDocument doc(root);
+    QSaveFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly)) {
+        QMessageBox::warning(this, "Export GeoJSON", QString("Failed to write %1").arg(fileName));
+        return;
+    }
+    file.write(doc.toJson(QJsonDocument::Indented));
+    file.commit();
+    if (m_commandOutput) m_commandOutput->append(QString("Exported GeoJSON to %1").arg(QFileInfo(fileName).fileName()));
+    showToast(QStringLiteral("Exported GeoJSON"));
+}
+
+void MainWindow::importDXF()
+{
+    const QString fileName = QFileDialog::getOpenFileName(this, "Import DXF",
+                                                          QString(),
+                                                          "DXF (*.dxf);;All Files (*)");
+    if (fileName.isEmpty()) return;
+    QFile f(fileName);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, "Import DXF", QString("Failed to open %1").arg(fileName));
+        return;
+    }
+    QTextStream in(&f);
+    QStringList lines;
+    while (!in.atEnd()) lines.append(in.readLine());
+    f.close();
+
+    auto aciToColor = [](int aci)->QColor{
+        switch (aci) {
+        case 1: return Qt::red; case 2: return Qt::yellow; case 3: return Qt::green;
+        case 4: return Qt::cyan; case 5: return Qt::blue; case 6: return Qt::magenta;
+        case 7: default: return QColor(255,255,255);
+        }
+    };
+
+    QString section;
+    bool inLayerTable = false;
+    QVector<QPointF> curPoly; bool polyClosed = false; QString entityLayer = QStringLiteral("0");
+
+    int i = 0;
+    auto readPair = [&](int& code, QString& val)->bool {
+        if (i+1 >= lines.size()) return false;
+        bool ok = false; code = lines[i++].trimmed().toInt(&ok);
+        val = (i < lines.size()) ? lines[i++].trimmed() : QString();
+        if (!ok) code = -999; return true;
+    };
+
+    while (i+1 < lines.size()) {
+        int code; QString val; if (!readPair(code, val)) break;
+        if (code == 0) {
+            if (val == QLatin1String("SECTION")) {
+                int c2; QString sname; if (readPair(c2, sname) && c2 == 2) { section = sname; inLayerTable = false; }
+                continue;
+            }
+            if (val == QLatin1String("ENDSEC")) { section.clear(); inLayerTable = false; continue; }
+            if (section == QLatin1String("TABLES") && val == QLatin1String("TABLE")) {
+                int c2; QString tname; if (readPair(c2, tname) && c2 == 2) { inLayerTable = (tname == QLatin1String("LAYER")); }
+                continue;
+            }
+            if (section == QLatin1String("TABLES") && val == QLatin1String("ENDTAB")) { inLayerTable = false; continue; }
+            if (section == QLatin1String("TABLES") && inLayerTable && val == QLatin1String("LAYER")) {
+                QString lname = QStringLiteral("0"); int aci = 7;
+                while (i+1 < lines.size()) {
+                    int pcode; QString pval; int pos = i; if (!readPair(pcode, pval)) break;
+                    if (pcode == 0) { i = pos; break; }
+                    if (pcode == 2) lname = pval; else if (pcode == 62) aci = pval.toInt();
+                }
+                if (m_layerManager) {
+                    if (!m_layerManager->hasLayer(lname)) m_layerManager->addLayer(lname, aciToColor(aci));
+                    else m_layerManager->setLayerColor(lname, aciToColor(aci));
+                }
+                continue;
+            }
+            if (section == QLatin1String("ENTITIES")) {
+                if (val == QLatin1String("LINE")) {
+                    double x1=0,y1=0,x2=0,y2=0; entityLayer = QStringLiteral("0");
+                    while (i+1 < lines.size()) {
+                        int pcode; QString pval; int pos = i; if (!readPair(pcode, pval)) break;
+                        if (pcode == 0) { i = pos; break; }
+                        if (pcode == 8) entityLayer = pval;
+                        else if (pcode == 10) x1 = pval.toDouble();
+                        else if (pcode == 20) y1 = pval.toDouble();
+                        else if (pcode == 11) x2 = pval.toDouble();
+                        else if (pcode == 21) y2 = pval.toDouble();
+                    }
+                    if (m_canvas) {
+                        m_canvas->addLine(QPointF(x1,y1), QPointF(x2,y2));
+                        int idx = m_canvas->lineCount()-1; if (idx>=0) m_canvas->setLineLayer(idx, entityLayer);
+                    }
+                    continue;
+                }
+                if (val == QLatin1String("POINT")) {
+                    double x=0,y=0,z=0; entityLayer = QStringLiteral("0");
+                    while (i+1 < lines.size()) {
+                        int pcode; QString pval; int pos = i; if (!readPair(pcode, pval)) break;
+                        if (pcode == 0) { i = pos; break; }
+                        if (pcode == 8) entityLayer = pval;
+                        else if (pcode == 10) x = pval.toDouble();
+                        else if (pcode == 20) y = pval.toDouble();
+                        else if (pcode == 30) z = pval.toDouble();
+                    }
+                    QString name = QString("P%1").arg(m_pointManager ? (m_pointManager->getPointCount()+1) : 1, 3, 10, QChar('0'));
+                    if (m_pointManager) m_pointManager->addPoint(name, x, y, z);
+                    if (m_canvas) { Point p(name, x, y, z); m_canvas->addPoint(p); m_canvas->setPointLayer(name, entityLayer); }
+                    continue;
+                }
+                if (val == QLatin1String("TEXT")) {
+                    QString t; double x=0,y=0,h=2.0, ang=0.0; entityLayer = QStringLiteral("0");
+                    while (i+1 < lines.size()) {
+                        int pcode; QString pval; int pos = i; if (!readPair(pcode, pval)) break;
+                        if (pcode == 0) { i = pos; break; }
+                        if (pcode == 8) entityLayer = pval;
+                        else if (pcode == 10) x = pval.toDouble();
+                        else if (pcode == 20) y = pval.toDouble();
+                        else if (pcode == 40) h = pval.toDouble();
+                        else if (pcode == 50) ang = pval.toDouble();
+                        else if (pcode == 1) t = pval;
+                    }
+                    if (!t.isEmpty() && m_canvas) m_canvas->addText(t, QPointF(x,y), h, ang, entityLayer);
+                    continue;
+                }
+                if (val == QLatin1String("POLYLINE")) {
+                    curPoly.clear(); polyClosed = false; entityLayer = QStringLiteral("0");
+                    while (i+1 < lines.size()) {
+                        int pcode; QString pval; int pos = i; if (!readPair(pcode, pval)) break;
+                        if (pcode == 0) { i = pos; break; }
+                        if (pcode == 8) entityLayer = pval;
+                        else if (pcode == 70) { int flg = pval.toInt(); polyClosed = (flg & 1); }
+                    }
+                    // read VERTEX blocks until SEQEND
+                    while (i+1 < lines.size()) {
+                        int code2; QString val2; int pos2 = i; if (!readPair(code2, val2)) break;
+                        if (code2 == 0 && val2 == QLatin1String("VERTEX")) {
+                            double vx=0, vy=0;
+                            while (i+1 < lines.size()) {
+                                int c; QString v; int posv = i; if (!readPair(c, v)) break;
+                                if (c == 0) { i = posv; break; }
+                                if (c == 10) vx = v.toDouble(); else if (c == 20) vy = v.toDouble();
+                            }
+                            curPoly.append(QPointF(vx, vy));
+                        } else if (code2 == 0 && val2 == QLatin1String("SEQEND")) {
+                            break;
+                        } else {
+                            i = pos2; break;
+                        }
+                    }
+                    if (!curPoly.isEmpty() && m_canvas) m_canvas->addPolylineEntity(curPoly, polyClosed, entityLayer);
+                    continue;
+                }
+            }
+        }
+    }
+
+    updatePointsTable();
+    updateStatus();
+    if (m_commandOutput) m_commandOutput->append(QString("Imported DXF %1").arg(QFileInfo(fileName).fileName()));
+}
+
+QString MainWindow::autosavePath() const
+{
+    const QString baseDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(baseDir);
+    return baseDir + "/autosave.json";
+}
+
+void MainWindow::autosaveNow()
+{
+    if (!AppSettings::autosaveEnabled()) return;
+    // Serialize to JSON (points + lines + minimal settings)
+    QJsonObject root; root["type"] = QStringLiteral("SiteSurveyorProject"); root["version"] = 1;
+    QJsonObject settings;
+    settings["gaussMode"] = AppSettings::gaussMode();
+    settings["use3D"] = AppSettings::use3D();
+    settings["units"] = AppSettings::measurementUnits();
+    settings["angleFormat"] = AppSettings::angleFormat();
+    settings["crs"] = AppSettings::crs();
+    root["settings"] = settings;
+    // Points
+    QJsonArray points;
+    const QVector<Point> pts = m_pointManager->getAllPoints();
+    for (const auto& p : pts) {
+        QJsonObject o; o["name"] = p.name; o["x"] = p.x; o["y"] = p.y; o["z"] = p.z; o["layer"] = m_canvas ? m_canvas->pointLayer(p.name) : QStringLiteral("0"); points.append(o);
+    }
+    root["points"] = points;
+    // Lines
+    QJsonArray lines;
+    if (m_canvas) {
+        int lc = m_canvas->lineCount();
+        for (int i = 0; i < lc; ++i) {
+            QPointF a,b; if (!m_canvas->lineEndpoints(i, a, b)) continue;
+            QJsonObject o; o["ax"] = a.x(); o["ay"] = a.y(); o["bx"] = b.x(); o["by"] = b.y(); o["layer"] = m_canvas->lineLayer(i); lines.append(o);
+        }
+    }
+    root["lines"] = lines;
+
+    QJsonDocument doc(root);
+    QSaveFile file(autosavePath());
+    if (file.open(QIODevice::WriteOnly)) { file.write(doc.toJson(QJsonDocument::Compact)); file.commit(); }
+}
+
+void MainWindow::setupAutosave()
+{
+    if (m_autosaveTimer) { m_autosaveTimer->stop(); m_autosaveTimer->deleteLater(); m_autosaveTimer = nullptr; }
+    if (!AppSettings::autosaveEnabled()) return;
+    m_autosaveTimer = new QTimer(this);
+    m_autosaveTimer->setInterval(AppSettings::autosaveIntervalMinutes() * 60 * 1000);
+    connect(m_autosaveTimer, &QTimer::timeout, this, &MainWindow::autosaveNow);
+    m_autosaveTimer->start();
+}
+
+void MainWindow::tryRecoverAutosave()
+{
+    QFile f(autosavePath());
+    if (!f.exists()) return;
+    // Ask user to recover; if declined, keep file for next run
+    auto ret = QMessageBox::question(this, "Recover Autosave",
+                                     "An autosave from a previous session was found. Recover it now?",
+                                     QMessageBox::Yes | QMessageBox::No);
+    if (ret != QMessageBox::Yes) return;
+    if (!f.open(QIODevice::ReadOnly)) return;
+    const QByteArray data = f.readAll(); f.close();
+    QJsonParseError err; QJsonDocument doc = QJsonDocument::fromJson(data, &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) return;
+    QJsonObject root = doc.object();
+    if (root.value("type").toString() != QLatin1String("SiteSurveyorProject")) return;
+    // Clear current
+    m_pointManager->clearAllPoints();
+    m_canvas->clearAll();
+    // Reapply settings
+    QJsonObject settings = root.value("settings").toObject();
+    AppSettings::setGaussMode(settings.value("gaussMode").toBool(AppSettings::gaussMode()));
+    AppSettings::setUse3D(settings.value("use3D").toBool(AppSettings::use3D()));
+    if (settings.contains("units")) AppSettings::setMeasurementUnits(settings.value("units").toString());
+    if (settings.contains("angleFormat")) AppSettings::setAngleFormat(settings.value("angleFormat").toString());
+    if (settings.contains("crs")) AppSettings::setCrs(settings.value("crs").toString());
+    // Points
+    QJsonArray points = root.value("points").toArray();
+    for (const auto& v : points) {
+        QJsonObject o = v.toObject();
+        QString name = o.value("name").toString();
+        double x = o.value("x").toDouble(); double y = o.value("y").toDouble(); double z = o.value("z").toDouble();
+        QString layer = o.value("layer").toString();
+        if (name.isEmpty()) continue;
+        Point p(name, x, y, z);
+        m_pointManager->addPoint(p);
+        m_canvas->addPoint(p);
+        if (!layer.isEmpty()) m_canvas->setPointLayer(name, layer);
+    }
+    // Lines
+    QJsonArray lines = root.value("lines").toArray();
+    for (const auto& v : lines) {
+        QJsonObject o = v.toObject();
+        QPointF a(o.value("ax").toDouble(), o.value("ay").toDouble());
+        QPointF b(o.value("bx").toDouble(), o.value("by").toDouble());
+        QString layer = o.value("layer").toString();
+        int before = m_canvas->lineCount();
+        m_canvas->addLine(a, b);
+        int idx = m_canvas->lineCount() - 1;
+        if (idx >= 0 && !layer.isEmpty()) m_canvas->setLineLayer(idx, layer);
+    }
+    updatePointsTable();
+    updateStatus();
+    if (m_commandOutput) m_commandOutput->append("Recovered project from autosave.");
 }
 
 void MainWindow::applyEngineeringPresetIfNeeded()
@@ -152,10 +512,36 @@ void MainWindow::resetLayout()
     if (!m_defaultLayoutState.isEmpty()) {
         restoreState(m_defaultLayoutState);
         // Nudge default sizes again for good measure (keep Layers smaller)
-        if (m_layersDock) resizeDocks({m_layersDock}, {70}, Qt::Horizontal);
+        int rpw = AppSettings::rightPanelWidth();
+        if (rpw < 200) rpw = 200;
+        if (m_layersDock) resizeDocks({m_layersDock}, {rpw}, Qt::Horizontal);
         if (m_pointsDock) resizeDocks({m_pointsDock}, {360}, Qt::Horizontal);
         if (m_commandDock) resizeDocks({m_commandDock}, {200}, Qt::Vertical);
     }
+}
+
+void MainWindow::showSelectedProperties()
+{
+    if (!m_canvas) return;
+    int li = m_canvas->selectedLineIndex();
+    if (li >= 0) {
+        QPointF a, b;
+        if (m_canvas->lineEndpoints(li, a, b)) {
+            const QString layer = m_canvas->lineLayer(li);
+            const double len = SurveyCalculator::distance(a, b);
+            QMessageBox::information(this, "Properties",
+                QString("Line #%1\nLayer: %2\nStart: (%3, %4)\nEnd: (%5, %6)\nLength: %7")
+                    .arg(li)
+                    .arg(layer)
+                    .arg(a.x(), 0, 'f', 3)
+                    .arg(a.y(), 0, 'f', 3)
+                    .arg(b.x(), 0, 'f', 3)
+                    .arg(b.y(), 0, 'f', 3)
+                    .arg(len, 0, 'f', 3));
+            return;
+        }
+    }
+    QMessageBox::information(this, "Properties", "No detailed selection. Select a single line to view properties.");
 }
 
 void MainWindow::toggleDarkMode(bool on)
@@ -169,8 +555,7 @@ void MainWindow::toggleDarkMode(bool on)
         if (qss.open(QIODevice::ReadOnly | QIODevice::Text)) {
             style = QString::fromUtf8(qss.readAll());
         }
-        // Force white text across widgets; allow specific widgets to override if needed
-        style += "\n* { color: #ffffff; }\nQGroupBox::title { color: #ffffff; }\nQMenu::item { color: #ffffff; }\nQToolBar { color: #ffffff; }\n";
+        // Use stylesheet colors only; avoid forcing global colors to keep contrast consistent
         qApp->setStyleSheet(style);
         // White icons in dark mode
         IconManager::setMonochrome(true);
@@ -209,13 +594,21 @@ void MainWindow::resizeEvent(QResizeEvent *event)
 {
     QMainWindow::resizeEvent(event);
     updateToggleButtonPositions();
+    updateMoreDock();
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)
 {
     // Detect user-initiated close on right docks so we can close both in sync
-    if ((obj == m_layersDock || obj == m_propertiesDock) && event->type() == QEvent::Close) {
-        m_rightDockClosingByUser = true;
+    if (obj == m_layersDock) {
+        if (event->type() == QEvent::Close) {
+            m_rightDockClosingByUser = true;
+        } else if (event->type() == QEvent::Resize) {
+            if (m_layersDock) {
+                int w = m_layersDock->width();
+                if (w > 0) AppSettings::setRightPanelWidth(w);
+            }
+        }
     }
     return QMainWindow::eventFilter(obj, event);
 }
@@ -239,25 +632,19 @@ void MainWindow::setupUI()
     
     // Create dock widgets and arrange panels
     setupCommandDock();    // Command line at bottom
-    setupLayersDock();     // Layers on right
-    setupPropertiesDock(); // Properties on right (tabbed with Layers)
+    setupLayersDock();     // Layers/Properties merged on right (tabbed inside one dock)
     setupPointsDock();     // Coordinates on left (wider)
     setupProjectPlanDock(); // Project planning panel (left, tabbed with coordinates)
     
     // Initial dock arrangement
-    // Left side (now Coordinates): Right side (Layers/Properties tabified)
-    if (m_layersDock && m_propertiesDock) {
-        // Set minimum sizes before tabifying (narrower right sidebar)
-        m_layersDock->setMinimumWidth(60);
-        m_propertiesDock->setMinimumWidth(60);
-        
-        // Tabify the dock widgets
-        tabifyDockWidget(m_layersDock, m_propertiesDock);
-        m_layersDock->raise();  // Show layers tab by default
-    }
     
-    // Set initial widths: left (Coordinates) wide, right (Layers/Properties) very narrow
-    if (m_layersDock) resizeDocks({m_layersDock}, {70}, Qt::Horizontal);
+    // Set initial widths: left (Coordinates) wide, right (Layers/Properties) reasonable default
+    if (m_layersDock) {
+        int rpw = AppSettings::rightPanelWidth();
+        // Enforce a sensible minimum so the sidebar content is visible
+        if (rpw < 200) rpw = 200;
+        resizeDocks({m_layersDock}, {rpw}, Qt::Horizontal);
+    }
     if (m_pointsDock) resizeDocks({m_pointsDock}, {360}, Qt::Horizontal);
     
     // Bottom: Command line (compact height)
@@ -477,7 +864,6 @@ void MainWindow::updateLicenseStateUI()
     // Show/hide docks
     if (m_pointsDock) m_pointsDock->setVisible(licensed);
     if (m_layersDock) m_layersDock->setVisible(licensed);
-    if (m_propertiesDock) m_propertiesDock->setVisible(licensed);
     if (m_commandDock) m_commandDock->setVisible(licensed);
 
     // Show/hide all toolbars
@@ -511,7 +897,6 @@ void MainWindow::updateLicenseStateUI()
         if (m_rightPanelButton) m_rightPanelButton->setVisible(false);
 
         if (m_settingsMenu && m_settingsMenu->menuAction()) m_settingsMenu->menuAction()->setEnabled(true);
-        if (m_licenseAction) m_licenseAction->setEnabled(true);
         // Keep Exit and About accessible if present
         if (m_exitAction) m_exitAction->setEnabled(true);
         if (m_aboutAction) m_aboutAction->setEnabled(true);
@@ -600,41 +985,44 @@ void MainWindow::setupCommandDock()
 
 void MainWindow::setupLayersDock()
 {
+    // Single right dock with tabs for Layers and Properties
     m_layersDock = new QDockWidget("Layers", this);
     m_layersDock->setObjectName("LayersDock");
     m_layersDock->setAllowedAreas(Qt::RightDockWidgetArea);
     m_layersDock->setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
-    m_layersDock->setMinimumWidth(80);
-    m_layerPanel = new LayerPanel(this);
-    m_layerPanel->setLayerManager(m_layerManager);
-    // Keep panel in sync on layer changes
-    connect(m_layerManager, &LayerManager::layersChanged, m_layerPanel, &LayerPanel::reload);
-    connect(m_layerPanel, &LayerPanel::requestSetCurrent, this, [this](const QString& name){
-        if (m_layerManager) m_layerManager->setCurrentLayer(name);
-    });
-    m_layersDock->setWidget(m_layerPanel);
-    addDockWidget(Qt::RightDockWidgetArea, m_layersDock);
-    // Keep right-side docks synced (close one -> close both)
-    connect(m_layersDock, &QDockWidget::visibilityChanged, this, &MainWindow::onRightDockVisibilityChanged);
-    m_layersDock->installEventFilter(this);
-}
+    m_layersDock->setMinimumWidth(180);
 
-void MainWindow::setupPropertiesDock()
-{
-    // Properties panel on right
-    m_propertiesDock = new QDockWidget("Properties", this);
-    m_propertiesDock->setObjectName("PropertiesDock");
-    m_propertiesDock->setAllowedAreas(Qt::RightDockWidgetArea);
-    m_propertiesDock->setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
-    m_propertiesDock->setMinimumWidth(80);
+    // Build tab widget
+    QTabWidget* tabs = new QTabWidget(this);
+    m_rightTabs = tabs;
+    tabs->setTabPosition(QTabWidget::North);
+    tabs->setMinimumWidth(180);
+    tabs->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+
+    // Layers tab
+    m_layerPanel = new LayerPanel(this);
+    m_layerPanel->setMinimumWidth(180);
+    m_layerPanel->setLayerManager(m_layerManager);
+    connect(m_layerManager, &LayerManager::layersChanged, m_layerPanel, &LayerPanel::reload);
+    connect(m_layerPanel, &LayerPanel::requestSetCurrent, this, [this](const QString& name){ if (m_layerManager) m_layerManager->setCurrentLayer(name); });
+    tabs->addTab(m_layerPanel, QIcon(), QStringLiteral("Layers"));
+
+    // Properties tab
     m_propertiesPanel = new PropertiesPanel(this);
+    m_propertiesPanel->setMinimumWidth(180);
     m_propertiesPanel->setLayerManager(m_layerManager);
     m_propertiesPanel->setCanvas(m_canvas);
-    m_propertiesDock->setWidget(m_propertiesPanel);
-    addDockWidget(Qt::RightDockWidgetArea, m_propertiesDock);
-    connect(m_propertiesDock, &QDockWidget::visibilityChanged, this, &MainWindow::onRightDockVisibilityChanged);
-    m_propertiesDock->installEventFilter(this);
+    tabs->addTab(m_propertiesPanel, QIcon(), QStringLiteral("Properties"));
+
+    m_layersDock->setWidget(tabs);
+    addDockWidget(Qt::RightDockWidgetArea, m_layersDock);
+    connect(m_layersDock, &QDockWidget::visibilityChanged, this, &MainWindow::onRightDockVisibilityChanged);
+    m_layersDock->installEventFilter(this);
+
+    // No separate properties dock when merged
+    m_propertiesDock = nullptr;
 }
+
 
 void MainWindow::setupMenus()
 {
@@ -666,10 +1054,125 @@ void MainWindow::setupMenus()
     importPoints->setIcon(IconManager::icon("file-import"));
     connect(importPoints, &QAction::triggered, this, &MainWindow::importCoordinates);
     m_importPointsAction = importPoints;
-    QAction* exportPoints = fileMenu->addAction("&Export Coordinates...");
+    QAction* exportPoints = fileMenu->addAction("&Export Coordinates (CSV)...");
     exportPoints->setIcon(IconManager::icon("file-export"));
     connect(exportPoints, &QAction::triggered, this, &MainWindow::exportCoordinates);
     m_exportPointsAction = exportPoints;
+
+    QAction* exportGeoJson = fileMenu->addAction("Export &GeoJSON...");
+    exportGeoJson->setIcon(IconManager::icon("file-export"));
+    connect(exportGeoJson, &QAction::triggered, this, &MainWindow::exportGeoJSON);
+    m_exportGeoJsonAction = exportGeoJson;
+    QAction* exportDxf = fileMenu->addAction("Export D&XF (R12)...");
+    exportDxf->setIcon(IconManager::icon("file-export"));
+    connect(exportDxf, &QAction::triggered, this, [this](){
+        const QString fileName = QFileDialog::getSaveFileName(this, "Export DXF (R12)", QString(), "DXF (*.dxf);;All Files (*)");
+        if (fileName.isEmpty()) return;
+        QFile f(fileName);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) { QMessageBox::warning(this, "Export DXF", QString("Failed to write %1").arg(fileName)); return; }
+        QTextStream out(&f);
+        // Minimal ASCII DXF (R12)
+        // HEADER
+        out << "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC\n";
+        // TABLES (LTYPE, LAYER)
+        out << "0\nSECTION\n2\nTABLES\n";
+        // LTYPE table
+        out << "0\nTABLE\n2\nLTYPE\n70\n1\n";
+        out << "0\nLTYPE\n2\nCONTINUOUS\n70\n64\n3\nSolid line\n72\n65\n73\n0\n40\n0.0\n";
+        out << "0\nENDTAB\n";
+        // LAYER table
+        int layerCount = 0;
+        QVector<Layer> layers = m_layerManager ? m_layerManager->layers() : QVector<Layer>{};
+        bool hasZero = false;
+        for (const auto& L : layers) if (L.name == QLatin1String("0")) { hasZero = true; break; }
+        if (!hasZero) {
+            Layer L; L.name = QStringLiteral("0"); L.color = QColor(255,255,255); L.visible = true; L.locked = false; layers.prepend(L);
+        }
+        layerCount = layers.size();
+        out << "0\nTABLE\n2\nLAYER\n70\n" << layerCount << "\n";
+        auto toACI = [](const QColor& c){
+            if (!c.isValid()) return 7; // white
+            // very small mapping to ACI 1..7
+            if (c == Qt::red) return 1;
+            if (c == Qt::yellow) return 2;
+            if (c == Qt::green) return 3;
+            if (c == Qt::cyan) return 4;
+            if (c == Qt::blue) return 5;
+            if (c == Qt::magenta) return 6;
+            // grayscale heuristic
+            int g = qGray(c.rgb());
+            if (g > 200) return 7;
+            if (g > 128) return 8;
+            return 9;
+        };
+        for (const auto& L : layers) {
+            out << "0\nLAYER\n2\n" << L.name << "\n70\n0\n62\n" << toACI(L.color) << "\n6\nCONTINUOUS\n";
+        }
+        out << "0\nENDTAB\n0\nENDSEC\n";
+        // ENTITIES
+        out << "0\nSECTION\n2\nENTITIES\n";
+        // Polylines (R12 POLYLINE/VERTEX format)
+        if (m_canvas) {
+            int pln = m_canvas->polylineCount();
+            for (int i=0;i<pln;++i) {
+                QVector<QPointF> pts; bool closed=false; QString layer;
+                if (!m_canvas->polylineData(i, pts, closed, layer)) continue;
+                if (pts.size() < 2) continue;
+                out << "0\nPOLYLINE\n8\n" << layer << "\n66\n1\n70\n" << (closed?1:0) << "\n";
+                for (const auto& p : pts) {
+                    out << "0\nVERTEX\n8\n" << layer << "\n10\n" << p.x() << "\n20\n" << p.y() << "\n30\n0\n";
+                }
+                out << "0\nSEQEND\n";
+            }
+        }
+        // Lines (skip those that belong to polylines)
+        QSet<int> used;
+        if (m_canvas) m_canvas->linesUsedByPolylines(used);
+        if (m_canvas) {
+            for (int i=0;i<m_canvas->lineCount();++i) {
+                if (used.contains(i)) continue;
+                QPointF a,b; if (!m_canvas->lineEndpoints(i,a,b)) continue; QString layer = m_canvas->lineLayer(i);
+                out << "0\nLINE\n8\n" << layer << "\n10\n" << a.x() << "\n20\n" << a.y() << "\n30\n0\n11\n" << b.x() << "\n21\n" << b.y() << "\n31\n0\n";
+            }
+        }
+        // Points
+        for (const auto& p : m_pointManager->getAllPoints()) {
+            QString layer = m_canvas ? m_canvas->pointLayer(p.name) : QStringLiteral("0");
+            out << "0\nPOINT\n8\n" << layer << "\n10\n" << p.x << "\n20\n" << p.y << "\n30\n" << p.z << "\n";
+        }
+        // Texts
+        if (m_canvas) {
+            const int tn = m_canvas->textCount();
+            for (int i=0;i<tn;++i) {
+                QString t; QPointF pos; double h=0.0, ang=0.0; QString layer;
+                if (!m_canvas->textData(i, t, pos, h, ang, layer)) continue;
+                if (t.isEmpty() || h <= 0) continue;
+                out << "0\nTEXT\n8\n" << layer
+                    << "\n10\n" << pos.x() << "\n20\n" << pos.y() << "\n30\n0\n"
+                    << "40\n" << h << "\n1\n" << t << "\n50\n" << ang << "\n";
+            }
+        }
+        // Dimensions (exported as LINE + TEXT at midpoint)
+        if (m_canvas) {
+            const int dn = m_canvas->dimensionCount();
+            for (int i=0;i<dn;++i) {
+                QPointF a,b; double th=0.0; QString layer;
+                if (!m_canvas->dimensionData(i, a, b, th, layer)) continue;
+                out << "0\nLINE\n8\n" << layer << "\n10\n" << a.x() << "\n20\n" << a.y() << "\n30\n0\n11\n" << b.x() << "\n21\n" << b.y() << "\n31\n0\n";
+                QPointF mid((a.x()+b.x())*0.5, (a.y()+b.y())*0.5);
+                double len = SurveyCalculator::distance(a, b);
+                double ang = qRadiansToDegrees(qAtan2(b.y()-a.y(), b.x()-a.x()));
+                out << "0\nTEXT\n8\n" << layer
+                    << "\n10\n" << mid.x() << "\n20\n" << mid.y() << "\n30\n0\n"
+                    << "40\n" << (th>0?th:2.0) << "\n1\n" << QString::number(len, 'f', 3) << "\n50\n" << ang << "\n";
+            }
+        }
+        out << "0\nENDSEC\n0\nEOF\n";
+        f.close(); if (m_commandOutput) m_commandOutput->append(QString("Exported DXF to %1").arg(QFileInfo(fileName).fileName()));
+    });
+    QAction* importDxf = fileMenu->addAction("&Import DXF...");
+    importDxf->setIcon(IconManager::icon("file-import"));
+    connect(importDxf, &QAction::triggered, this, &MainWindow::importDXF);
     
     fileMenu->addSeparator();
     
@@ -745,20 +1248,29 @@ void MainWindow::setupMenus()
     QMenu* viewMenu = menuBar()->addMenu("&View");
     m_viewMenu = viewMenu;
     
+    // Show Start Page (Welcome) on demand
+    QAction* showStart = viewMenu->addAction("Start Page");
+    showStart->setIcon(IconManager::icon("home"));
+    showStart->setShortcut(QKeySequence("Ctrl+Alt+S"));
+    connect(showStart, &QAction::triggered, this, [this](){
+        if (m_centerStack && m_welcomeWidget) m_centerStack->setCurrentWidget(m_welcomeWidget);
+    });
+    m_showStartPageAction = showStart;
+    
     QAction* zoomIn = viewMenu->addAction("Zoom &In");
     zoomIn->setIcon(IconManager::icon("zoom-in"));
     zoomIn->setShortcut(QKeySequence::ZoomIn);
-    connect(zoomIn, &QAction::triggered, m_canvas, &CanvasWidget::zoomIn);
+    connect(zoomIn, &QAction::triggered, m_canvas, &CanvasWidget::zoomInAnimated);
     
     QAction* zoomOut = viewMenu->addAction("Zoom &Out");
     zoomOut->setIcon(IconManager::icon("zoom-out"));
     zoomOut->setShortcut(QKeySequence::ZoomOut);
-    connect(zoomOut, &QAction::triggered, m_canvas, &CanvasWidget::zoomOut);
+    connect(zoomOut, &QAction::triggered, m_canvas, &CanvasWidget::zoomOutAnimated);
     
     QAction* fitView = viewMenu->addAction("&Fit to Window");
     fitView->setIcon(IconManager::icon("fit"));
     fitView->setShortcut(QKeySequence("Ctrl+0"));
-    connect(fitView, &QAction::triggered, m_canvas, &CanvasWidget::fitToWindow);
+    connect(fitView, &QAction::triggered, m_canvas, &CanvasWidget::fitToWindowAnimated);
     
     viewMenu->addSeparator();
     
@@ -773,6 +1285,10 @@ void MainWindow::setupMenus()
     toggleLabels->setCheckable(true);
     toggleLabels->setChecked(true);
     connect(toggleLabels, &QAction::toggled, m_canvas, &CanvasWidget::setShowLabels);
+    QAction* toggleLenLabels = viewMenu->addAction("Show &Length Labels");
+    toggleLenLabels->setCheckable(true);
+    toggleLenLabels->setChecked(false);
+    connect(toggleLenLabels, &QAction::toggled, m_canvas, &CanvasWidget::setShowLengthLabels);
     QAction* toggleCrosshair = viewMenu->addAction("Show &Crosshair");
     toggleCrosshair->setIcon(IconManager::icon("crosshair"));
     toggleCrosshair->setCheckable(true);
@@ -799,12 +1315,27 @@ void MainWindow::setupMenus()
     QAction* polarInputAct = toolsMenu->addAction("&Polar Input...");
     polarInputAct->setIcon(IconManager::icon("polar"));
     connect(polarInputAct, &QAction::triggered, this, &MainWindow::showPolarInput);
+    QAction* massPolarAct = toolsMenu->addAction("Mass &Polar Reductions...");
+    massPolarAct->setIcon(IconManager::icon("polar"));
+    connect(massPolarAct, &QAction::triggered, this, &MainWindow::showMassPolar);
     QAction* joinPolarAct = toolsMenu->addAction("&Join (Polar)...");
     joinPolarAct->setIcon(IconManager::icon("join"));
     connect(joinPolarAct, &QAction::triggered, this, &MainWindow::showJoinPolar);
     QAction* traverseAct = toolsMenu->addAction("&Traverse...");
     traverseAct->setIcon(IconManager::icon("compass"));
     connect(traverseAct, &QAction::triggered, this, &MainWindow::showTraverse);
+    QAction* interResAct = toolsMenu->addAction("&Intersection / Resection...");
+    interResAct->setIcon(IconManager::icon("compass"));
+    connect(interResAct, &QAction::triggered, this, &MainWindow::showIntersectResection);
+    QAction* levelingAct = toolsMenu->addAction("&Leveling Adjustment...");
+    levelingAct->setIcon(IconManager::icon("ruler-measure"));
+    connect(levelingAct, &QAction::triggered, this, &MainWindow::showLeveling);
+    QAction* lsnetAct = toolsMenu->addAction("&Network LS (Point)...");
+    lsnetAct->setIcon(IconManager::icon("square"));
+    connect(lsnetAct, &QAction::triggered, this, &MainWindow::showLSNetwork);
+    QAction* transformAct = toolsMenu->addAction("&Transformations...");
+    transformAct->setIcon(IconManager::icon("transform"));
+    connect(transformAct, &QAction::triggered, this, &MainWindow::showTransformations);
     toolsMenu->addSeparator();
     m_preferencesAction = toolsMenu->addAction("&Preferences...");
     m_preferencesAction->setIcon(IconManager::icon("settings"));
@@ -867,10 +1398,6 @@ void MainWindow::setupMenus()
     if (m_preferencesAction) {
         settingsMenu->addAction(m_preferencesAction);
     }
-    QAction* licenseAction = settingsMenu->addAction("&Enter License Key...");
-    m_licenseAction = licenseAction;
-    licenseAction->setIcon(IconManager::icon("key"));
-    connect(licenseAction, &QAction::triggered, this, &MainWindow::showLicense);
 
     // Help Menu
     QMenu* helpMenu = menuBar()->addMenu("&Help");
@@ -903,7 +1430,14 @@ void MainWindow::setupToolbar()
     quickBar->setMovable(true);
     quickBar->setFloatable(false);
     quickBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
-    quickBar->setIconSize(QSize(16, 16));
+    quickBar->setIconSize(QSize(14, 14));
+    // Hover/press visual feedback for quick bar
+    quickBar->setStyleSheet(
+        "QToolBar { background: transparent; }"
+        " QToolBar QToolButton { border-radius: 4px; padding: 1px 3px; font-size: 10px; }"
+        " QToolBar QToolButton:hover { background-color: rgba(74,144,217,0.18); }"
+        " QToolBar QToolButton:pressed { background-color: rgba(74,144,217,0.30); }"
+    );
     if (m_newProjectAction) quickBar->addAction(m_newProjectAction);
     if (m_openProjectAction) quickBar->addAction(m_openProjectAction);
     if (m_saveProjectAction) quickBar->addAction(m_saveProjectAction);
@@ -918,11 +1452,21 @@ void MainWindow::setupToolbar()
     topBar->setMovable(true);
     topBar->setFloatable(false);
     topBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
-    topBar->setIconSize(QSize(16, 16));
+    topBar->setIconSize(QSize(14, 14));
+    // Hover/press feedback for top bar
+    topBar->setStyleSheet(
+        "QToolBar { background: transparent; }"
+        " QToolBar QToolButton { border-radius: 4px; padding: 1px 3px; font-size: 10px; }"
+        " QToolBar QToolButton:hover { background-color: rgba(74,144,217,0.18); }"
+        " QToolBar QToolButton:pressed { background-color: rgba(74,144,217,0.30); }"
+    );
 
     auto addCategoryTo = [&](QToolBar* bar, const QString& name){
         QLabel* chip = new QLabel(QString(" %1 ").arg(name), this);
-        chip->setStyleSheet("QLabel { border: 1px solid #999; border-radius: 3px; padding: 1px 6px; }");
+        const QString chipCss = m_darkMode
+            ? QStringLiteral("QLabel { background-color: #2a2a2a; color: #eaeaea; border: 1px solid #4a90d9; border-radius: 4px; padding: 1px 6px; font-size: 10px; }")
+            : QStringLiteral("QLabel { background-color: #f5f5f5; color: #333333; border: 1px solid #4a90d9; border-radius: 4px; padding: 1px 6px; font-size: 10px; }");
+        chip->setStyleSheet(chipCss);
         bar->addSeparator();
         bar->addWidget(chip);
         bar->addSeparator();
@@ -933,49 +1477,75 @@ void MainWindow::setupToolbar()
         if (!icon.isNull()) btn->setIcon(icon);
         btn->setPopupMode(QToolButton::InstantPopup);
         btn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        btn->setStyleSheet("QToolButton { font-size: 10px; }");
         QMenu* menu = new QMenu(btn);
+        menu->setTearOffEnabled(true);
         btn->setMenu(menu);
         bar->addWidget(btn);
         return menu;
     };
 
+    auto makeGroupDock = [&](QMenu* menu, const QString& title){
+        QDockWidget* dock = new QDockWidget(title, this);
+        QToolBar* tb = new QToolBar(dock);
+        tb->setIconSize(QSize(16, 16));
+        for (QAction* a : menu->actions()) tb->addAction(a);
+        QWidget* w = new QWidget(dock);
+        QVBoxLayout* lay = new QVBoxLayout(w);
+        lay->setContentsMargins(4,4,4,4);
+        lay->addWidget(tb);
+        w->setLayout(lay);
+        dock->setWidget(w);
+        addDockWidget(Qt::LeftDockWidgetArea, dock);
+        dock->hide();
+        if (QToolButton* btn = qobject_cast<QToolButton*>(menu->parentWidget())) {
+            btn->setCheckable(true);
+            connect(btn, &QToolButton::toggled, this, [dock](bool on){ dock->setVisible(on); });
+            connect(dock, &QDockWidget::visibilityChanged, this, [btn](bool vis){ QSignalBlocker b(btn); btn->setChecked(vis); });
+        }
+        return dock;
+    };
+
     // Primary CAD groups: Draw | Modify | Layers | View | Aids
-    // Draw menu (primary)
-    QMenu* drawMenuTb = addMenuGroup(topBar, "Draw", IconManager::icon("line"));
+    // Draw (primary)
+    addCategoryTo(topBar, "Draw");
     QAction* drawLineAction = new QAction(IconManager::icon("line"), "Line", this);
     drawLineAction->setShortcut(QKeySequence("L"));
     drawLineAction->setCheckable(true);
     drawLineAction->setToolTip("Line (L) - Draw a line segment");
     connect(drawLineAction, &QAction::toggled, this, [this](bool on){ if (on) m_canvas->setToolMode(CanvasWidget::ToolMode::DrawLine); });
-    drawMenuTb->addAction(drawLineAction);
+    topBar->addAction(drawLineAction);
     QAction* drawPolyAction = new QAction(IconManager::icon("polygon"), "Polyline", this);
     drawPolyAction->setShortcut(QKeySequence("PL"));
     drawPolyAction->setCheckable(true);
     drawPolyAction->setToolTip("Polyline (PL) - Draw connected segments");
     connect(drawPolyAction, &QAction::toggled, this, [this](bool on){ if (on) m_canvas->setToolMode(CanvasWidget::ToolMode::DrawPolygon); });
-    drawMenuTb->addAction(drawPolyAction);
+    topBar->addAction(drawPolyAction);
     QAction* drawCircleAction = new QAction(IconManager::icon("circle"), "Circle", this);
     drawCircleAction->setCheckable(true);
     drawCircleAction->setToolTip("Circle - Click center, then radius (typed distance or D=diameter optional)");
     connect(drawCircleAction, &QAction::toggled, this, [this](bool on){ if (on) m_canvas->setToolMode(CanvasWidget::ToolMode::DrawCircle); });
-    drawMenuTb->addAction(drawCircleAction);
+    topBar->addAction(drawCircleAction);
     QAction* drawArcAction = new QAction(IconManager::icon("arc"), "Arc", this);
     drawArcAction->setCheckable(true);
     drawArcAction->setToolTip("Arc (3-point) - Click start, second point, then end");
     connect(drawArcAction, &QAction::toggled, this, [this](bool on){ if (on) m_canvas->setToolMode(CanvasWidget::ToolMode::DrawArc); });
-    drawMenuTb->addAction(drawArcAction);
+    topBar->addAction(drawArcAction);
     QAction* drawRectAction = new QAction(IconManager::icon("rectangle"), "Rectangle", this);
     drawRectAction->setCheckable(true);
     drawRectAction->setToolTip("Rectangle - Click first corner, then opposite corner (Shift for square)");
     connect(drawRectAction, &QAction::toggled, this, [this](bool on){ if (on) m_canvas->setToolMode(CanvasWidget::ToolMode::DrawRectangle); });
-    drawMenuTb->addAction(drawRectAction);
-    if (QToolButton* tb = qobject_cast<QToolButton*>(drawMenuTb->parentWidget())) tb->setToolTip("Line, Polyline, Circle, Arc, Rectangle");
+    topBar->addAction(drawRectAction);
+    QAction* drawRegPolyAction = new QAction(IconManager::icon("regular-polygon"), "Regular Polygon", this);
+    connect(drawRegPolyAction, &QAction::triggered, this, &MainWindow::drawRegularPolygon);
+    topBar->addAction(drawRegPolyAction);
     // Store for pinning/exclusivity
     m_drawLineToolAction = drawLineAction;
     m_drawPolyToolAction = drawPolyAction;
     m_drawCircleToolAction = drawCircleAction;
     m_drawArcToolAction = drawArcAction;
     m_drawRectToolAction = drawRectAction;
+    m_drawRegularPolygonAction = drawRegPolyAction;
     // Pin button for Draw group
     m_drawPinButton = new QToolButton(this);
     m_drawPinButton->setIcon(IconManager::icon("pin"));
@@ -984,133 +1554,200 @@ void MainWindow::setupToolbar()
     topBar->addWidget(m_drawPinButton);
     connect(m_drawPinButton, &QToolButton::toggled, this, [this](bool on){ m_drawGroupPinned = on; updatePinnedGroupsUI(); });
 
-    // Modify menu (Lengthen, Delete)
-    QMenu* modifyMenuTb = addMenuGroup(topBar, "Modify", IconManager::icon("ruler-measure"));
+    // Modify (Lengthen, Trim, Extend, Offset, Fillet, Chamfer, Delete)
+    addCategoryTo(topBar, "Modify");
     QAction* lengthenAct = new QAction(IconManager::icon("ruler-measure"), "Lengthen", this);
     lengthenAct->setCheckable(true);
     lengthenAct->setToolTip("Lengthen - adjust line length by value or click");
     connect(lengthenAct, &QAction::toggled, this, [this](bool on){ if (on) m_canvas->setToolMode(CanvasWidget::ToolMode::Lengthen); });
-    modifyMenuTb->addAction(lengthenAct);
-    if (m_deleteSelectedAction) modifyMenuTb->addAction(m_deleteSelectedAction);
-    if (QToolButton* tb = qobject_cast<QToolButton*>(modifyMenuTb->parentWidget())) tb->setToolTip("Lengthen, Delete Selected (more coming: Move, Copy, Rotate, Scale, Mirror, Trim, Extend, Offset)");
+    topBar->addAction(lengthenAct);
+    QAction* trimAct = new QAction(IconManager::icon("scissors"), "Trim", this);
+    connect(trimAct, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->startTrim(); });
+    topBar->addAction(trimAct);
+    QAction* extendAct = new QAction(IconManager::icon("arrow-right"), "Extend", this);
+    connect(extendAct, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->startExtend(); });
+    topBar->addAction(extendAct);
+    QAction* offsetAct = new QAction(IconManager::icon("ruler"), "Offset", this);
+    connect(offsetAct, &QAction::triggered, this, [this](){ bool ok=false; double d=QInputDialog::getDouble(this, "Offset", "Distance:", 1.0, 0.0, 1e9, 3, &ok); if (!ok) return; if (m_canvas) m_canvas->startOffset(d); });
+    topBar->addAction(offsetAct);
+    QAction* filletAct = new QAction(IconManager::icon("corner-right-down"), "Fillet0", this);
+    connect(filletAct, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->startFilletZero(); });
+    topBar->addAction(filletAct);
+    QAction* chamferAct = new QAction(IconManager::icon("crop"), "Chamfer", this);
+    connect(chamferAct, &QAction::triggered, this, [this](){ bool ok=false; double d=QInputDialog::getDouble(this, "Chamfer", "Distance:", 1.0, 0.0, 1e9, 3, &ok); if (!ok) return; if (m_canvas) m_canvas->startChamfer(d); });
+    topBar->addAction(chamferAct);
+    if (m_deleteSelectedAction) topBar->addAction(m_deleteSelectedAction);
 
-    // Layers menu (Hide/Isolate/Lock/ShowAll) + Layer Panel toggle
-    QMenu* layersMenuTb = addMenuGroup(topBar, "Layers", IconManager::icon("label"));
+    // Layers (Hide/Isolate/Lock/ShowAll) + Layer Panel toggle
+    addCategoryTo(topBar, "Layers");
     QAction* hideLayActTop = new QAction(IconManager::icon("eye-off"), "Hide", this);
     hideLayActTop->setToolTip("Hide Selected Layers (Ctrl+Shift+H)");
     connect(hideLayActTop, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->hideSelectedLayers(); });
-    layersMenuTb->addAction(hideLayActTop);
+    topBar->addAction(hideLayActTop);
     QAction* isoLayActTop = new QAction(IconManager::icon("filter"), "Isolate", this);
     isoLayActTop->setToolTip("Isolate Selection Layers (Ctrl+Shift+I)");
     connect(isoLayActTop, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->isolateSelectionLayers(); });
-    layersMenuTb->addAction(isoLayActTop);
+    topBar->addAction(isoLayActTop);
     QAction* lockLayActTop = new QAction(IconManager::icon("lock"), "Lock", this);
     lockLayActTop->setToolTip("Lock Selected Layers (Ctrl+Shift+L)");
     connect(lockLayActTop, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->lockSelectedLayers(); });
-    layersMenuTb->addAction(lockLayActTop);
-    QAction* showAllActTop = new QAction(IconManager::icon("eye"), "Show All Layers", this);
+    topBar->addAction(lockLayActTop);
+    QAction* showAllActTop = new QAction(IconManager::icon("eye"), "Show All", this);
     connect(showAllActTop, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->showAllLayers(); });
-    layersMenuTb->addAction(showAllActTop);
-    if (QToolButton* tb = qobject_cast<QToolButton*>(layersMenuTb->parentWidget())) tb->setToolTip("Hide, Isolate, Lock, Show All");
-    QAction* layerPanelAct = topBar->addAction(IconManager::icon("label"), "Layer Panel");
+    topBar->addAction(showAllActTop);
+    QAction* layerPanelAct = topBar->addAction(IconManager::icon("desktop"), "Layer Panel");
     layerPanelAct->setToolTip("Show/Hide Layers panel");
     connect(layerPanelAct, &QAction::triggered, this, [this](){ if (m_layersDock) m_layersDock->setVisible(!m_layersDock->isVisible()); });
+    // Inline Layer selector
+    {
+        QLabel* layerLabel = new QLabel(" Layer: ");
+        layerLabel->setStyleSheet("font-weight: bold;");
+        topBar->addWidget(layerLabel);
+        m_layerCombo = new QComboBox(this);
+        m_layerCombo->setMinimumWidth(140);
+        m_layerCombo->setMaximumWidth(220);
+        topBar->addWidget(m_layerCombo);
+        refreshLayerCombo();
+        connect(m_layerCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onLayerComboChanged);
+    }
 
-    // View menu
-    QMenu* viewMenuTb = addMenuGroup(topBar, "View", IconManager::icon("zoom-in"));
+    // View
+    addCategoryTo(topBar, "View");
     m_selectToolAction = new QAction(IconManager::icon("select"), "Select", this);
     m_selectToolAction->setShortcut(QKeySequence("ESC"));
     m_selectToolAction->setCheckable(true);
     m_selectToolAction->setChecked(true);
     connect(m_selectToolAction, &QAction::toggled, this, [this](bool on){ if(on) m_canvas->setToolMode(CanvasWidget::ToolMode::Select); });
-    viewMenuTb->addAction(m_selectToolAction);
+    topBar->addAction(m_selectToolAction);
     m_panToolAction = new QAction(IconManager::icon("pan"), "Pan", this);
     m_panToolAction->setShortcut(QKeySequence("P"));
     m_panToolAction->setCheckable(true);
     connect(m_panToolAction, &QAction::toggled, this, [this](bool on){ if(on) m_canvas->setToolMode(CanvasWidget::ToolMode::Pan); });
-    viewMenuTb->addAction(m_panToolAction);
+    topBar->addAction(m_panToolAction);
     m_zoomWindowToolAction = new QAction(IconManager::icon("zoom-window"), "Zoom Window", this);
     m_zoomWindowToolAction->setShortcut(QKeySequence("W"));
     m_zoomWindowToolAction->setCheckable(true);
     connect(m_zoomWindowToolAction, &QAction::toggled, this, [this](bool on){ if(on) m_canvas->setToolMode(CanvasWidget::ToolMode::ZoomWindow); });
-    viewMenuTb->addAction(m_zoomWindowToolAction);
+    topBar->addAction(m_zoomWindowToolAction);
     m_lassoToolAction = new QAction(IconManager::icon("lasso"), "Lasso", this);
     m_lassoToolAction->setCheckable(true);
     connect(m_lassoToolAction, &QAction::toggled, this, [this](bool on){ if(on) m_canvas->setToolMode(CanvasWidget::ToolMode::LassoSelect); });
-    viewMenuTb->addAction(m_lassoToolAction);
-    if (QToolButton* tb = qobject_cast<QToolButton*>(viewMenuTb->parentWidget())) tb->setToolTip("Select, Pan, Zoom Window, Lasso, Zoom In/Out, Extents, Home");
-    // Add zoom controls into View menu
+    topBar->addAction(m_lassoToolAction);
+    // Zoom controls
     QAction* zoomInAction = new QAction(IconManager::icon("zoom-in"), "Zoom In", this);
-    connect(zoomInAction, &QAction::triggered, m_canvas, &CanvasWidget::zoomIn);
+    connect(zoomInAction, &QAction::triggered, m_canvas, &CanvasWidget::zoomInAnimated);
     QAction* zoomOutAction = new QAction(IconManager::icon("zoom-out"), "Zoom Out", this);
-    connect(zoomOutAction, &QAction::triggered, m_canvas, &CanvasWidget::zoomOut);
+    connect(zoomOutAction, &QAction::triggered, m_canvas, &CanvasWidget::zoomOutAnimated);
     QAction* fitAction = new QAction(IconManager::icon("fit"), "Extents", this);
-    connect(fitAction, &QAction::triggered, m_canvas, &CanvasWidget::fitToWindow);
+    connect(fitAction, &QAction::triggered, m_canvas, &CanvasWidget::fitToWindowAnimated);
     QAction* homeAction = new QAction(IconManager::icon("home"), "Home", this);
     connect(homeAction, &QAction::triggered, m_canvas, &CanvasWidget::resetView);
-    viewMenuTb->addSeparator();
-    viewMenuTb->addAction(zoomInAction);
-    viewMenuTb->addAction(zoomOutAction);
-    viewMenuTb->addAction(fitAction);
-    viewMenuTb->addAction(homeAction);
+    topBar->addAction(zoomInAction);
+    topBar->addAction(zoomOutAction);
+    topBar->addAction(fitAction);
+    topBar->addAction(homeAction);
+    // Display toggles inline with View panel
+    {
+        QAction* toggleGridTop = new QAction(IconManager::icon("grid"), "Grid", this);
+        toggleGridTop->setCheckable(true);
+        toggleGridTop->setChecked(true);
+        connect(toggleGridTop, &QAction::toggled, m_canvas, &CanvasWidget::setShowGrid);
+        QAction* toggleLabelsTop = new QAction(IconManager::icon("label"), "Labels", this);
+        toggleLabelsTop->setCheckable(true);
+        toggleLabelsTop->setChecked(true);
+        connect(toggleLabelsTop, &QAction::toggled, m_canvas, &CanvasWidget::setShowLabels);
+        if (!m_crosshairToggleAction) m_crosshairToggleAction = new QAction(IconManager::icon("crosshair"), "Crosshair", this);
+        m_crosshairToggleAction->setCheckable(true);
+        m_crosshairToggleAction->setChecked(true);
+        connect(m_crosshairToggleAction, &QAction::toggled, m_canvas, &CanvasWidget::setShowCrosshair);
+        topBar->addAction(toggleGridTop);
+        topBar->addAction(toggleLabelsTop);
+        topBar->addAction(m_crosshairToggleAction);
+    }
 
-    // Aids menu (Snaps/Ortho/Polar/Dynamic)
-    QMenu* aidsMenuTb = addMenuGroup(topBar, "Aids", IconManager::icon("osnap"));
-    if (m_osnapAction) { m_osnapAction->setIcon(IconManager::icon("osnap")); aidsMenuTb->addAction(m_osnapAction); }
-    if (m_snapAction)  { m_snapAction->setIcon(IconManager::icon("snap"));  aidsMenuTb->addAction(m_snapAction); }
-    if (m_orthoAction) { m_orthoAction->setIcon(IconManager::icon("ortho")); aidsMenuTb->addAction(m_orthoAction); }
-    if (m_polarAction) { m_polarAction->setIcon(IconManager::icon("polar")); aidsMenuTb->addAction(m_polarAction); }
-    if (m_dynAction)   { m_dynAction->setIcon(IconManager::icon("desktop")); aidsMenuTb->addAction(m_dynAction); }
-    if (QToolButton* tb = qobject_cast<QToolButton*>(aidsMenuTb->parentWidget())) tb->setToolTip("OSNAP, SNAP, ORTHO, POLAR, DYN");
+    // Aids group omitted on top bar (kept in status bar for AutoCAD-like UX)
 
     // Insert a separator between primary CAD groups and secondary groups
     topBar->addSeparator();
 
     // Secondary groups: File | Edit | Data | Prefs | Plan
-    QMenu* fileMenuTb = addMenuGroup(topBar, "File", IconManager::icon("folder-open"));
+    QMenu* fileMenuTb = addMenuGroup(topBar, "File", IconManager::icon("file-menu"));
     if (m_newProjectAction) fileMenuTb->addAction(m_newProjectAction);
     if (m_openProjectAction) fileMenuTb->addAction(m_openProjectAction);
     if (m_saveProjectAction) fileMenuTb->addAction(m_saveProjectAction);
     if (m_exitAction) fileMenuTb->addAction(m_exitAction);
     if (QToolButton* tb = qobject_cast<QToolButton*>(fileMenuTb->parentWidget())) tb->setToolTip("New, Open, Save, Exit");
+    makeGroupDock(fileMenuTb, "File");
 
-    QMenu* editMenuTb = addMenuGroup(topBar, "Edit", IconManager::icon("arrow-back-up"));
+    QMenu* editMenuTb = addMenuGroup(topBar, "Edit", IconManager::icon("edit-menu"));
     if (m_undoAction) editMenuTb->addAction(m_undoAction);
     if (m_redoAction) editMenuTb->addAction(m_redoAction);
     if (m_deleteSelectedAction) editMenuTb->addAction(m_deleteSelectedAction);
     if (QToolButton* tb = qobject_cast<QToolButton*>(editMenuTb->parentWidget())) tb->setToolTip("Undo, Redo, Delete Selected");
+    makeGroupDock(editMenuTb, "Edit");
 
-    QMenu* dataMenuTb = addMenuGroup(topBar, "Data", IconManager::icon("file-import"));
+    QMenu* dataMenuTb = addMenuGroup(topBar, "Data", IconManager::icon("data-menu"));
     if (m_importPointsAction) dataMenuTb->addAction(m_importPointsAction);
     if (m_exportPointsAction) dataMenuTb->addAction(m_exportPointsAction);
     if (QToolButton* tb = qobject_cast<QToolButton*>(dataMenuTb->parentWidget())) tb->setToolTip("Import Coordinates, Export Coordinates");
+    makeGroupDock(dataMenuTb, "Data");
 
-    QMenu* prefsMenuTb = addMenuGroup(topBar, "Prefs", IconManager::icon("settings"));
+    QMenu* prefsMenuTb = addMenuGroup(topBar, "Prefs", IconManager::icon("prefs-menu"));
     if (m_preferencesAction) prefsMenuTb->addAction(m_preferencesAction);
     if (m_darkModeAction) prefsMenuTb->addAction(m_darkModeAction);
     if (m_resetLayoutAction) prefsMenuTb->addAction(m_resetLayoutAction);
     if (QToolButton* tb = qobject_cast<QToolButton*>(prefsMenuTb->parentWidget())) tb->setToolTip("Preferences, Dark Mode, Reset Layout");
+    makeGroupDock(prefsMenuTb, "Prefs");
 
-    QMenu* planMenuTb = addMenuGroup(topBar, "Plan", IconManager::icon("label"));
+    QMenu* planMenuTb = addMenuGroup(topBar, "Plan", IconManager::icon("plan-menu"));
     if (!m_toggleProjectPlanAction) {
-        m_toggleProjectPlanAction = new QAction(IconManager::icon("label"), "Project Plan", this);
+        m_toggleProjectPlanAction = new QAction(IconManager::icon("star"), "Project Plan", this);
         m_toggleProjectPlanAction->setCheckable(true);
         connect(m_toggleProjectPlanAction, &QAction::triggered, this, &MainWindow::toggleProjectPlanPanel);
     }
     planMenuTb->addAction(m_toggleProjectPlanAction);
     if (QToolButton* tb = qobject_cast<QToolButton*>(planMenuTb->parentWidget())) tb->setToolTip("Show/Hide Project Plan panel");
+    makeGroupDock(planMenuTb, "Plan");
 
     // Annotation group (menu)
     addCategoryTo(topBar, "Annotation");
     {
         QToolButton* annotBtn = new QToolButton(this);
-        annotBtn->setText("Annot");
+        annotBtn->setText("Annotation");
+        annotBtn->setStyleSheet("QToolButton { font-size: 10px; }");
         annotBtn->setPopupMode(QToolButton::InstantPopup);
         QMenu* annotMenu = new QMenu(annotBtn);
+        annotMenu->setTearOffEnabled(true);
         QAction* textAct = annotMenu->addAction("Text");
         QAction* dimAct = annotMenu->addAction("Dimension");
-        connect(textAct, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Text", "Text tool coming soon."); });
-        connect(dimAct, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Dimension", "Dimension tool coming soon."); });
+        connect(textAct, &QAction::triggered, this, [this](){
+            bool ok=false;
+            const QString txt = QInputDialog::getText(this, "Add Text", "Label:", QLineEdit::Normal, QString(), &ok);
+            if (!ok || txt.trimmed().isEmpty()) return;
+            ok=false;
+            double h = QInputDialog::getDouble(this, "Add Text", "Height (world units):", 2.0, 0.1, 1e9, 2, &ok);
+            if (!ok) return;
+            ok=false;
+            double ang = QInputDialog::getDouble(this, "Add Text", "Angle (deg):", 0.0, -360.0, 360.0, 1, &ok);
+            if (!ok) return;
+            if (m_canvas) m_canvas->addText(txt.trimmed(), m_lastMouseWorld, h, ang);
+        });
+        connect(dimAct, &QAction::triggered, this, [this](){
+            bool ok=false;
+            double h = QInputDialog::getDouble(this, "Add Dimension", "Text height:", 2.0, 0.1, 1e9, 2, &ok);
+            if (!ok) return;
+            int li = m_canvas ? m_canvas->selectedLineIndex() : -1;
+            if (li >= 0) {
+                QPointF a,b; if (!m_canvas->lineEndpoints(li,a,b)) return; QString layer = m_canvas->lineLayer(li); m_canvas->addDimension(a,b,h,layer); return;
+            }
+            const QStringList names = m_pointManager->getPointNames();
+            if (names.size() < 2) { QMessageBox::information(this, "Dimension", "Need at least two points."); return; }
+            QString aName = QInputDialog::getItem(this, "Dimension", "From point:", names, 0, false, &ok); if (!ok || aName.isEmpty()) return;
+            QString bName = QInputDialog::getItem(this, "Dimension", "To point:", names, 1, false, &ok); if (!ok || bName.isEmpty()) return;
+            Point pa = m_pointManager->getPoint(aName); Point pb = m_pointManager->getPoint(bName);
+            if (pa.name.isEmpty() || pb.name.isEmpty()) return;
+            m_canvas->addDimension(pa.toQPointF(), pb.toQPointF(), h);
+        });
         annotBtn->setMenu(annotMenu);
         topBar->addWidget(annotBtn);
     }
@@ -1122,6 +1759,7 @@ void MainWindow::setupToolbar()
         blocksBtn->setText("Blocks");
         blocksBtn->setPopupMode(QToolButton::InstantPopup);
         QMenu* blocksMenu = new QMenu(blocksBtn);
+        blocksMenu->setTearOffEnabled(true);
         QAction* insertBlk = blocksMenu->addAction("Insert Block...");
         QAction* createBlk = blocksMenu->addAction("Create Block from Selection");
         QAction* explodeBlk = blocksMenu->addAction("Explode");
@@ -1135,22 +1773,57 @@ void MainWindow::setupToolbar()
     // Properties quick access
     addCategoryTo(topBar, "Properties");
     QAction* propsAct = topBar->addAction(IconManager::icon("settings"), "Properties");
-    propsAct->setToolTip("Show/Hide Properties panel");
-    connect(propsAct, &QAction::triggered, this, [this](){ if (m_propertiesDock) m_propertiesDock->setVisible(!m_propertiesDock->isVisible()); });
+    propsAct->setToolTip("Show Properties tab");
+    connect(propsAct, &QAction::triggered, this, [this](){
+        if (m_layersDock) { m_layersDock->setVisible(true); m_layersDock->raise(); int rpw = AppSettings::rightPanelWidth(); if (rpw < 200) rpw = 200; m_layersDock->resize(rpw, m_layersDock->height()); }
+        if (m_rightTabs && m_propertiesPanel) m_rightTabs->setCurrentWidget(m_propertiesPanel);
+    });
 
     // Utilities group (menu)
     addCategoryTo(topBar, "Utilities");
     {
         QToolButton* utilBtn = new QToolButton(this);
-        utilBtn->setText("Utils");
+        utilBtn->setText("Utilities");
+        utilBtn->setStyleSheet("QToolButton { font-size: 10px; }");
         utilBtn->setPopupMode(QToolButton::InstantPopup);
         QMenu* utilMenu = new QMenu(utilBtn);
         QAction* idPt = utilMenu->addAction("ID Point");
         QAction* measAng = utilMenu->addAction("Measure Angle");
         QAction* listProps = utilMenu->addAction("List Properties");
-        connect(idPt, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Utilities", "ID Point coming soon."); });
-        connect(measAng, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Utilities", "Measure Angle coming soon."); });
-        connect(listProps, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Utilities", "List Properties coming soon."); });
+        connect(idPt, &QAction::triggered, this, [this](){
+            const auto pts = m_pointManager->getAllPoints();
+            if (pts.isEmpty()) { QMessageBox::information(this, "ID Point", "No coordinates defined."); return; }
+            const QPointF w = m_lastMouseWorld;
+            double bestD2 = std::numeric_limits<double>::max();
+            int bestIdx = -1;
+            for (int i=0;i<pts.size();++i) {
+                const auto& p = pts[i];
+                double dx = p.x - w.x(); double dy = p.y - w.y(); double d2 = dx*dx + dy*dy;
+                if (d2 < bestD2) { bestD2 = d2; bestIdx = i; }
+            }
+            if (bestIdx >= 0) {
+                const auto& p = pts[bestIdx];
+                const QString msg = QString("Nearest point: %1\nX: %2  Y: %3  Z: %4\nDistance: %5")
+                    .arg(p.name)
+                    .arg(p.x, 0, 'f', 3)
+                    .arg(p.y, 0, 'f', 3)
+                    .arg(p.z, 0, 'f', 3)
+                    .arg(qSqrt(bestD2), 0, 'f', 3);
+                QMessageBox::information(this, "ID Point", msg);
+            }
+        });
+        connect(measAng, &QAction::triggered, this, [this](){
+            const QStringList names = m_pointManager->getPointNames();
+            if (names.size() < 2) { QMessageBox::information(this, "Measure Angle", "Need at least two points."); return; }
+            bool ok=false; QString a = QInputDialog::getItem(this, "Measure Angle", "From point:", names, 0, false, &ok); if (!ok || a.isEmpty()) return;
+            QString b = QInputDialog::getItem(this, "Measure Angle", "To point:", names, 1, false, &ok); if (!ok || b.isEmpty()) return;
+            Point p1 = m_pointManager->getPoint(a); Point p2 = m_pointManager->getPoint(b);
+            if (p1.name.isEmpty() || p2.name.isEmpty()) { QMessageBox::information(this, "Measure Angle", "Invalid points."); return; }
+            double az = SurveyCalculator::azimuth(p1, p2);
+            QString dms = SurveyCalculator::toDMS(az);
+            QMessageBox::information(this, "Measure Angle", QString("Azimuth %1 -> %2: %3° (%4)").arg(a, b).arg(az, 0, 'f', 4).arg(dms));
+        });
+        connect(listProps, &QAction::triggered, this, &MainWindow::showSelectedProperties);
         utilBtn->setMenu(utilMenu);
         topBar->addWidget(utilBtn);
     }
@@ -1158,14 +1831,21 @@ void MainWindow::setupToolbar()
     // Break to second row
     addToolBarBreak(Qt::TopToolBarArea);
 
-    // Row 2: Draw | Survey | Measure | Display
     QToolBar* bottomBar = addToolBar("TopBarRow2");
+    m_bottomBar = bottomBar;
     bottomBar->setObjectName("TopBarRow2");
     bottomBar->setAllowedAreas(Qt::TopToolBarArea);
     bottomBar->setMovable(true);
     bottomBar->setFloatable(false);
     bottomBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
-    bottomBar->setIconSize(QSize(16, 16));
+    bottomBar->setIconSize(QSize(14, 14));
+    // Hover/press feedback for second row
+    bottomBar->setStyleSheet(
+        "QToolBar { background: transparent; }"
+        " QToolBar QToolButton { border-radius: 4px; padding: 1px 3px; font-size: 10px; }"
+        " QToolBar QToolButton:hover { background-color: rgba(74,144,217,0.18); }"
+        " QToolBar QToolButton:pressed { background-color: rgba(74,144,217,0.30); }"
+    );
     
     // Survey group
     addCategoryTo(bottomBar, "Survey");
@@ -1183,31 +1863,7 @@ void MainWindow::setupToolbar()
     if (m_calcAreaAction) bottomBar->addAction(m_calcAreaAction);
     if (m_calcAzimuthAction) bottomBar->addAction(m_calcAzimuthAction);
 
-    addCategoryTo(bottomBar, "Display");
-    QLabel* layerLabel = new QLabel(" Layer: ");
-    layerLabel->setStyleSheet("font-weight: bold;");
-    bottomBar->addWidget(layerLabel);
-    m_layerCombo = new QComboBox(this);
-    m_layerCombo->setMinimumWidth(140);
-    m_layerCombo->setMaximumWidth(220);
-    bottomBar->addWidget(m_layerCombo);
-    refreshLayerCombo();
-    connect(m_layerCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onLayerComboChanged);
-
-    QAction* toggleGrid = bottomBar->addAction(IconManager::icon("grid"), "Grid");
-    toggleGrid->setCheckable(true);
-    toggleGrid->setChecked(true);
-    connect(toggleGrid, &QAction::toggled, m_canvas, &CanvasWidget::setShowGrid);
-
-    QAction* toggleLabels = bottomBar->addAction(IconManager::icon("label"), "Labels");
-    toggleLabels->setCheckable(true);
-    toggleLabels->setChecked(true);
-    connect(toggleLabels, &QAction::toggled, m_canvas, &CanvasWidget::setShowLabels);
-
-    m_crosshairToggleAction = bottomBar->addAction(IconManager::icon("crosshair"), "Crosshair");
-    m_crosshairToggleAction->setCheckable(true);
-    m_crosshairToggleAction->setChecked(true);
-    connect(m_crosshairToggleAction, &QAction::toggled, m_canvas, &CanvasWidget::setShowCrosshair);
+    // Display group moved to top View panel; keep second row compact
 
     // Selection tools
     addCategoryTo(bottomBar, "Select");
@@ -1217,25 +1873,35 @@ void MainWindow::setupToolbar()
     QAction* invSelActTb = bottomBar->addAction(IconManager::icon("clear"), "Invert");
     invSelActTb->setToolTip("Invert Selection (Ctrl+I)");
     connect(invSelActTb, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->invertSelectionVisible(); });
-    QAction* selByLayerActTb = bottomBar->addAction(IconManager::icon("label"), "ByLayer");
+    QAction* selByLayerActTb = bottomBar->addAction(IconManager::icon("search"), "ByLayer");
     selByLayerActTb->setToolTip("Select by Current Layer");
     connect(selByLayerActTb, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->selectByCurrentLayer(); });
     QAction* clearSelActTb = bottomBar->addAction(IconManager::icon("eraser"), "Clear");
     clearSelActTb->setToolTip("Clear Selection (Esc)");
     connect(clearSelActTb, &QAction::triggered, this, [this](){ if (m_canvas) { m_canvas->clearSelection(); m_canvas->update(); onSelectionChanged(0,0); } });
 
-    QAction* hideSelLayersTb = bottomBar->addAction(IconManager::icon("eye-off"), "Hide");
+    QAction* hideSelLayersTb = bottomBar->addAction(IconManager::icon("filter-crossed"), "Hide");
     hideSelLayersTb->setToolTip("Hide Selected Layers (Ctrl+Shift+H)");
     connect(hideSelLayersTb, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->hideSelectedLayers(); });
-    QAction* isoSelLayersTb = bottomBar->addAction(IconManager::icon("filter"), "Isolate");
+    QAction* isoSelLayersTb = bottomBar->addAction(IconManager::icon("funnel"), "Isolate");
     isoSelLayersTb->setToolTip("Isolate Selection Layers (Ctrl+Shift+I)");
     connect(isoSelLayersTb, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->isolateSelectionLayers(); });
-    QAction* lockSelLayersTb = bottomBar->addAction(IconManager::icon("lock"), "Lock");
+    QAction* lockSelLayersTb = bottomBar->addAction(IconManager::icon("lock-screen"), "Lock");
     lockSelLayersTb->setToolTip("Lock Selected Layers (Ctrl+Shift+L)");
     connect(lockSelLayersTb, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->lockSelectedLayers(); });
-    QAction* showAllLayersTb = bottomBar->addAction(IconManager::icon("eye"), "ShowAll");
+    QAction* showAllLayersTb = bottomBar->addAction(IconManager::icon("preview"), "ShowAll");
     showAllLayersTb->setToolTip("Show All Layers (Ctrl+Shift+S)");
     connect(showAllLayersTb, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->showAllLayers(); });
+
+    topBar->addSeparator();
+    m_moreButton = new QToolButton(this);
+    m_moreButton->setText("More");
+    m_moreButton->setStyleSheet("QToolButton { font-size: 10px; }");
+    m_moreButton->setPopupMode(QToolButton::InstantPopup);
+    if (!m_moreButton->menu()) m_moreButton->setMenu(new QMenu(m_moreButton));
+    connect(m_moreButton->menu(), &QMenu::aboutToShow, this, &MainWindow::updateMoreDock);
+    topBar->addWidget(m_moreButton);
+    updateMoreDock();
 
     // Group tool selection actions for exclusivity
     QActionGroup* toolGroup = new QActionGroup(this);
@@ -1251,6 +1917,9 @@ void MainWindow::setupToolbar()
     if (m_drawRectToolAction) m_drawRectToolAction->setActionGroup(toolGroup);
     // Include Lengthen mode in exclusivity
     lengthenAct->setActionGroup(toolGroup);
+    enableOverflowTearOff(topBar);
+    enableOverflowTearOff(bottomBar);
+    updateMoreDock();
     // Initial pin UI state
     updatePinnedGroupsUI();
 }
@@ -1259,6 +1928,18 @@ void MainWindow::setupConnections()
 {
     // Canvas signals
     connect(m_canvas, &CanvasWidget::mouseWorldPosition, this, &MainWindow::updateCoordinates);
+    // Debounce OSNAP hint to avoid flicker
+    if (!m_osnapHintTimer) { m_osnapHintTimer = new QTimer(this); m_osnapHintTimer->setSingleShot(true); m_osnapHintTimer->setInterval(50); }
+    connect(m_canvas, &CanvasWidget::osnapHintChanged, this, [this](const QString& hint){
+        m_pendingOsnapHint = hint;
+        if (m_osnapHintTimer) {
+            disconnect(m_osnapHintTimer, nullptr, nullptr, nullptr);
+            connect(m_osnapHintTimer, &QTimer::timeout, this, [this](){ if (m_measureLabel) m_measureLabel->setText(m_pendingOsnapHint); });
+            m_osnapHintTimer->start();
+        } else {
+            if (m_measureLabel) m_measureLabel->setText(hint);
+        }
+    });
     connect(m_canvas, &CanvasWidget::canvasClicked, this, &MainWindow::handleCanvasClick);
     connect(m_canvas, &CanvasWidget::zoomChanged, this, &MainWindow::onZoomChanged);
     connect(m_canvas, &CanvasWidget::drawingDistanceChanged, this, &MainWindow::onDrawingDistanceChanged);
@@ -1294,17 +1975,13 @@ void MainWindow::setupConnections()
 void MainWindow::updatePinnedGroupsUI()
 {
     if (!m_topBar) return;
-    // Remove any existing inline Draw actions
     for (QAction* a : m_drawInlineActions) {
         if (!a) continue;
         m_topBar->removeAction(a);
     }
     m_drawInlineActions.clear();
-
     if (!m_drawGroupPinned) return;
-    // Ensure we have an anchor to insert before (placed after the pin button)
     if (!m_drawAnchorAction) {
-        // Fallback: add a separator at end as anchor
         m_drawAnchorAction = m_topBar->addSeparator();
     }
     auto insertInline = [&](QAction* act){
@@ -1320,26 +1997,169 @@ void MainWindow::updatePinnedGroupsUI()
     insertInline(m_drawRectToolAction);
 }
 
+void MainWindow::enableOverflowTearOff(QToolBar* bar)
+{
+    if (!bar) return;
+    auto ensure = [bar]() {
+        QToolButton* ext = bar->findChild<QToolButton*>("qt_toolbar_ext_button");
+        if (!ext) return;
+        ext->setPopupMode(QToolButton::InstantPopup);
+        QMenu* m = ext->menu();
+        if (m) m->setTearOffEnabled(true);
+        if (!ext->property("tearoff_hooked").toBool()) {
+            QObject::connect(ext, &QToolButton::pressed, bar, [ext]() {
+                QMenu* mm = ext->menu();
+                if (mm) mm->setTearOffEnabled(true);
+            });
+            ext->setProperty("tearoff_hooked", true);
+        }
+    };
+    ensure();
+    QTimer::singleShot(0, bar, ensure);
+    QTimer::singleShot(200, bar, ensure);
+}
+
+void MainWindow::updateMoreDock()
+{
+    if (!m_moreButton || !m_moreButton->menu()) return;
+    QMenu* more = m_moreButton->menu();
+    more->clear();
+    // Ensure menu is visible (non-transparent) per theme
+    const QString menuCss = m_darkMode
+        ? QStringLiteral("QMenu { background-color: #2a2a2a; color: #eaeaea; border: 1px solid #4a90d9; } QMenu::item:selected { background-color: rgba(74,144,217,0.30); }")
+        : QStringLiteral("QMenu { background-color: #ffffff; color: #333333; border: 1px solid #c8c8c8; } QMenu::item:selected { background-color: rgba(74,144,217,0.18); }");
+    more->setStyleSheet(menuCss);
+
+    auto addSection = [&](const QString& title){
+        QAction* section = new QAction(title, more);
+        section->setEnabled(false);
+        more->addAction(section);
+    };
+
+    auto populateMenuFromBar = [&](QToolBar* src, const QString& title){
+        if (!src) return int(0);
+        int added = 0;
+        // Prefer Qt's built-in overflow menu if available
+        if (QToolButton* ext = src->findChild<QToolButton*>("qt_toolbar_ext_button")) {
+            if (QMenu* m = ext->menu()) {
+                const auto acts = m->actions();
+                if (!acts.isEmpty()) addSection(title);
+                for (QAction* a : acts) {
+                    if (!a || a->isSeparator()) continue;
+                    more->addAction(a);
+                    ++added;
+                }
+                if (added > 0) more->addSeparator();
+                return added;
+            }
+        }
+        // Fallback: infer overflow by invisible widgets in the toolbar
+        QList<QAction*> toAdd;
+        for (QAction* a : src->actions()) {
+            if (!a || a->isSeparator()) continue;
+            QWidget* w = src->widgetForAction(a);
+            if (w == m_moreButton) continue;
+            bool overflowed = (w && !w->isVisible());
+            if (overflowed) toAdd.append(a);
+        }
+        if (!toAdd.isEmpty()) addSection(title);
+        for (QAction* a : toAdd) { more->addAction(a); ++added; }
+        if (added > 0) more->addSeparator();
+        return added;
+    };
+
+    int topCount = populateMenuFromBar(m_topBar, QStringLiteral("Top toolbar"));
+    int bottomCount = populateMenuFromBar(m_bottomBar, QStringLiteral("Second row"));
+    const bool any = (topCount + bottomCount) > 0;
+
+    // Add pin/lock action at the bottom of the menu
+    if (!m_morePinAction) {
+        m_morePinAction = new QAction(tr("Pin 'More' Panel"), more);
+        m_morePinAction->setCheckable(true);
+        connect(m_morePinAction, &QAction::toggled, this, [this](bool on){
+            m_morePinned = on;
+            if (on) {
+                // Ensure dock exists and show it
+                if (!m_moreDock) {
+                    m_moreDock = new QDockWidget(tr("More"), this);
+                    m_moreDock->setObjectName("MoreDock");
+                    QWidget* mw = new QWidget(m_moreDock);
+                    QVBoxLayout* lay = new QVBoxLayout(mw);
+                    lay->setContentsMargins(6,6,6,6);
+                    QToolBar* overflowTop = new QToolBar(tr("Overflow (Top)"), mw);
+                    overflowTop->setObjectName("MoreOverflowTop");
+                    overflowTop->setIconSize(QSize(14,14));
+                    QToolBar* overflowBottom = new QToolBar(tr("Overflow (Bottom)"), mw);
+                    overflowBottom->setObjectName("MoreOverflowBottom");
+                    overflowBottom->setIconSize(QSize(14,14));
+                    lay->addWidget(overflowTop);
+                    lay->addWidget(overflowBottom);
+                    mw->setLayout(lay);
+                    mw->setStyleSheet(m_darkMode ? QStringLiteral("QWidget { background-color: #2a2a2a; }") : QStringLiteral("QWidget { background-color: #ffffff; }"));
+                    m_moreDock->setWidget(mw);
+                    addDockWidget(Qt::RightDockWidgetArea, m_moreDock);
+                    connect(m_moreDock, &QDockWidget::visibilityChanged, this, [this](bool vis){
+                        if (m_morePinAction) { QSignalBlocker b(m_morePinAction); m_morePinAction->setChecked(vis); }
+                        if (!vis) m_morePinned = false;
+                    });
+                }
+                m_moreDock->show();
+                m_moreDock->raise();
+            } else {
+                if (m_moreDock) m_moreDock->hide();
+            }
+            // Repopulate to reflect state
+            updateMoreDock();
+        });
+    }
+    more->addSeparator();
+    more->addAction(m_morePinAction);
+    if (m_morePinAction) m_morePinAction->setChecked(m_morePinned);
+
+    // Mirror into dock when pinned
+    if (m_morePinned) {
+        if (!m_moreDock) {
+            // Trigger creation via action to keep logic in one place
+            if (m_morePinAction && !m_morePinAction->isChecked()) {
+                QSignalBlocker b(m_morePinAction);
+                m_morePinAction->setChecked(true);
+            }
+        }
+        QToolBar* overflowTop = m_moreDock ? m_moreDock->findChild<QToolBar*>("MoreOverflowTop") : nullptr;
+        QToolBar* overflowBottom = m_moreDock ? m_moreDock->findChild<QToolBar*>("MoreOverflowBottom") : nullptr;
+        auto clearBar = [](QToolBar* tb){ if (!tb) return; const auto acts = tb->actions(); for (QAction* a : acts) tb->removeAction(a); };
+        clearBar(overflowTop);
+        clearBar(overflowBottom);
+        auto populateBar = [&](QToolBar* src, QToolBar* dst){
+            if (!src || !dst) return int(0);
+            int added = 0;
+            if (QToolButton* ext = src->findChild<QToolButton*>("qt_toolbar_ext_button")) {
+                if (QMenu* m = ext->menu()) {
+                    for (QAction* a : m->actions()) { if (a && !a->isSeparator()) { dst->addAction(a); ++added; } }
+                    return added;
+                }
+            }
+            for (QAction* a : src->actions()) {
+                if (!a || a->isSeparator()) continue; QWidget* w = src->widgetForAction(a); if (w == m_moreButton) continue; if (w && !w->isVisible()) { dst->addAction(a); ++added; }
+            }
+            return added;
+        };
+        populateBar(m_topBar, overflowTop);
+        populateBar(m_bottomBar, overflowBottom);
+        if (m_moreDock && !m_moreDock->isVisible()) m_moreDock->show();
+    }
+
+    m_moreButton->setVisible(any);
+}
+
 void MainWindow::executeCommand()
 {
-    QString command = m_commandInput->text();
+    QString command = m_commandInput ? m_commandInput->text() : QString();
     if (command.isEmpty()) return;
-    
-    // Show command in output
-    m_commandOutput->append(QString("> %1").arg(command));
-    
-    // Process command
-    QString result = m_commandProcessor->processCommand(command);
-    
-    // Show result
-    if (!result.isEmpty()) {
-        m_commandOutput->append(result);
-    }
-    
-    // Clear input
-    m_commandInput->clear();
-    
-    // Update UI
+    if (m_commandOutput) m_commandOutput->append(QString("> %1").arg(command));
+    QString result = m_commandProcessor ? m_commandProcessor->processCommand(command) : QString();
+    if (!result.isEmpty() && m_commandOutput) m_commandOutput->append(result);
+    if (m_commandInput) m_commandInput->clear();
     updatePointsTable();
     updateStatus();
 }
@@ -1407,19 +2227,102 @@ void MainWindow::newProject()
         m_commandOutput->clear();
         updatePointsTable();
         updateStatus();
+        if (m_centerStack && m_canvas) m_centerStack->setCurrentWidget(m_canvas);
     }
 }
 
 void MainWindow::openProject()
 {
-    // Alias to Import for now
-    importCoordinates();
+    const QString fileName = QFileDialog::getOpenFileName(this, "Open Project",
+                                                          QString(),
+                                                          "SiteSurveyor Project (*.ssproj *.json);;All Files (*)");
+    if (fileName.isEmpty()) return;
+    QFile f(fileName);
+    if (!f.open(QIODevice::ReadOnly)) { QMessageBox::warning(this, "Open Project", QString("Failed to open %1").arg(fileName)); return; }
+    const QByteArray data = f.readAll(); f.close();
+    QJsonParseError err; QJsonDocument doc = QJsonDocument::fromJson(data, &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) { QMessageBox::warning(this, "Open Project", "Invalid project file"); return; }
+    QJsonObject root = doc.object();
+    if (root.value("type").toString() != QLatin1String("SiteSurveyorProject")) { QMessageBox::warning(this, "Open Project", "Unsupported project type"); return; }
+    // Clear
+    m_pointManager->clearAllPoints(); m_canvas->clearAll();
+    // Layers
+    if (m_layerManager) {
+        // Remove all non-default layers
+        const auto existing = m_layerManager->layers();
+        for (const auto& L : existing) { if (L.name != "0") m_layerManager->removeLayer(L.name); }
+        // Add from file
+        QJsonArray jlayers = root.value("layers").toArray();
+        for (const auto& v : jlayers) {
+            QJsonObject o = v.toObject();
+            QString name = o.value("name").toString();
+            QColor color(o.value("r").toInt(200), o.value("g").toInt(200), o.value("b").toInt(200));
+            bool vis = o.value("visible").toBool(true);
+            bool lock = o.value("locked").toBool(false);
+            if (name.isEmpty() || name == "0") continue;
+            m_layerManager->addLayer(name, color);
+            m_layerManager->setLayerVisible(name, vis);
+            m_layerManager->setLayerLocked(name, lock);
+        }
+        QString cur = root.value("currentLayer").toString(); if (!cur.isEmpty()) m_layerManager->setCurrentLayer(cur);
+    }
+    // Points
+    for (const auto& v : root.value("points").toArray()) {
+        QJsonObject o = v.toObject(); Point p(o.value("name").toString(), o.value("x").toDouble(), o.value("y").toDouble(), o.value("z").toDouble());
+        m_pointManager->addPoint(p); m_canvas->addPoint(p);
+        QString layer = o.value("layer").toString(); if (!layer.isEmpty()) m_canvas->setPointLayer(p.name, layer);
+    }
+    // Lines
+    for (const auto& v : root.value("lines").toArray()) {
+        QJsonObject o = v.toObject(); QPointF a(o.value("ax").toDouble(), o.value("ay").toDouble()); QPointF b(o.value("bx").toDouble(), o.value("by").toDouble());
+        m_canvas->addLine(a, b); QString layer = o.value("layer").toString(); int idx = m_canvas->lineCount()-1; if (idx>=0 && !layer.isEmpty()) m_canvas->setLineLayer(idx, layer);
+    }
+    // Texts
+    for (const auto& v : root.value("texts").toArray()) {
+        QJsonObject o = v.toObject();
+        const QString t = o.value("text").toString();
+        const QPointF pos(o.value("x").toDouble(), o.value("y").toDouble());
+        const double h = o.value("height").toDouble(2.0);
+        const double ang = o.value("angle").toDouble(0.0);
+        const QString layer = o.value("layer").toString();
+        if (!t.isEmpty()) m_canvas->addText(t, pos, h, ang, layer);
+    }
+    updatePointsTable(); updateStatus();
+    showToast(QStringLiteral("Project loaded"));
+    if (m_centerStack && m_canvas) m_centerStack->setCurrentWidget(m_canvas);
 }
 
 void MainWindow::saveProject()
 {
-    // Alias to Export for now
-    exportCoordinates();
+    const QString fileName = QFileDialog::getSaveFileName(this, "Save Project As",
+                                                          QString(),
+                                                          "SiteSurveyor Project (*.ssproj *.json);;All Files (*)");
+    if (fileName.isEmpty()) return;
+    QJsonObject root; root["type"] = QStringLiteral("SiteSurveyorProject"); root["version"] = 1;
+    // Settings (minimal)
+    QJsonObject settings; settings["gaussMode"] = AppSettings::gaussMode(); settings["use3D"] = AppSettings::use3D(); settings["units"] = AppSettings::measurementUnits(); settings["angleFormat"] = AppSettings::angleFormat(); settings["crs"] = AppSettings::crs(); root["settings"] = settings;
+    // Layers
+    QJsonArray jlayers; if (m_layerManager) {
+        for (const auto& L : m_layerManager->layers()) { QJsonObject o; o["name"] = L.name; o["r"] = L.color.red(); o["g"] = L.color.green(); o["b"] = L.color.blue(); o["visible"] = L.visible; o["locked"] = L.locked; jlayers.append(o); }
+        root["currentLayer"] = m_layerManager->currentLayer();
+    }
+    root["layers"] = jlayers;
+    // Points
+    QJsonArray points; for (const auto& p : m_pointManager->getAllPoints()) { QJsonObject o; o["name"] = p.name; o["x"] = p.x; o["y"] = p.y; o["z"] = p.z; o["layer"] = m_canvas ? m_canvas->pointLayer(p.name) : QStringLiteral("0"); points.append(o); } root["points"] = points;
+    // Lines
+    QJsonArray lines; if (m_canvas) { for (int i=0;i<m_canvas->lineCount();++i) { QPointF a,b; if (!m_canvas->lineEndpoints(i,a,b)) continue; QJsonObject o; o["ax"] = a.x(); o["ay"] = a.y(); o["bx"] = b.x(); o["by"] = b.y(); o["layer"] = m_canvas->lineLayer(i); lines.append(o);} } root["lines"] = lines;
+    // Texts
+    QJsonArray texts; if (m_canvas) {
+        const int n = m_canvas->textCount();
+        for (int i=0;i<n;++i) {
+            QString t; QPointF pos; double h=0.0, ang=0.0; QString layer;
+            if (!m_canvas->textData(i, t, pos, h, ang, layer)) continue;
+            QJsonObject o; o["text"] = t; o["x"] = pos.x(); o["y"] = pos.y(); o["height"] = h; o["angle"] = ang; o["layer"] = layer; texts.append(o);
+        }
+    } root["texts"] = texts;
+    QSaveFile f(fileName); if (!f.open(QIODevice::WriteOnly)) { QMessageBox::warning(this, "Save Project", QString("Failed to write %1").arg(fileName)); return; }
+    f.write(QJsonDocument(root).toJson(QJsonDocument::Indented)); f.commit();
+    showToast(QStringLiteral("Project saved"));
 }
 
 void MainWindow::importCoordinates()
@@ -1449,7 +2352,11 @@ void MainWindow::importCoordinates()
         double z = 0.0;
         if (parts.size() > 3) z = parts.at(3).trimmed().toDouble(&okz);
         if (!okx || !oky || !okz || name.isEmpty()) continue;
-        if (m_pointManager->addPoint(name, x, y, z)) ++added;
+        if (m_pointManager->addPoint(name, x, y, z)) {
+            Point p(name, x, y, z);
+            m_canvas->addPoint(p);
+            ++added;
+        }
     }
     f.close();
     updatePointsTable();
@@ -1457,6 +2364,8 @@ void MainWindow::importCoordinates()
     AppSettings::addRecentFile(fileName);
     if (m_welcomeWidget) m_welcomeWidget->reload();
     if (m_commandOutput) m_commandOutput->append(QString("Imported %1 points from %2").arg(added).arg(QFileInfo(fileName).fileName()));
+    showToast(QString("Imported %1 points").arg(added));
+    if (m_centerStack && m_canvas) m_centerStack->setCurrentWidget(m_canvas);
 }
 
 void MainWindow::importCoordinatesFrom(const QString& filePath)
@@ -1483,7 +2392,11 @@ void MainWindow::importCoordinatesFrom(const QString& filePath)
         double z = 0.0;
         if (parts.size() > 3) z = parts.at(3).trimmed().toDouble(&okz);
         if (!okx || !oky || !okz || name.isEmpty()) continue;
-        if (m_pointManager->addPoint(name, x, y, z)) ++added;
+        if (m_pointManager->addPoint(name, x, y, z)) {
+            Point p(name, x, y, z);
+            m_canvas->addPoint(p);
+            ++added;
+        }
     }
     f.close();
     updatePointsTable();
@@ -1491,6 +2404,8 @@ void MainWindow::importCoordinatesFrom(const QString& filePath)
     AppSettings::addRecentFile(filePath);
     if (m_welcomeWidget) m_welcomeWidget->reload();
     if (m_commandOutput) m_commandOutput->append(QString("Imported %1 points from %2").arg(added).arg(QFileInfo(filePath).fileName()));
+    showToast(QString("Imported %1 points").arg(added));
+    if (m_centerStack && m_canvas) m_centerStack->setCurrentWidget(m_canvas);
 }
 
 void MainWindow::exportCoordinates()
@@ -1513,6 +2428,7 @@ void MainWindow::exportCoordinates()
     }
     f.close();
     if (m_commandOutput) m_commandOutput->append(QString("Exported %1 points to %2").arg(pts.size()).arg(QFileInfo(fileName).fileName()));
+    showToast(QString("Exported %1 points").arg(pts.size()));
 }
 
 void MainWindow::calculateDistance()
@@ -1558,6 +2474,17 @@ void MainWindow::calculateArea()
     const QString msg = QString("Area (%1 points) = %2 %3").arg(poly.size()).arg(A_m2 * factor2, 0, 'f', 3).arg(unit2);
     QMessageBox::information(this, "Area", msg);
     if (m_commandOutput) m_commandOutput->append(msg);
+}
+
+void MainWindow::drawRegularPolygon()
+{
+    bool ok=false;
+    int sides = QInputDialog::getInt(this, "Regular Polygon", "Number of sides:", 5, 3, 128, 0, &ok);
+    if (!ok) return;
+    if (m_canvas) {
+        m_canvas->startRegularPolygonByEdge(sides);
+        statusBar()->showMessage(QString("Regular polygon: pick first edge point (%1 sides)").arg(sides), 3000);
+    }
 }
 
 void MainWindow::calculateAzimuth()
@@ -1636,6 +2563,7 @@ void MainWindow::updatePointsTable()
 
 void MainWindow::updateCoordinates(const QPointF& worldPos)
 {
+    m_lastMouseWorld = worldPos;
     if (AppSettings::gaussMode()) {
         m_coordLabel->setText(QString("Y: %1  X: %2")
                              .arg(worldPos.y(), 0, 'f', 3)
@@ -1683,6 +2611,7 @@ void MainWindow::showSettings()
                 updateStatus();
                 refreshLayerCombo();
                 if (m_canvas) m_canvas->update();
+                if (m_welcomeWidget) m_welcomeWidget->reload();
             });
         }
     }
@@ -1690,23 +2619,9 @@ void MainWindow::showSettings()
     m_settingsDialog->show();
     m_settingsDialog->raise();
     m_settingsDialog->activateWindow();
+    fadeInWidget(m_settingsDialog);
 }
 
-void MainWindow::showLicense()
-{
-    if (!m_licenseDialog) {
-        m_licenseDialog = new LicenseDialog(this);
-        // React to license saves and discipline changes
-        connect(m_licenseDialog, &LicenseDialog::licenseSaved, this, &MainWindow::onLicenseActivated);
-        connect(m_licenseDialog, &LicenseDialog::disciplineChanged, this, &MainWindow::onLicenseActivated);
-    }
-    if (m_licenseDialog) {
-        m_licenseDialog->reload();
-        m_licenseDialog->show();
-        m_licenseDialog->raise();
-        m_licenseDialog->activateWindow();
-    }
-}
 
 void MainWindow::showJoinPolar()
 {
@@ -1722,6 +2637,7 @@ void MainWindow::showJoinPolar()
     m_joinDialog->show();
     m_joinDialog->raise();
     m_joinDialog->activateWindow();
+    fadeInWidget(m_joinDialog);
 }
 
 void MainWindow::showPolarInput()
@@ -1737,6 +2653,26 @@ void MainWindow::showPolarInput()
     m_polarDialog->show();
     m_polarDialog->raise();
     m_polarDialog->activateWindow();
+    fadeInWidget(m_polarDialog);
+}
+
+void MainWindow::showMassPolar()
+{
+    if (!m_massPolarDlg) {
+        m_massPolarDlg = new MassPolarDialog(m_pointManager, m_canvas, this);
+        if (m_pointManager) {
+            connect(m_pointManager, &PointManager::pointAdded, m_massPolarDlg, &MassPolarDialog::reload);
+            connect(m_pointManager, &PointManager::pointRemoved, m_massPolarDlg, &MassPolarDialog::reload);
+            connect(m_pointManager, &PointManager::pointsCleared, m_massPolarDlg, &MassPolarDialog::reload);
+        }
+    }
+    if (m_massPolarDlg) {
+        m_massPolarDlg->reload();
+        m_massPolarDlg->show();
+        m_massPolarDlg->raise();
+        m_massPolarDlg->activateWindow();
+        fadeInWidget(m_massPolarDlg);
+    }
 }
 
 void MainWindow::showTraverse()
@@ -1754,7 +2690,203 @@ void MainWindow::showTraverse()
         m_traverseDialog->show();
         m_traverseDialog->raise();
         m_traverseDialog->activateWindow();
+        fadeInWidget(m_traverseDialog);
     }
+}
+
+void MainWindow::showIntersectResection()
+{
+    if (!m_intersectResectionDlg) {
+        m_intersectResectionDlg = new IntersectResectionDialog(m_pointManager, m_canvas, this);
+        if (m_pointManager) {
+            connect(m_pointManager, &PointManager::pointAdded, m_intersectResectionDlg, &IntersectResectionDialog::reload);
+            connect(m_pointManager, &PointManager::pointRemoved, m_intersectResectionDlg, &IntersectResectionDialog::reload);
+            connect(m_pointManager, &PointManager::pointsCleared, m_intersectResectionDlg, &IntersectResectionDialog::reload);
+        }
+    }
+    if (m_intersectResectionDlg) {
+        m_intersectResectionDlg->reload();
+        m_intersectResectionDlg->show();
+        m_intersectResectionDlg->raise();
+        m_intersectResectionDlg->activateWindow();
+        fadeInWidget(m_intersectResectionDlg);
+    }
+}
+
+void MainWindow::showLeveling()
+{
+    if (!m_levelingDlg) {
+        m_levelingDlg = new LevelingDialog(m_pointManager, m_canvas, this);
+        if (m_pointManager) {
+            connect(m_pointManager, &PointManager::pointAdded, m_levelingDlg, &LevelingDialog::reload);
+            connect(m_pointManager, &PointManager::pointRemoved, m_levelingDlg, &LevelingDialog::reload);
+            connect(m_pointManager, &PointManager::pointsCleared, m_levelingDlg, &LevelingDialog::reload);
+        }
+    }
+    if (m_levelingDlg) {
+        m_levelingDlg->reload();
+        m_levelingDlg->show();
+        m_levelingDlg->raise();
+        m_levelingDlg->activateWindow();
+        fadeInWidget(m_levelingDlg);
+    }
+}
+
+void MainWindow::showLSNetwork()
+{
+    if (!m_lsNetworkDlg) {
+        m_lsNetworkDlg = new LSNetworkDialog(m_pointManager, m_canvas, this);
+        if (m_pointManager) {
+            connect(m_pointManager, &PointManager::pointAdded, m_lsNetworkDlg, &LSNetworkDialog::reload);
+            connect(m_pointManager, &PointManager::pointRemoved, m_lsNetworkDlg, &LSNetworkDialog::reload);
+            connect(m_pointManager, &PointManager::pointsCleared, m_lsNetworkDlg, &LSNetworkDialog::reload);
+        }
+    }
+    if (m_lsNetworkDlg) {
+        m_lsNetworkDlg->reload();
+        m_lsNetworkDlg->show();
+        m_lsNetworkDlg->raise();
+        m_lsNetworkDlg->activateWindow();
+        fadeInWidget(m_lsNetworkDlg);
+    }
+}
+
+void MainWindow::showTransformations()
+{
+    if (!m_transformDlg) {
+        m_transformDlg = new TransformDialog(m_pointManager, m_canvas, this);
+        if (m_pointManager) {
+            connect(m_pointManager, &PointManager::pointAdded, m_transformDlg, &TransformDialog::reload);
+            connect(m_pointManager, &PointManager::pointRemoved, m_transformDlg, &TransformDialog::reload);
+            connect(m_pointManager, &PointManager::pointsCleared, m_transformDlg, &TransformDialog::reload);
+        }
+    }
+    if (m_transformDlg) {
+        m_transformDlg->reload();
+        m_transformDlg->show();
+        m_transformDlg->raise();
+        m_transformDlg->activateWindow();
+        fadeInWidget(m_transformDlg);
+    }
+}
+
+// --- Animation helpers ---
+void MainWindow::fadeInWidget(QWidget* w, int duration)
+{
+    if (!w) return;
+    QPointer<QWidget> wGuard = w;
+    auto* effRaw = new QGraphicsOpacityEffect(w);
+    QPointer<QGraphicsOpacityEffect> eff = effRaw;
+    w->setGraphicsEffect(effRaw);
+    effRaw->setOpacity(0.0);
+    auto* anim = new QPropertyAnimation(effRaw, "opacity", w);
+    anim->setDuration(duration);
+    anim->setStartValue(0.0);
+    anim->setEndValue(1.0);
+    anim->setEasingCurve(QEasingCurve::OutCubic);
+    connect(anim, &QPropertyAnimation::finished, this, [wGuard, eff](){
+        if (wGuard) wGuard->setGraphicsEffect(nullptr);
+        if (eff) eff->deleteLater();
+    });
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void MainWindow::showToast(const QString& msg, int durationMs)
+{
+    QLabel* toast = new QLabel(msg, this);
+    toast->setObjectName("ToastOverlay");
+    toast->setStyleSheet(
+        "QLabel#ToastOverlay {"
+        "  background-color: rgba(20,20,20,220);"
+        "  color: #ffffff;"
+        "  border: 1px solid rgba(255,255,255,30);"
+        "  border-radius: 6px;"
+        "  padding: 6px 12px;"
+        "}"
+    );
+    toast->setAttribute(Qt::WA_TransparentForMouseEvents);
+    toast->setWindowFlags(Qt::FramelessWindowHint | Qt::ToolTip);
+    toast->adjustSize();
+    const int tb = m_statusBar ? m_statusBar->height() : 24;
+    const int x = (width() - toast->width()) / 2;
+    const int y = height() - tb - toast->height() - 12;
+    toast->move(x, y);
+    toast->show();
+
+    auto* eff = new QGraphicsOpacityEffect(toast);
+    toast->setGraphicsEffect(eff);
+    eff->setOpacity(0.0);
+    auto* animIn = new QPropertyAnimation(eff, "opacity", toast);
+    animIn->setDuration(160);
+    animIn->setStartValue(0.0);
+    animIn->setEndValue(1.0);
+    animIn->setEasingCurve(QEasingCurve::OutCubic);
+    QObject::connect(animIn, &QPropertyAnimation::finished, this, [this, toast, eff, durationMs](){
+        QTimer::singleShot(durationMs, this, [toast, eff](){
+            auto* animOut = new QPropertyAnimation(eff, "opacity", toast);
+            animOut->setDuration(220);
+            animOut->setStartValue(1.0);
+            animOut->setEndValue(0.0);
+            animOut->setEasingCurve(QEasingCurve::InCubic);
+            QObject::connect(animOut, &QPropertyAnimation::finished, toast, [toast](){ toast->deleteLater(); });
+            animOut->start(QAbstractAnimation::DeleteWhenStopped);
+        });
+    });
+    animIn->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void MainWindow::pulseLabel(QWidget* w, int duration)
+{
+    if (!w) return;
+    QPointer<QWidget> wGuard = w;
+    auto* effRaw = new QGraphicsOpacityEffect(w);
+    QPointer<QGraphicsOpacityEffect> eff = effRaw;
+    w->setGraphicsEffect(effRaw);
+    effRaw->setOpacity(0.4);
+    auto* anim = new QPropertyAnimation(effRaw, "opacity", w);
+    anim->setDuration(duration);
+    anim->setStartValue(0.4);
+    anim->setEndValue(1.0);
+    anim->setEasingCurve(QEasingCurve::OutCubic);
+    connect(anim, &QPropertyAnimation::finished, this, [wGuard, eff](){
+        if (wGuard) wGuard->setGraphicsEffect(nullptr);
+        if (eff) eff->deleteLater();
+    });
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void MainWindow::animateRightDockToWidth(int targetWidth)
+{
+    if (!m_layersDock) return;
+    m_layersDock->setVisible(true);
+    m_layersDock->raise();
+    QRect g = m_layersDock->geometry();
+    if (g.width() <= 1) { m_layersDock->resize(1, g.height()); g = m_layersDock->geometry(); }
+    QRect end(g);
+    end.setWidth(targetWidth);
+    end.moveLeft(g.right() - targetWidth + 1);
+    auto* anim = new QPropertyAnimation(m_layersDock, "geometry", this);
+    anim->setDuration(180);
+    anim->setStartValue(g);
+    anim->setEndValue(end);
+    anim->setEasingCurve(QEasingCurve::OutCubic);
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void MainWindow::animateRightDockClose()
+{
+    if (!m_layersDock) return;
+    QRect g = m_layersDock->geometry();
+    QRect end(g);
+    end.setWidth(1);
+    end.moveLeft(g.right());
+    auto* anim = new QPropertyAnimation(m_layersDock, "geometry", this);
+    anim->setDuration(160);
+    anim->setStartValue(g);
+    anim->setEndValue(end);
+    anim->setEasingCurve(QEasingCurve::InCubic);
+    connect(anim, &QPropertyAnimation::finished, this, [this](){ if (m_layersDock) m_layersDock->hide(); });
+    anim->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 void MainWindow::onZoomChanged(double zoom)
@@ -1811,12 +2943,21 @@ void MainWindow::onLayerComboChanged(int index)
 
 void MainWindow::onDrawingDistanceChanged(double meters)
 {
-    if (m_measureLabel) {
-        const bool imperial = AppSettings::measurementUnits().compare(QStringLiteral("imperial"), Qt::CaseInsensitive) == 0;
-        const double factor = imperial ? 3.28084 : 1.0; // m->ft
-        const QString unit = imperial ? QStringLiteral("ft") : QStringLiteral("m");
-        m_measureLabel->setText(QString("Len: %1 %2").arg(meters * factor, 0, 'f', 3).arg(unit));
+    if (!m_measureLabel) return;
+    const bool imperial = AppSettings::measurementUnits().compare(QStringLiteral("imperial"), Qt::CaseInsensitive) == 0;
+    const double factor = imperial ? 3.28084 : 1.0; // m->ft
+    const QString unit = imperial ? QStringLiteral("ft") : QStringLiteral("m");
+    // Show R/D for circle tool, length for lines/others
+    QString text;
+    if (m_canvas && (m_canvas->toolMode() == CanvasWidget::ToolMode::DrawCircle)) {
+        text = QString("R: %1 %2  D: %3 %4").arg(meters * factor, 0, 'f', 3).arg(unit)
+                                           .arg(meters * 2.0 * factor, 0, 'f', 3).arg(unit);
+    } else {
+        text = QString("Len: %1 %2").arg(meters * factor, 0, 'f', 3).arg(unit);
     }
+    m_measureLabel->setText(text);
+    // Subtle pulse to draw attention
+    pulseLabel(m_measureLabel);
 }
 
 void MainWindow::updateLayerStatusText()
@@ -1855,32 +2996,10 @@ void MainWindow::toggleLeftPanel()
 
 void MainWindow::onRightDockVisibilityChanged(bool visible)
 {
-    // Distinguish between tab switches (one dock hidden, the other visible)
-    // and closing the last visible dock (both become hidden). Keep action state consistent.
+    Q_UNUSED(visible);
     if (m_syncingRightDock) return;
     m_syncingRightDock = true;
-
-    QDockWidget* senderDock = qobject_cast<QDockWidget*>(sender());
-    QDockWidget* otherDock = nullptr;
-    if (senderDock == m_layersDock) otherDock = m_propertiesDock;
-    else if (senderDock == m_propertiesDock) otherDock = m_layersDock;
-
-    const bool otherVisible = otherDock && otherDock->isVisible();
-
-    if (!visible && !otherVisible) {
-        // Closing the last visible tab: ensure both are hidden and action unchecked
-        if (m_layersDock) m_layersDock->hide();
-        if (m_propertiesDock) m_propertiesDock->hide();
-        if (m_toggleRightPanelAction) m_toggleRightPanelAction->setChecked(false);
-    } else {
-        // Either a tab switch (one hidden, one visible) or a show event
-        if (m_layersDock && m_propertiesDock) {
-            tabifyDockWidget(m_layersDock, m_propertiesDock);
-        }
-        const bool anyVisible = (m_layersDock && m_layersDock->isVisible()) || (m_propertiesDock && m_propertiesDock->isVisible());
-        if (m_toggleRightPanelAction) m_toggleRightPanelAction->setChecked(anyVisible);
-    }
-
+    if (m_toggleRightPanelAction) m_toggleRightPanelAction->setChecked(m_layersDock && m_layersDock->isVisible());
     updatePanelToggleStates();
     m_rightDockClosingByUser = false;
     m_syncingRightDock = false;
@@ -1888,20 +3007,16 @@ void MainWindow::onRightDockVisibilityChanged(bool visible)
 
 void MainWindow::setRightPanelsVisible(bool visible)
 {
-    // Explicitly control the visibility of the combined right sidebar
-    if (!m_layersDock && !m_propertiesDock) return;
+    // Control visibility of the merged right sidebar
+    if (!m_layersDock) return;
     if (m_syncingRightDock) return;
     m_syncingRightDock = true;
 
-    if (m_layersDock) m_layersDock->setVisible(visible);
-    if (m_propertiesDock) m_propertiesDock->setVisible(visible);
-
-    if (visible && m_layersDock && m_propertiesDock) {
-        tabifyDockWidget(m_layersDock, m_propertiesDock);
-        m_layersDock->raise();
-        // Ensure narrow width when shown
-        m_layersDock->resize(70, m_layersDock->height());
-        m_propertiesDock->resize(70, m_propertiesDock->height());
+    if (visible) {
+        int rpw = AppSettings::rightPanelWidth(); if (rpw < 200) rpw = 200;
+        animateRightDockToWidth(rpw);
+    } else {
+        animateRightDockClose();
     }
 
     if (m_toggleRightPanelAction) m_toggleRightPanelAction->setChecked(visible);
@@ -1911,36 +3026,10 @@ void MainWindow::setRightPanelsVisible(bool visible)
 
 void MainWindow::toggleRightPanel()
 {
-    // Toggle visibility of right panels (Layers/Properties tabs)
-    if (!m_layersDock && !m_propertiesDock) return;
-
-    const bool rightVisible = (m_layersDock && m_layersDock->isVisible()) || (m_propertiesDock && m_propertiesDock->isVisible());
-
-    if (rightVisible) {
-        if (m_layersDock) m_layersDock->hide();
-        if (m_propertiesDock) m_propertiesDock->hide();
-        if (m_rightPanelButton) {
-            m_rightPanelButton->setArrowType(Qt::RightArrow);
-            m_rightPanelButton->setToolTip("Show right panels (Ctrl+R)");
-        }
-    } else {
-        if (m_layersDock) m_layersDock->show();
-        if (m_propertiesDock) m_propertiesDock->show();
-        if (m_layersDock && m_propertiesDock) {
-            // Re-tabify defensively in case user undocked them
-            tabifyDockWidget(m_layersDock, m_propertiesDock);
-            m_layersDock->raise();
-        }
-        // Make sure it's properly sized (very narrow)
-        if (m_layersDock) m_layersDock->resize(70, m_layersDock->height());
-        if (m_propertiesDock) m_propertiesDock->resize(70, m_propertiesDock->height());
-        if (m_rightPanelButton) {
-            m_rightPanelButton->setArrowType(Qt::LeftArrow);
-            m_rightPanelButton->setToolTip("Hide right panels (Ctrl+R)");
-        }
-    }
-
-    updatePanelToggleStates();
+    // Toggle visibility of merged right panel
+    if (!m_layersDock) return;
+    const bool rightVisible = m_layersDock->isVisible();
+    setRightPanelsVisible(!rightVisible);
 }
 
 void MainWindow::toggleCommandPanel()
@@ -2042,7 +3131,7 @@ void MainWindow::updateToggleButtonPositions()
 void MainWindow::updatePanelToggleStates()
 {
     const bool leftVisible = m_pointsDock && m_pointsDock->isVisible();
-    const bool rightVisible = (m_layersDock && m_layersDock->isVisible()) || (m_propertiesDock && m_propertiesDock->isVisible());
+    const bool rightVisible = (m_layersDock && m_layersDock->isVisible());
     const bool cmdVisible = m_commandDock && m_commandDock->isVisible();
     const bool planVisible = m_projectPlanDock && m_projectPlanDock->isVisible();
     

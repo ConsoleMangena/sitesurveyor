@@ -11,6 +11,7 @@
 
 class LayerManager;
 class QUndoStack;
+class QVariantAnimation;
 
 class CanvasWidget : public QWidget {
     Q_OBJECT
@@ -18,11 +19,32 @@ class CanvasWidget : public QWidget {
 public:
     explicit CanvasWidget(QWidget *parent = nullptr);
     
-    enum class ToolMode { Select, Pan, ZoomWindow, DrawLine, DrawPolygon, DrawCircle, DrawArc, DrawRectangle, LassoSelect, Lengthen };
+    enum class ToolMode { Select, Pan, ZoomWindow, DrawLine, DrawPolygon, DrawCircle, DrawArc, DrawRectangle, DrawRegularPolygonEdge, Trim, Extend, OffsetLine, FilletZero, Chamfer, LassoSelect, Lengthen };
     
     void addPoint(const Point& point);
     void addLine(const QPointF& start, const QPointF& end);
+    void addText(const QString& text, const QPointF& pos, double height, double angle = 0.0, const QString& layer = QString());
+    int textCount() const;
+    bool textData(int index, QString& textOut, QPointF& posOut, double& heightOut, double& angleOut, QString& layerOut) const;
+    QString textLayer(int index) const;
+    // Dimensions
+    void addDimension(const QPointF& a, const QPointF& b, double textHeight, const QString& layer = QString());
+    int dimensionCount() const;
+    bool dimensionData(int index, QPointF& aOut, QPointF& bOut, double& textHeightOut, QString& layerOut) const;
+    // Polylines
+    void addPolylineEntity(const QVector<QPointF>& pts, bool closed, const QString& layer = QString());
+    int polylineCount() const;
+    bool polylineData(int index, QVector<QPointF>& ptsOut, bool& closedOut, QString& layerOut) const;
+    void linesUsedByPolylines(QSet<int>& out) const;
     void clearAll();
+    // Start a regular polygon by picking an edge (two clicks). Sides >= 3.
+    void startRegularPolygonByEdge(int sides);
+    // Modify tools starters
+    void startTrim();
+    void startExtend();
+    void startOffset(double distance);
+    void startFilletZero();
+    void startChamfer(double distance);
     void setShowGrid(bool show);
     void setShowLabels(bool show);
     void setPointColor(const QColor& color);
@@ -31,6 +53,8 @@ public:
     bool showLabels() const { return m_showLabels; }
     double gridSize() const { return m_gridSize; }
     void setGridSize(double size);
+    void setShowLengthLabels(bool on) { m_showLengthLabels = on; update(); }
+    bool showLengthLabels() const { return m_showLengthLabels; }
     void setGaussMode(bool enabled) { m_gaussMode = enabled; update(); }
     bool gaussMode() const { return m_gaussMode; }
     
@@ -53,6 +77,22 @@ public:
     bool snapMode() const { return m_snapMode; }
     void setOsnapMode(bool on) { m_osnapMode = on; update(); }
     bool osnapMode() const { return m_osnapMode; }
+    void setOsnapEnd(bool on) { m_osnapEnd = on; }
+    void setOsnapMid(bool on) { m_osnapMid = on; }
+    void setOsnapNearest(bool on) { m_osnapNearest = on; }
+    void setOsnapIntersect(bool on) { m_osnapIntersect = on; }
+    void setOsnapPerp(bool on) { m_osnapPerp = on; }
+    void setOsnapTangent(bool on) { m_osnapTangent = on; }
+    void setOsnapCenter(bool on) { m_osnapCenter = on; }
+    void setOsnapQuadrant(bool on) { m_osnapQuadrant = on; }
+    bool osnapEnd() const { return m_osnapEnd; }
+    bool osnapMid() const { return m_osnapMid; }
+    bool osnapNearest() const { return m_osnapNearest; }
+    bool osnapIntersect() const { return m_osnapIntersect; }
+    bool osnapPerp() const { return m_osnapPerp; }
+    bool osnapTangent() const { return m_osnapTangent; }
+    bool osnapCenter() const { return m_osnapCenter; }
+    bool osnapQuadrant() const { return m_osnapQuadrant; }
     // Dynamic input toggle
     void setDynInputEnabled(bool on) { m_dynInputEnabled = on; update(); }
     bool dynInputEnabled() const { return m_dynInputEnabled; }
@@ -77,12 +117,18 @@ public:
     QString lineLayer(int lineIndex) const;
     bool setLineLayer(int lineIndex, const QString& layer);
     bool lineEndpoints(int lineIndex, QPointF& startOut, QPointF& endOut) const;
+    int lineCount() const { return m_lines.size(); }
     
 public slots:
     void zoomIn();
     void zoomOut();
     void resetView();
     void fitToWindow();
+    // Animated zoom helpers
+    void zoomInAnimated();
+    void zoomOutAnimated();
+    void fitToWindowAnimated();
+    void animateZoomTo(double targetZoom, const QPointF& targetOffset, int durationMs = 180);
     void centerOnPoint(const QPointF& world, double targetZoom = -1.0);
     void removePointByName(const QString& name);
     void clearSelection();
@@ -104,6 +150,7 @@ signals:
     void drawingDistanceChanged(double distanceMeters);
     void selectedLineChanged(int lineIndex);
     void selectionChanged(int pointCount, int lineCount);
+    void osnapHintChanged(const QString& text);
     
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -118,10 +165,13 @@ protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
     
 private:
+    enum class SnapGlyph { None, End, Mid, Nearest, Intersect, Perp, Center, Quadrant, Tangent };
     void drawGrid(QPainter& painter);
     void drawAxes(QPainter& painter);
     void drawPoints(QPainter& painter);
     void drawLines(QPainter& painter);
+    void drawTexts(QPainter& painter);
+    void drawDimensions(QPainter& painter);
     void updateTransform();
     QPointF toDisplay(const QPointF& p) const;
     QPointF adjustedWorldFromScreen(const QPoint& screen) const;
@@ -136,6 +186,8 @@ private:
     bool hitTestLine(const QPoint& screen, int& outLineIndex) const;
     bool hitTestPoint(const QPoint& screen, int& outPointIndex) const;
     void setExclusiveSelectionLine(int idx);
+    // Helper to build a regular polygon from an edge
+    QVector<QPointF> makeRegularPolygonFromEdge(const QPointF& a, const QPointF& b, int sides) const;
     void toggleSelectionLine(int idx);
     void setExclusiveSelectionPoint(int idx);
     void toggleSelectionPoint(int idx);
@@ -154,12 +206,44 @@ private:
         QString layer;
     };
 
+    struct DrawnText {
+        QString text;
+        QPointF pos;
+        double height;
+        double angleDeg;
+        QString layer;
+        QColor color;
+    };
+
+    struct DrawnDim {
+        QPointF a;
+        QPointF b;
+        double textHeight;
+        QString layer;
+        QColor color;
+    };
+
+    struct DrawnPolyline {
+        QVector<QPointF> pts;
+        bool closed{false};
+        QString layer;
+        QColor color;
+        QVector<int> lineIndices; // indices into m_lines created for this polyline
+        mutable bool isCircleLikeCached{false};
+        mutable bool isCircleLike{false};
+        mutable QPointF cachedCenter;
+        mutable double cachedRadius{0.0};
+    };
+
     void applyDeleteSelection();
     void applyRestoreSelection(const QVector<QPair<int, DrawnPoint>>& points,
                                const QVector<QPair<int, DrawnLine>>& lines);
     
     QVector<DrawnPoint> m_points;
     QVector<DrawnLine> m_lines;
+    QVector<DrawnText> m_texts;
+    QVector<DrawnDim> m_dims;
+    QVector<DrawnPolyline> m_polylines;
     QSet<int> m_selectedPointIndices;
     QSet<int> m_selectedLineIndices;
     
@@ -178,6 +262,7 @@ private:
     double m_gridSize;
     QTransform m_worldToScreen;
     QTransform m_screenToWorld;
+    bool m_showLengthLabels{false};
     bool m_gaussMode{false};
     LayerManager* m_layerManager{nullptr};
     
@@ -191,6 +276,14 @@ private:
     bool m_orthoMode{false};
     bool m_snapMode{false};
     bool m_osnapMode{true};
+    bool m_osnapEnd{true};
+    bool m_osnapMid{true};
+    bool m_osnapNearest{true};
+    bool m_osnapIntersect{true};
+    bool m_osnapPerp{false};
+    bool m_osnapTangent{false};
+    bool m_osnapCenter{false};
+    bool m_osnapQuadrant{false};
     bool m_polarMode{false};
     double m_polarIncrementDeg{15.0};
     bool m_otrackMode{false};
@@ -234,6 +327,7 @@ private:
     bool m_hasSnapIndicator{false};
     QPoint m_snapIndicatorScreen;
     QPointF m_snapIndicatorWorld;
+    mutable SnapGlyph m_snapGlyphType{SnapGlyph::None};
     // Snap tracking (guides from snap indicator)
     bool m_hasTrackOrigin{false};
     QPointF m_trackOriginWorld{0.0, 0.0};
@@ -255,7 +349,24 @@ private:
     int m_hoverVertexIndex{-1};
     QUndoStack* m_undoStack{nullptr};
     int m_selectedLineIndex{-1};
+    
+    // Regular polygon (by edge) state
+    bool m_regPolyEdgeActive{false};
+    int m_regPolySides{3};
+    bool m_regPolyHasFirst{false};
+    QPointF m_regPolyFirst;
 
+    // Modify tools state
+    // Trim/Extend: no persistent state beyond mode
+    // Offset
+    bool m_offsetActive{false};
+    double m_offsetDistance{1.0};
+    // FilletZero / Chamfer
+    bool m_modHasFirst{false};
+    int m_modFirstLine{-1};
+    QPoint m_modFirstClickScreen;
+    double m_chamferDistance{1.0};
+    
     // Allow an undo command to access internals for delete/restore
     friend class RemoveSelectionCommand;
     friend class MoveSelectionCommand;
@@ -264,6 +375,13 @@ private:
     bool parseDistanceAngleInput(const QString& text,
                                  bool& hasDist, double& dist,
                                  bool& hasAngle, double& angleDeg) const;
+
+    // Animation state
+    QVariantAnimation* m_zoomAnimation{nullptr};
+    double m_animStartZoom{1.0};
+    double m_animEndZoom{1.0};
+    QPointF m_animStartOffset{0.0, 0.0};
+    QPointF m_animEndOffset{0.0, 0.0};
 };
 
 #endif // CANVASWIDGET_H

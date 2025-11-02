@@ -37,6 +37,10 @@ private:
     QComboBox* m_unitsCombo;   // Metric/Imperial
     QComboBox* m_angleCombo;   // DMS/Decimal
     QLineEdit* m_crsEdit;      // EPSG code or proj string
+    // Profile
+    QLineEdit* m_firstEdit;
+    QLineEdit* m_lastEdit;
+    QLineEdit* m_emailEdit;
     QPushButton* m_applyButton;
     QPushButton* m_closeButton;
 };

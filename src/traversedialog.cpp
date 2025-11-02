@@ -14,6 +14,7 @@
 #include <QPushButton>
 #include <QTextEdit>
 #include <QCheckBox>
+#include <QDoubleSpinBox>
 #include <QMessageBox>
 #include <QTableWidgetItem>
 #include <QtMath>
@@ -35,9 +36,43 @@ TraverseDialog::TraverseDialog(PointManager* pm, CanvasWidget* canvas, QWidget* 
         m_startCombo = new QComboBox(this);
         row->addWidget(m_startCombo, 1);
         row->addSpacing(12);
+        m_seaLevelCheck = new QCheckBox("Sea level scale", this);
+        m_seaLevelCheck->setChecked(false);
+        row->addWidget(m_seaLevelCheck);
+        row->addWidget(new QLabel("Mean Elev (m):", this));
+        m_meanElev = new QDoubleSpinBox(this);
+        m_meanElev->setRange(-1000.0, 10000.0);
+        m_meanElev->setDecimals(2);
+        m_meanElev->setSingleStep(1.0);
+        m_meanElev->setValue(0.0);
+        row->addWidget(m_meanElev);
+        row->addSpacing(12);
         row->addWidget(new QLabel("Close to (optional):", this));
         m_closeCombo = new QComboBox(this);
         row->addWidget(m_closeCombo, 1);
+        main->addLayout(row);
+    }
+
+    // Adjustment method and apply checkbox
+    {
+        auto* row = new QHBoxLayout();
+        row->addWidget(new QLabel("Adjustment:", this));
+        m_adjustCombo = new QComboBox(this);
+        m_adjustCombo->addItems(QStringList() << "None" << "Bowditch" << "Transit");
+        row->addWidget(m_adjustCombo);
+        row->addSpacing(12);
+        row->addWidget(new QLabel("Scale (ppm):", this));
+        m_scalePpm = new QDoubleSpinBox(this);
+        m_scalePpm->setRange(-100000.0, 100000.0);
+        m_scalePpm->setDecimals(3);
+        m_scalePpm->setSingleStep(10.0);
+        m_scalePpm->setValue(0.0);
+        row->addWidget(m_scalePpm);
+        row->addSpacing(12);
+        m_applyAdjustedCheck = new QCheckBox("Apply adjusted", this);
+        m_applyAdjustedCheck->setChecked(true);
+        row->addWidget(m_applyAdjustedCheck);
+        row->addStretch();
         main->addLayout(row);
     }
 
@@ -190,10 +225,16 @@ void TraverseDialog::computeTraverse()
     computed.reserve(legs.size());
     Point current = start;
 
+    const double ppm = (m_scalePpm ? m_scalePpm->value() : 0.0);
+    const bool useSL = (m_seaLevelCheck && m_seaLevelCheck->isChecked());
+    const double H = (m_meanElev ? m_meanElev->value() : 0.0);
+    const double Re = 6371000.0; // mean Earth radius (m)
     for (int i = 0; i < legs.size(); ++i) {
         const auto& L = legs[i];
         // Convert entered distance to meters for internal computation
-        const double dMeters = L.distance * toMeters;
+        double dMeters = L.distance * toMeters;
+        if (ppm != 0.0) dMeters = dMeters * (1.0 + ppm / 1e6);
+        if (useSL) dMeters = dMeters * (Re / (Re + H));
         QPointF nextXY = SurveyCalculator::polarToRectangular(QPointF(current.x, current.y), dMeters, L.azimuthDeg);
         Point next(L.name.isEmpty() ? QString("T%1").arg(i+1) : L.name, nextXY.x(), nextXY.y(), current.z);
         computed.push_back(next);
@@ -208,9 +249,11 @@ void TraverseDialog::computeTraverse()
         current = next;
     }
 
-    // Closure analysis (optional)
+    // Closure and optional adjustment
     Point close;
-    if (getClosePoint(close)) {
+    const int methodIdx = m_adjustCombo ? m_adjustCombo->currentIndex() : 0; // 0=None,1=Bowditch,2=Transit
+    bool haveClose = getClosePoint(close);
+    if (haveClose) {
         double dx = current.x - close.x;
         double dy = current.y - close.y;
         double miscloseMeters = qSqrt(dx*dx + dy*dy);
@@ -221,6 +264,65 @@ void TraverseDialog::computeTraverse()
                          .arg(QString::number(miscloseDisplay, 'f', 3))
                          .arg(unit)
                          .arg(QString::number(az, 'f', 4)));
+
+        if (methodIdx > 0 && miscloseMeters > 0) {
+            // Build leg vectors
+            QVector<double> legLen; legLen.reserve(legs.size());
+            QVector<double> legDx; legDx.reserve(legs.size());
+            QVector<double> legDy; legDy.reserve(legs.size());
+            Point prev = start;
+            for (int i=0;i<computed.size();++i) {
+                double dx_i = computed[i].x - prev.x;
+                double dy_i = computed[i].y - prev.y;
+                legDx.append(dx_i);
+                legDy.append(dy_i);
+                legLen.append(qSqrt(dx_i*dx_i + dy_i*dy_i));
+                prev = computed[i];
+            }
+            double sumLen = 0.0, sumAbsDx = 0.0, sumAbsDy = 0.0;
+            for (int i=0;i<legLen.size();++i) { sumLen += legLen[i]; sumAbsDx += qAbs(legDx[i]); sumAbsDy += qAbs(legDy[i]); }
+            QVector<double> corrDx(legLen.size(), 0.0), corrDy(legLen.size(), 0.0);
+            if (methodIdx == 1 && sumLen > 0) {
+                // Bowditch
+                for (int i=0;i<legLen.size();++i) { double r = legLen[i]/sumLen; corrDx[i] = -dx * r; corrDy[i] = -dy * r; }
+            } else if (methodIdx == 2) {
+                // Transit
+                if (sumAbsDx <= 1e-9) sumAbsDx = 1.0;
+                if (sumAbsDy <= 1e-9) sumAbsDy = 1.0;
+                for (int i=0;i<legLen.size();++i) {
+                    double rx = (qAbs(legDx[i]) / sumAbsDx);
+                    double ry = (qAbs(legDy[i]) / sumAbsDy);
+                    corrDx[i] = -dx * rx;
+                    corrDy[i] = -dy * ry;
+                }
+            }
+            // Build adjusted coordinates
+            QVector<Point> adjusted; adjusted.reserve(computed.size());
+            Point prevA = start;
+            for (int i=0;i<computed.size();++i) {
+                double ndx = legDx[i] + corrDx[i];
+                double ndy = legDy[i] + corrDy[i];
+                Point nxt = computed[i];
+                nxt.x = prevA.x + ndx;
+                nxt.y = prevA.y + ndy;
+                adjusted.append(nxt);
+                prevA = nxt;
+                appendReportLine(QString("Adj Leg %1: dX=%2  dY=%3  CorrX=%4  CorrY=%5")
+                                 .arg(i+1)
+                                 .arg(QString::number(legDx[i], 'f', 4))
+                                 .arg(QString::number(legDy[i], 'f', 4))
+                                 .arg(QString::number(corrDx[i], 'f', 4))
+                                 .arg(QString::number(corrDy[i], 'f', 4)));
+            }
+            // Replace if applying
+            if (m_applyAdjustedCheck && m_applyAdjustedCheck->isChecked()) {
+                computed = adjusted;
+                current = computed.isEmpty() ? start : computed.back();
+                appendReportLine("Applied adjusted coordinates.");
+            } else {
+                appendReportLine("Adjustment reported only (not applied).");
+            }
+        }
     }
 
     // Add/draw

@@ -3,6 +3,7 @@
 
 #include <QString>
 #include <QStringList>
+#include <QColor>
 
 class AppSettings {
 public:
@@ -14,6 +15,16 @@ public:
     static bool darkMode();
     static void setDarkMode(bool enabled);
 
+    // UI sizes
+    static int rightPanelWidth();
+    static void setRightPanelWidth(int w);
+
+    // Autosave
+    static bool autosaveEnabled();
+    static void setAutosaveEnabled(bool on);
+    static int autosaveIntervalMinutes();
+    static void setAutosaveIntervalMinutes(int minutes);
+
     // Engineering discipline preferences
     static QString measurementUnits();      // "metric" or "imperial"
     static void setMeasurementUnits(const QString& units);
@@ -23,6 +34,30 @@ public:
     static void setCrs(const QString& code);
     static bool engineeringPresetApplied();
     static void setEngineeringPresetApplied(bool applied);
+
+    // OSNAP/polar persistence
+    static bool osnapEnd();
+    static void setOsnapEnd(bool on);
+    static bool osnapMid();
+    static void setOsnapMid(bool on);
+    static bool osnapNearest();
+    static void setOsnapNearest(bool on);
+    static bool osnapIntersect();
+    static void setOsnapIntersect(bool on);
+    static bool osnapPerp();
+    static void setOsnapPerp(bool on);
+    static bool osnapTangent();
+    static void setOsnapTangent(bool on);
+    static bool osnapCenter();
+    static void setOsnapCenter(bool on);
+    static bool osnapQuadrant();
+    static void setOsnapQuadrant(bool on);
+    static bool polarMode();
+    static void setPolarMode(bool on);
+    static double polarIncrementDeg();
+    static void setPolarIncrementDeg(double deg);
+    static QColor osnapGlyphColor();
+    static void setOsnapGlyphColor(const QColor& color);
 
     // License settings
     // Backward-compatible helpers (use current discipline)
@@ -49,6 +84,16 @@ public:
     static QStringList pinnedFiles();
     static void setPinnedFiles(const QStringList& files);
     static void pinFile(const QString& path, bool pin);
+
+    // User profile (cached)
+    static QString userFirstName();
+    static void setUserFirstName(const QString& first);
+    static QString userLastName();
+    static void setUserLastName(const QString& last);
+    static QString userName();
+    static void setUserName(const QString& name);
+    static QString userEmail();
+    static void setUserEmail(const QString& email);
 };
 
 #endif // APPSETTINGS_H

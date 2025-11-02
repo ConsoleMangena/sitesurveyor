@@ -10,6 +10,8 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QGroupBox>
+#include <QFormLayout>
 
 SettingsDialog::SettingsDialog(CanvasWidget* canvas, QWidget *parent)
     : QDialog(parent), m_canvas(canvas)
@@ -45,6 +47,17 @@ SettingsDialog::SettingsDialog(CanvasWidget* canvas, QWidget *parent)
     m_crsEdit = new QLineEdit(this);
     m_crsEdit->setPlaceholderText("EPSG:4326");
 
+    // Profile group
+    QGroupBox* profileBox = new QGroupBox("Profile", this);
+    QFormLayout* profileForm = new QFormLayout(profileBox);
+    m_firstEdit = new QLineEdit(profileBox);
+    m_lastEdit = new QLineEdit(profileBox);
+    m_emailEdit = new QLineEdit(profileBox);
+    m_emailEdit->setPlaceholderText("you@example.com");
+    profileForm->addRow(new QLabel("First name:", profileBox), m_firstEdit);
+    profileForm->addRow(new QLabel("Surname:", profileBox), m_lastEdit);
+    profileForm->addRow(new QLabel("Email:", profileBox), m_emailEdit);
+
     m_applyButton = new QPushButton("Apply", this);
     m_closeButton = new QPushButton("Close", this);
 
@@ -67,6 +80,7 @@ SettingsDialog::SettingsDialog(CanvasWidget* canvas, QWidget *parent)
     crsLayout->addWidget(crsLabel);
     crsLayout->addWidget(m_crsEdit);
 
+
     QHBoxLayout* buttonsLayout = new QHBoxLayout();
     buttonsLayout->addStretch();
     buttonsLayout->addWidget(m_applyButton);
@@ -81,6 +95,7 @@ SettingsDialog::SettingsDialog(CanvasWidget* canvas, QWidget *parent)
     mainLayout->addLayout(unitsLayout);
     mainLayout->addLayout(angleLayout);
     mainLayout->addLayout(crsLayout);
+    mainLayout->addWidget(profileBox);
     mainLayout->addStretch();
     mainLayout->addLayout(buttonsLayout);
 
@@ -117,6 +132,10 @@ void SettingsDialog::loadFromCanvas()
     m_angleCombo->setCurrentIndex(ai);
 
     m_crsEdit->setText(AppSettings::crs());
+    // Profile from cached settings
+    m_firstEdit->setText(AppSettings::userFirstName());
+    m_lastEdit->setText(AppSettings::userLastName());
+    m_emailEdit->setText(AppSettings::userEmail());
 }
 
 void SettingsDialog::applyChanges()
@@ -135,6 +154,14 @@ void SettingsDialog::applyChanges()
     AppSettings::setMeasurementUnits(m_unitsCombo->currentData().toString());
     AppSettings::setAngleFormat(m_angleCombo->currentData().toString());
     AppSettings::setCrs(m_crsEdit->text().trimmed());
+    // Profile save (local cache)
+    const QString first = m_firstEdit->text().trimmed();
+    const QString last  = m_lastEdit->text().trimmed();
+    const QString email = m_emailEdit->text().trimmed();
+    AppSettings::setUserFirstName(first);
+    AppSettings::setUserLastName(last);
+    AppSettings::setUserEmail(email);
+    if (!first.isEmpty() || !last.isEmpty()) AppSettings::setUserName((first + " " + last).trimmed());
     // Update grid suffix immediately to reflect units choice
     const QString units = AppSettings::measurementUnits();
     m_gridSizeSpin->setSuffix(units.compare("imperial", Qt::CaseInsensitive) == 0 ? " ft" : " m");

@@ -1,6 +1,8 @@
 #include "welcomewidget.h"
 #include "appsettings.h"
 #include "iconmanager.h"
+#include "appwriteclient.h"
+#include "authdialog.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -20,6 +22,15 @@
 #include <QListWidgetItem>
 #include <QToolButton>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QSslError>
+#include <QSettings>
+#include <QUrlQuery>
+#include <QUuid>
 
 WelcomeWidget::WelcomeWidget(QWidget* parent)
     : QWidget(parent)
@@ -33,19 +44,17 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
     card->setObjectName("welcomeCard");
     if (AppSettings::darkMode()) {
         card->setStyleSheet(
-            "#welcomeCard { border: 1px solid #555; border-radius: 3px; padding: 4px; background-color: #1e1e1e; font-size: 10px; font-family: JetBrains Mono, 'Fira Code', 'Cascadia Code', 'Source Code Pro', 'DejaVu Sans Mono', Monospace; }"
-            "#welcomeCard QLineEdit { background-color: #2a2a2a; border: 1px solid #555; padding: 1px 2px; }"
-            "#welcomeCard QComboBox, #welcomeCard QLineEdit, #welcomeCard QPushButton, #welcomeCard QLabel { font-size: 10px; }"
+            "#welcomeCard { border: 1px solid #555; border-radius: 3px; padding: 6px; background-color: #1e1e1e; }"
+            "#welcomeCard QLineEdit { background-color: #2a2a2a; border: 1px solid #555; padding: 2px 4px; }"
             "#welcomeCard QLabel { margin: 0; }"
-            "#welcomeCard QPushButton { padding: 2px 4px; }"
+            "#welcomeCard QPushButton { padding: 3px 6px; }"
         );
     } else {
         card->setStyleSheet(
-            "#welcomeCard { border: 1px solid #777; border-radius: 3px; padding: 4px; font-size: 10px; font-family: JetBrains Mono, 'Fira Code', 'Cascadia Code', 'Source Code Pro', 'DejaVu Sans Mono', Monospace; }"
-            "#welcomeCard QComboBox, #welcomeCard QLineEdit, #welcomeCard QPushButton, #welcomeCard QLabel { font-size: 10px; }"
+            "#welcomeCard { border: 1px solid #777; border-radius: 3px; padding: 6px; }"
             "#welcomeCard QLabel { margin: 0; }"
-            "#welcomeCard QLineEdit { padding: 1px 2px; }"
-            "#welcomeCard QPushButton { padding: 2px 4px; }"
+            "#welcomeCard QLineEdit { padding: 2px 4px; }"
+            "#welcomeCard QPushButton { padding: 3px 6px; }"
         );
     }
     auto* cardLayout = new QVBoxLayout(card);
@@ -61,8 +70,6 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
 
         m_title = new QLabel("SiteSurveyor Desktop", this);
         QFont titleFont;
-        titleFont.setFamilies(QStringList()
-            << "JetBrains Mono" << "Fira Code" << "Cascadia Code" << "Source Code Pro" << "DejaVu Sans Mono" << "Monospace");
         titleFont.setPointSize(14);
         titleFont.setWeight(QFont::DemiBold);
         m_title->setFont(titleFont);
@@ -70,12 +77,10 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
         header->addWidget(m_title, 0, Qt::AlignVCenter | Qt::AlignLeft);
         header->addStretch();
 
-        // Desktop-themed logo at the top-right corner
+        // Official logo at the top-right corner
         QLabel* logo = new QLabel(this);
-        QPixmap pm(24, 24);
-        pm.fill(Qt::transparent);
-        QIcon ico = IconManager::icon("desktop");
-        logo->setPixmap(ico.pixmap(24, 24));
+        QPixmap pm = QIcon(":/branding/logo.svg").pixmap(24, 24);
+        logo->setPixmap(pm);
         header->addWidget(logo, 0, Qt::AlignTop | Qt::AlignRight);
         cardLayout->addLayout(header);
     }
@@ -84,10 +89,6 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
     m_description->setWordWrap(true);
     m_description->setText("Modern Geomatics Desktop for Surveying and Mapping.");
     QFont descFont;
-    descFont.setFamilies(QStringList()
-        << "JetBrains Mono" << "Fira Code" << "Cascadia Code" << "Source Code Pro" << "DejaVu Sans Mono" << "Monospace");
-    descFont.setPointSize(10);
-    m_description->setFont(descFont);
     // Compact caption style
     m_description->setStyleSheet("margin: 0 0 1px 0;");
     cardLayout->addWidget(m_description);
@@ -164,12 +165,16 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
     {
         auto* l = new QVBoxLayout(learnPage);
         l->setContentsMargins(0,0,0,0);
-        QLabel* whatsNew = new QLabel("What's New: Visit documentation for latest features.", this);
-        whatsNew->setWordWrap(true);
-        l->addWidget(whatsNew);
-        QLabel* vids = new QLabel("Learning videos and tips coming soon.", this);
-        vids->setWordWrap(true);
-        l->addWidget(vids);
+        QLabel* docs = new QLabel("<a href='https://sitesurveyor.dev/docs'>Documentation</a>", this);
+        docs->setTextFormat(Qt::RichText);
+        docs->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        docs->setOpenExternalLinks(true);
+        l->addWidget(docs);
+        QLabel* notes = new QLabel("<a href='https://sitesurveyor.dev/releases'>Release notes</a>", this);
+        notes->setTextFormat(Qt::RichText);
+        notes->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        notes->setOpenExternalLinks(true);
+        l->addWidget(notes);
         l->addStretch();
     }
 
@@ -193,22 +198,12 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
     m_disciplineCombo->setCurrentIndex(curIdx);
     form->addRow(discLabel, m_disciplineCombo);
 
-    // License field (inline with Show)
-    QWidget* licField = new QWidget(this);
-    auto* licRow = new QHBoxLayout(licField);
-    licRow->setContentsMargins(0,0,0,0);
-    licRow->setSpacing(2);
-    m_keyEdit = new QLineEdit(this);
-    m_keyEdit->setPlaceholderText("XXXX-XXXX-XXXX-XXXX");
-    m_keyEdit->setEchoMode(QLineEdit::Password);
-    m_keyEdit->setClearButtonEnabled(true);
-    m_keyEdit->setFont(descFont);
-    m_showCheck = new QCheckBox("Show", this);
-    licRow->addWidget(m_keyEdit, 1);
-    licRow->addWidget(m_showCheck);
-    form->addRow(new QLabel("License:", this), licField);
+    
 
-    // Status line in form
+
+    // Account + Status lines in form
+    m_accountLabel = new QLabel("Not signed in", this);
+    form->addRow(new QLabel("Account:", this), m_accountLabel);
     m_statusLabel = new QLabel("", this);
     form->addRow(new QLabel("Status:", this), m_statusLabel);
 
@@ -217,37 +212,72 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
     auto* buttons = new QHBoxLayout();
     buttons->setSpacing(2);
     buttons->addStretch();
+    m_studentButton = new QPushButton("Student Verification", this);
+    m_studentButton->setIcon(IconManager::icon("star"));
+    m_studentButton->setFont(descFont);
+    buttons->addWidget(m_studentButton);
     m_buyButton = new QPushButton("Buy License", this);
     m_buyButton->setIcon(IconManager::icon("credit-card"));
     m_buyButton->setFont(descFont);
     buttons->addWidget(m_buyButton);
-    m_activateButton = new QPushButton("Activate", this);
+    m_signInButton = new QPushButton("Sign In", this);
+    m_signInButton->setFont(descFont);
+    buttons->addWidget(m_signInButton);
+    m_activateButton = new QPushButton("Refresh Access", this);
     m_activateButton->setFont(descFont);
     m_activateButton->setDefault(true);
     buttons->addWidget(m_activateButton);
     cardLayout->addLayout(buttons);
 
-    connect(m_showCheck, &QCheckBox::toggled, this, &WelcomeWidget::toggleShow);
+    // Appwrite setup (configurable)
+    m_appwrite = new AppwriteClient(this);
+    {
+        QSettings s;
+        QString endpoint = s.value("cloud/appwriteEndpoint").toString().trimmed();
+        QString projectId = s.value("cloud/appwriteProjectId").toString().trimmed();
+        if (endpoint.isEmpty()) endpoint = QString::fromUtf8(qgetenv("APPWRITE_ENDPOINT"));
+        if (projectId.isEmpty()) projectId = QString::fromUtf8(qgetenv("APPWRITE_PROJECT_ID"));
+        if (endpoint.isEmpty()) endpoint = QStringLiteral("https://nyc.cloud.appwrite.io"); // default to NYC if unspecified
+        m_appwrite->setEndpoint(endpoint);
+        if (!projectId.isEmpty()) m_appwrite->setProjectId(projectId);
+        m_appwrite->setSelfSigned(false);
+    }
+
+    // Connections
     connect(m_disciplineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &WelcomeWidget::onDisciplineChanged);
+    connect(m_studentButton, &QPushButton::clicked, this, &WelcomeWidget::openStudentPage);
     connect(m_buyButton, &QPushButton::clicked, this, &WelcomeWidget::openBuyPage);
-    connect(m_activateButton, &QPushButton::clicked, this, &WelcomeWidget::saveKey);
+    connect(m_signInButton, &QPushButton::clicked, this, &WelcomeWidget::openAuthDialog);
+    connect(m_activateButton, &QPushButton::clicked, this, &WelcomeWidget::fetchLicense);
+
 
     refreshRecentList();
     reload();
+    updateAuthUI();
 }
 
 void WelcomeWidget::reload()
 {
+    if (m_appwrite) {
+        QSettings s;
+        QString endpoint = s.value("cloud/appwriteEndpoint").toString().trimmed();
+        QString projectId = s.value("cloud/appwriteProjectId").toString().trimmed();
+        if (endpoint.isEmpty()) endpoint = QString::fromUtf8(qgetenv("APPWRITE_ENDPOINT"));
+        if (projectId.isEmpty()) projectId = QString::fromUtf8(qgetenv("APPWRITE_PROJECT_ID"));
+        if (!endpoint.isEmpty()) m_appwrite->setEndpoint(endpoint);
+        if (!projectId.isEmpty()) m_appwrite->setProjectId(projectId);
+        m_appwrite->setSelfSigned(false);
+        updateAuthUI();
+    }
     const QString disc = AppSettings::discipline();
     if (m_disciplineCombo) {
         const QStringList discs = AppSettings::availableDisciplines();
         int idx = discs.indexOf(disc);
         if (idx >= 0) m_disciplineCombo->setCurrentIndex(idx);
     }
-    if (m_keyEdit) m_keyEdit->clear();
     const bool has = AppSettings::hasLicenseFor(disc);
     if (has) {
-        m_statusLabel->setText(QString("A license key is saved for %1.").arg(disc));
+        m_statusLabel->setText(QString("A license is active for %1.").arg(disc));
         if (AppSettings::darkMode()) m_statusLabel->setStyleSheet(""); else m_statusLabel->setStyleSheet("color: #8fda8f;");
     } else {
         m_statusLabel->setText("");
@@ -256,48 +286,131 @@ void WelcomeWidget::reload()
     refreshRecentList();
 }
 
-void WelcomeWidget::saveKey()
+void WelcomeWidget::updateAuthUI()
 {
-    const QString key = m_keyEdit->text().trimmed();
-    if (key.isEmpty() || key.size() < 8) {
-        m_statusLabel->setText("Please enter a valid license key.");
-        m_statusLabel->setStyleSheet(AppSettings::darkMode() ? "" : "color: #ff8080;");
-        return;
+    const bool configured = m_appwrite && m_appwrite->isConfigured();
+    const bool logged = m_appwrite && m_appwrite->isLoggedIn();
+    if (m_signInButton) m_signInButton->setText(logged ? "Account" : "Sign In");
+    if (m_signInButton) m_signInButton->setEnabled(configured);
+    if (m_accountLabel) m_accountLabel->setText(logged ? "Loading account..." : "Not signed in");
+    m_verified = false;
+    if (m_activateButton) { m_activateButton->setText("Refresh Access"); m_activateButton->setEnabled(logged); }
+    if (logged && m_appwrite) {
+        QNetworkReply* r = m_appwrite->getAccount();
+        connect(r, &QNetworkReply::finished, this, [this, r](){
+            const bool ok = (r->error() == QNetworkReply::NoError);
+            const QByteArray data = r->readAll();
+            r->deleteLater();
+            if (!ok) { if (m_accountLabel) m_accountLabel->setText("Signed in (name unavailable)"); return; }
+            QJsonParseError pe; QJsonDocument doc = QJsonDocument::fromJson(data, &pe);
+            QJsonObject obj = doc.isObject() ? doc.object() : QJsonObject();
+            QString name = obj.value("name").toString().trimmed();
+            QString email = obj.value("email").toString().trimmed();
+            if (name.isEmpty()) name = AppSettings::userName();
+            if (email.isEmpty()) email = AppSettings::userEmail();
+            if (m_accountLabel) m_accountLabel->setText(name.isEmpty() ? QString("Signed in as %1").arg(email) : QString("Signed in as %1 (%2)").arg(name, email));
+        });
     }
+}
+
+ 
+
+void WelcomeWidget::markLicensedLocally()
+{
     const QString disc = m_disciplineCombo ? m_disciplineCombo->currentText() : AppSettings::discipline();
     AppSettings::setDiscipline(disc);
-    // Enforce discipline-specific license prefix (e.g., ES-, CS-, RS-, GM-)
-    const QString prefix = AppSettings::licensePrefixFor(disc);
-    const QString upperKey = key.toUpper();
-    if (!prefix.isEmpty() && !upperKey.startsWith(prefix + "-")) {
-        m_statusLabel->setText(QString("Invalid license for %1 (expected prefix %2-).")
-                               .arg(disc, prefix));
-        m_statusLabel->setStyleSheet(AppSettings::darkMode() ? "" : "color: #ff8080;");
-        return;
-    }
-    AppSettings::setLicenseKeyFor(disc, key);
-    const bool ok = AppSettings::verifyLicenseFor(disc, key);
-    if (!ok) {
-        m_statusLabel->setText("License verification failed. Please try again.");
-        m_statusLabel->setStyleSheet(AppSettings::darkMode() ? "" : "color: #ff8080;");
-        return;
-    }
-    if (m_keyEdit) m_keyEdit->clear();
-    m_statusLabel->setText(QString("License key saved for %1. Welcome!").arg(disc));
+    // Cache a local access token to satisfy license gating
+    const QString token = QStringLiteral("VERIFIED-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
+    AppSettings::setLicenseKeyFor(disc, token);
+    m_statusLabel->setText(QString("Access saved for %1. Welcome!").arg(disc));
     m_statusLabel->setStyleSheet(AppSettings::darkMode() ? "" : "color: #8fda8f;");
     emit activated();
 }
 
-void WelcomeWidget::toggleShow(bool on)
+ 
+
+void WelcomeWidget::fetchLicense()
 {
-    m_keyEdit->setEchoMode(on ? QLineEdit::Normal : QLineEdit::Password);
+    if (!m_appwrite || !m_appwrite->isLoggedIn()) { updateAuthUI(); return; }
+    if (m_verified) { saveAndContinue(); return; }
+    if (m_statusLabel) m_statusLabel->setText("Checking verification status...");
+    auto* r = m_appwrite->getAccount();
+    connect(r, &QNetworkReply::finished, this, [this, r](){
+        const bool ok = (r->error() == QNetworkReply::NoError);
+        const QByteArray data = r->readAll();
+        r->deleteLater();
+        if (!ok) {
+            if (m_statusLabel) { m_statusLabel->setText("Failed to read account status"); m_statusLabel->setStyleSheet(AppSettings::darkMode() ? "" : "color: #ff8080;"); }
+            return;
+        }
+        QJsonParseError pe; QJsonDocument doc = QJsonDocument::fromJson(data, &pe);
+        QJsonObject acc = doc.isObject() ? doc.object() : QJsonObject();
+        const bool verified = acc.value("emailVerification").toBool(false) || (acc.value("status").toString() == QStringLiteral("verified"));
+        m_verified = verified;
+        if (verified) {
+            if (m_statusLabel) { m_statusLabel->setText("Email verified. Click 'Save & Continue' to proceed."); m_statusLabel->setStyleSheet(AppSettings::darkMode() ? "" : "color: #8fda8f;"); }
+            if (m_activateButton) m_activateButton->setText("Save & Continue");
+        } else {
+            if (m_statusLabel) { m_statusLabel->setText("Email not verified in Appwrite yet. Verify, then click Refresh Access."); m_statusLabel->setStyleSheet(AppSettings::darkMode() ? "" : "color: #ffcc66;"); }
+            if (m_activateButton) m_activateButton->setText("Refresh Access");
+        }
+    });
 }
+
+ 
+ 
+void WelcomeWidget::saveAndContinue()
+{
+    // Fetch account to cache user info, then save access and proceed
+    if (m_appwrite && m_appwrite->isLoggedIn()) {
+        QNetworkReply* r = m_appwrite->getAccount();
+        connect(r, &QNetworkReply::finished, this, [this, r](){
+            const QByteArray data = r->readAll();
+            r->deleteLater();
+            QJsonParseError pe; QJsonDocument doc = QJsonDocument::fromJson(data, &pe);
+            QJsonObject acc = doc.isObject() ? doc.object() : QJsonObject();
+            const QString name = acc.value("name").toString().trimmed();
+            const QString email = acc.value("email").toString().trimmed();
+            QSettings s; if (!name.isEmpty()) s.setValue("user/name", name); if (!email.isEmpty()) s.setValue("user/email", email);
+            markLicensedLocally();
+        });
+    } else {
+        markLicensedLocally();
+    }
+}
+
+ 
+ 
+void WelcomeWidget::openAuthDialog()
+{
+    if (!m_appwrite) return;
+    AuthDialog dlg(m_appwrite, this);
+    dlg.exec();
+    updateAuthUI();
+}
+
+ 
+
+ 
+
 
 void WelcomeWidget::openBuyPage()
 {
-    // TODO: Replace with your real purchase URL
     const QString disc = m_disciplineCombo ? m_disciplineCombo->currentText() : AppSettings::discipline();
-    const QUrl url(QStringLiteral("https://sitesurveyor.app/buy?discipline=%1").arg(QString::fromUtf8(QUrl::toPercentEncoding(disc))));
+    QUrl url(QStringLiteral("https://sitesurveyor.app/buy"));
+    QUrlQuery q;
+    q.addQueryItem(QStringLiteral("discipline"), disc);
+    q.addQueryItem(QStringLiteral("source"), QStringLiteral("desktop"));
+    url.setQuery(q);
+    QDesktopServices::openUrl(url);
+}
+
+void WelcomeWidget::openStudentPage()
+{
+    QUrl url(QStringLiteral("https://sitesurveyor.app/student"));
+    QUrlQuery q;
+    q.addQueryItem(QStringLiteral("source"), QStringLiteral("desktop"));
+    url.setQuery(q);
     QDesktopServices::openUrl(url);
 }
 
@@ -307,10 +420,9 @@ void WelcomeWidget::onDisciplineChanged(int index)
     if (!m_disciplineCombo) return;
     const QString disc = m_disciplineCombo->currentText();
     AppSettings::setDiscipline(disc);
-    if (m_keyEdit) m_keyEdit->clear();
     const bool has = AppSettings::hasLicenseFor(disc);
     if (has) {
-        m_statusLabel->setText(QString("A license key is saved for %1.").arg(disc));
+        m_statusLabel->setText(QString("A license is active for %1.").arg(disc));
         m_statusLabel->setStyleSheet(AppSettings::darkMode() ? "" : "color: #8fda8f;");
     } else {
         m_statusLabel->setText("");
