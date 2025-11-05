@@ -64,10 +64,11 @@ public:
         auto isDraw = [](ToolMode m){
             return m == ToolMode::DrawLine || m == ToolMode::DrawPolygon || m == ToolMode::DrawCircle || m == ToolMode::DrawArc || m == ToolMode::DrawRectangle;
         };
+        bool changed = (mode != m_toolMode);
         bool wasDraw = isDraw(m_toolMode);
         bool willDraw = isDraw(mode);
         if (wasDraw && !willDraw) { m_isDrawing = false; m_isPolygon = false; m_drawVertices.clear(); }
-        m_toolMode = mode; update(); }
+        m_toolMode = mode; update(); if (changed) emit toolModeChanged(m_toolMode); }
     ToolMode toolMode() const { return m_toolMode; }
     
     void setShowCrosshair(bool show) { m_showCrosshair = show; update(); }
@@ -154,6 +155,7 @@ signals:
     void selectedLineChanged(int lineIndex);
     void selectionChanged(int pointCount, int lineCount);
     void osnapHintChanged(const QString& text);
+    void toolModeChanged(CanvasWidget::ToolMode mode);
     
 protected:
     void paintEvent(QPaintEvent *event) override;

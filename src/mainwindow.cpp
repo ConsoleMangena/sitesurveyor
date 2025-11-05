@@ -1542,25 +1542,41 @@ void MainWindow::setupToolbar()
     QAction* lengthenAct = new QAction(IconManager::iconUnique("ruler-measure", "modify_lengthen", "LN"), "Lengthen", this);
     lengthenAct->setCheckable(true);
     lengthenAct->setToolTip("Lengthen - adjust line length by value or click");
-    connect(lengthenAct, &QAction::toggled, this, [this](bool on){ if (on) m_canvas->setToolMode(CanvasWidget::ToolMode::Lengthen); });
+    connect(lengthenAct, &QAction::toggled, this, [this](bool on){ if (on && m_canvas) m_canvas->setToolMode(CanvasWidget::ToolMode::Lengthen); });
     topBar->addAction(lengthenAct);
+    m_lengthenToolAction = lengthenAct;
+
     QAction* trimAct = new QAction(IconManager::iconUnique("scissors", "modify_trim", "TR"), "Trim", this);
     trimAct->setToolTip("Trim");
-    connect(trimAct, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->startTrim(); });
+    trimAct->setCheckable(true);
+    connect(trimAct, &QAction::toggled, this, [this](bool on){ if (!on) return; if (m_canvas) { m_canvas->setToolMode(CanvasWidget::ToolMode::Trim); m_canvas->startTrim(); } });
     topBar->addAction(trimAct);
+    m_trimToolbarAction = trimAct;
+
     QAction* extendAct = new QAction(IconManager::iconUnique("arrow-right", "modify_extend", "EX"), "Extend", this);
     extendAct->setToolTip("Extend");
-    connect(extendAct, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->startExtend(); });
+    extendAct->setCheckable(true);
+    connect(extendAct, &QAction::toggled, this, [this](bool on){ if (!on) return; if (m_canvas) { m_canvas->setToolMode(CanvasWidget::ToolMode::Extend); m_canvas->startExtend(); } });
     topBar->addAction(extendAct);
+    m_extendToolbarAction = extendAct;
+
     QAction* offsetAct = new QAction(IconManager::iconUnique("ruler", "modify_offset", "OF"), "Offset", this);
-    connect(offsetAct, &QAction::triggered, this, [this](){ bool ok=false; double d=QInputDialog::getDouble(this, "Offset", "Distance:", 1.0, 0.0, 1e9, 3, &ok); if (!ok) return; if (m_canvas) m_canvas->startOffset(d); });
+    offsetAct->setCheckable(true);
+    connect(offsetAct, &QAction::toggled, this, [this](bool on){ if (!on) return; bool ok=false; double d=QInputDialog::getDouble(this, "Offset", "Distance:", 1.0, 0.0, 1e9, 3, &ok); if (!ok) return; if (m_canvas) { m_canvas->setToolMode(CanvasWidget::ToolMode::OffsetLine); m_canvas->startOffset(d); } });
     topBar->addAction(offsetAct);
+    m_offsetToolbarAction = offsetAct;
+
     QAction* filletAct = new QAction(IconManager::iconUnique("corner-right-down", "modify_fillet0", "F0"), "Fillet0", this);
-    connect(filletAct, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->startFilletZero(); });
+    filletAct->setCheckable(true);
+    connect(filletAct, &QAction::toggled, this, [this](bool on){ if (!on) return; if (m_canvas) { m_canvas->setToolMode(CanvasWidget::ToolMode::FilletZero); m_canvas->startFilletZero(); } });
     topBar->addAction(filletAct);
+    m_filletToolbarAction = filletAct;
+
     QAction* chamferAct = new QAction(IconManager::iconUnique("crop", "modify_chamfer", "CH"), "Chamfer", this);
-    connect(chamferAct, &QAction::triggered, this, [this](){ bool ok=false; double d=QInputDialog::getDouble(this, "Chamfer", "Distance:", 1.0, 0.0, 1e9, 3, &ok); if (!ok) return; if (m_canvas) m_canvas->startChamfer(d); });
+    chamferAct->setCheckable(true);
+    connect(chamferAct, &QAction::toggled, this, [this](bool on){ if (!on) return; bool ok=false; double d=QInputDialog::getDouble(this, "Chamfer", "Distance:", 1.0, 0.0, 1e9, 3, &ok); if (!ok) return; if (m_canvas) { m_canvas->setToolMode(CanvasWidget::ToolMode::Chamfer); m_canvas->startChamfer(d); } });
     topBar->addAction(chamferAct);
+    m_chamferToolbarAction = chamferAct;
     // Avoid duplicating Delete Selected (kept under Edit group/menu)
 
     // Layers (Hide/Isolate/Lock/ShowAll) + Layer Panel toggle
@@ -1869,8 +1885,13 @@ void MainWindow::setupToolbar()
     if (m_drawCircleToolAction) m_drawCircleToolAction->setActionGroup(toolGroup);
     if (m_drawArcToolAction) m_drawArcToolAction->setActionGroup(toolGroup);
     if (m_drawRectToolAction) m_drawRectToolAction->setActionGroup(toolGroup);
-    // Include Lengthen mode in exclusivity
-    lengthenAct->setActionGroup(toolGroup);
+    // Include Modify modes in exclusivity
+    if (m_lengthenToolAction) m_lengthenToolAction->setActionGroup(toolGroup);
+    if (m_trimToolbarAction) m_trimToolbarAction->setActionGroup(toolGroup);
+    if (m_extendToolbarAction) m_extendToolbarAction->setActionGroup(toolGroup);
+    if (m_offsetToolbarAction) m_offsetToolbarAction->setActionGroup(toolGroup);
+    if (m_filletToolbarAction) m_filletToolbarAction->setActionGroup(toolGroup);
+    if (m_chamferToolbarAction) m_chamferToolbarAction->setActionGroup(toolGroup);
     enableOverflowTearOff(topBar);
     enableOverflowTearOff(bottomBar);
     
@@ -1882,6 +1903,7 @@ void MainWindow::setupConnections()
 {
     // Canvas signals
     connect(m_canvas, &CanvasWidget::mouseWorldPosition, this, &MainWindow::updateCoordinates);
+    connect(m_canvas, &CanvasWidget::toolModeChanged, this, [this](CanvasWidget::ToolMode){ updateToolSelectionUI(); });
     // Debounce OSNAP hint to avoid flicker
     if (!m_osnapHintTimer) { m_osnapHintTimer = new QTimer(this); m_osnapHintTimer->setSingleShot(true); m_osnapHintTimer->setInterval(50); }
     connect(m_canvas, &CanvasWidget::osnapHintChanged, this, [this](const QString& hint){
@@ -1979,6 +2001,31 @@ void MainWindow::updateMoreDock()
     // This function is temporarily disabled due to stability issues
     // The overflow menu functionality has been removed to prevent crashes
     return;
+}
+
+void MainWindow::updateToolSelectionUI()
+{
+    if (!m_canvas) return;
+    CanvasWidget::ToolMode mode = m_canvas->toolMode();
+    auto ensure = [&](QAction* act){ if (act) act->setChecked(true); };
+    switch (mode) {
+    case CanvasWidget::ToolMode::Select: ensure(m_selectToolAction); break;
+    case CanvasWidget::ToolMode::Pan: ensure(m_panToolAction); break;
+    case CanvasWidget::ToolMode::ZoomWindow: ensure(m_zoomWindowToolAction); break;
+    case CanvasWidget::ToolMode::LassoSelect: ensure(m_lassoToolAction); break;
+    case CanvasWidget::ToolMode::DrawLine: ensure(m_drawLineToolAction); break;
+    case CanvasWidget::ToolMode::DrawPolygon: ensure(m_drawPolyToolAction); break;
+    case CanvasWidget::ToolMode::DrawCircle: ensure(m_drawCircleToolAction); break;
+    case CanvasWidget::ToolMode::DrawArc: ensure(m_drawArcToolAction); break;
+    case CanvasWidget::ToolMode::DrawRectangle: ensure(m_drawRectToolAction); break;
+    case CanvasWidget::ToolMode::Lengthen: ensure(m_lengthenToolAction ? m_lengthenToolAction : m_selectToolAction); break;
+    case CanvasWidget::ToolMode::Trim: ensure(m_trimToolbarAction ? m_trimToolbarAction : m_selectToolAction); break;
+    case CanvasWidget::ToolMode::Extend: ensure(m_extendToolbarAction ? m_extendToolbarAction : m_selectToolAction); break;
+    case CanvasWidget::ToolMode::OffsetLine: ensure(m_offsetToolbarAction ? m_offsetToolbarAction : m_selectToolAction); break;
+    case CanvasWidget::ToolMode::FilletZero: ensure(m_filletToolbarAction ? m_filletToolbarAction : m_selectToolAction); break;
+    case CanvasWidget::ToolMode::Chamfer: ensure(m_chamferToolbarAction ? m_chamferToolbarAction : m_selectToolAction); break;
+    case CanvasWidget::ToolMode::DrawRegularPolygonEdge: ensure(m_drawRegularPolygonAction ? m_drawRegularPolygonAction : m_drawPolyToolAction); break;
+    }
 }
 
 void MainWindow::showAddPointDialog()

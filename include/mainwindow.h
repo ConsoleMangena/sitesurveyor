@@ -126,6 +126,7 @@ private:
     void updateMeasureLabelText();
     void enableOverflowTearOff(QToolBar* bar);
     void updateMoreDock();
+    void updateToolSelectionUI();
     // UI animation helpers
     void fadeInWidget(QWidget* w, int duration = 180);
     void pulseLabel(QWidget* w, int duration = 220);
@@ -231,12 +232,19 @@ private:
     QAction* m_calcDistanceAction{nullptr};
     QAction* m_calcAreaAction{nullptr};
     QAction* m_calcAzimuthAction{nullptr};
-    // Modify tool actions
+    // Modify tool actions (menu)
     QAction* m_toolTrimAction{nullptr};
     QAction* m_toolExtendAction{nullptr};
     QAction* m_toolOffsetAction{nullptr};
     QAction* m_toolFilletZeroAction{nullptr};
     QAction* m_toolChamferAction{nullptr};
+    // Toolbar tool actions (for selection highlight)
+    QAction* m_lengthenToolAction{nullptr};
+    QAction* m_trimToolbarAction{nullptr};
+    QAction* m_extendToolbarAction{nullptr};
+    QAction* m_offsetToolbarAction{nullptr};
+    QAction* m_filletToolbarAction{nullptr};
+    QAction* m_chamferToolbarAction{nullptr};
     // Menu pointers for license locking
     QMenu* m_fileMenu{nullptr};
     QMenu* m_editMenu{nullptr};
