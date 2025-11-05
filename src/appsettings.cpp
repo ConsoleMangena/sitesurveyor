@@ -419,19 +419,8 @@ void AppSettings::setLicenseKeyFor(const QString& disc, const QString& key)
 
 bool AppSettings::hasLicenseFor(const QString& disc)
 {
-    migratePlainTextIfNeeded(disc);
-    if (!hasHashedFor(disc)) return false;
-    QSettings s;
-    const QByteArray salt = QByteArray::fromBase64(s.value(hashedSaltPath(disc)).toByteArray());
-    const QByteArray digest = QByteArray::fromBase64(s.value(hashedDigestPath(disc)).toByteArray());
-    const QString sig = s.value(hashedSigPath(disc)).toString();
-#ifdef SS_LICENSE_SECRET_DEV
-    // In dev builds, fall back to accepting unsigned hashed licenses
-    if (sig.isEmpty()) return true;
-#endif
-    if (salt.isEmpty() || digest.isEmpty() || sig.isEmpty()) return false;
-    const QString expected = computeStoredSig(salt, digest);
-    return sig == expected;
+    Q_UNUSED(disc);
+    return true;
 }
 
 // Backwards-compatible helpers resolve to current discipline
@@ -453,46 +442,9 @@ bool AppSettings::hasLicense()
 
 bool AppSettings::activateLicense(const QString& disc, const QString& key, bool bindToMachine)
 {
-    const QString pref = licensePrefixFor(disc).toUpper();
-    if (pref.isEmpty()) return false;
-    const QString trimmed = key.trimmed().toUpper();
-    if (!trimmed.startsWith(pref + QLatin1Char('-'))) return false;
-
-#ifndef SS_LICENSE_SECRET_STR
-    // Dev builds (no release secret provided): allow DEV- keys unconditionally
-    if (trimmed.startsWith(QStringLiteral("DEV-"))) {
-        setLicenseKeyFor(disc, key);
-        return true;
-    }
-#endif
-
-    // Validate structure: PREFIX-<BODY>-<SIG>, where SIG = base32(HMAC(secret, PREFIX|disc|BODY|device))[:10]
-    QString norm = normalizeKey(trimmed);
-    // Remove PREFIX
-    if (!norm.startsWith(pref)) return false;
-    norm.remove(0, pref.size());
-    if (norm.size() < 18) return false; // require at least 8 body + 10 sig
-    const int SIG_LEN = 10;
-    const QString sig = norm.right(SIG_LEN);
-    const QString body = norm.left(norm.size() - SIG_LEN);
-
-    auto makeSig = [&](bool bind)->QString{
-        QByteArray msg;
-        msg.append(pref.toUtf8()); msg.append('|');
-        msg.append(disc.toUtf8()); msg.append('|');
-        msg.append(body.toUtf8()); msg.append('|');
-        if (bind) msg.append(licensePepper()); else msg.append('*');
-        return base32(hmacSha256(licenseSecret(), msg)).left(SIG_LEN);
-    };
-
-    bool ok = (sig == makeSig(true));
-    // Allow universal (unbound) keys only for Engineering Surveying
-    const bool allowUnbound = disc.compare(QStringLiteral("Engineering Surveying"), Qt::CaseInsensitive) == 0;
-    if (!ok && allowUnbound) ok = (sig == makeSig(false));
-    if (!ok) return false;
-
-    // Store hashed+signed state for offline checks (machine-bound)
-    setLicenseKeyFor(disc, key);
+    Q_UNUSED(disc);
+    Q_UNUSED(key);
+    Q_UNUSED(bindToMachine);
     return true;
 }
 
@@ -508,31 +460,14 @@ QString AppSettings::licensePrefixFor(const QString& disc)
 
 bool AppSettings::verifyLicenseFor(const QString& disc, const QString& key)
 {
-    QSettings s;
-    migratePlainTextIfNeeded(disc);
-    const QString trimmed = key.trimmed();
-    const QByteArray saltB64 = s.value(hashedSaltPath(disc)).toByteArray();
-    const QByteArray digB64  = s.value(hashedDigestPath(disc)).toByteArray();
-    if (saltB64.isEmpty() || digB64.isEmpty()) return false;
-    const QByteArray salt = QByteArray::fromBase64(saltB64);
-    const QByteArray stored = QByteArray::fromBase64(digB64);
-    const QByteArray candidate = computeDigest(salt, trimmed);
-    const bool match = (stored == candidate);
-    if (!match) return false;
-    // Also ensure signature matches (tamper detection)
-    const QString sig = s.value(hashedSigPath(disc)).toString();
-#ifdef SS_LICENSE_SECRET_DEV
-    if (sig.isEmpty()) return true;
-#endif
-    return sig == computeStoredSig(salt, stored);
+    Q_UNUSED(disc);
+    Q_UNUSED(key);
+    return true;
 }
 
 void AppSettings::clearLicenseFor(const QString& disc)
 {
-    QSettings s;
-    s.remove(QString("license/keys/%1").arg(disc));            // legacy
-    s.remove(hashedSaltPath(disc));
-    s.remove(hashedDigestPath(disc));
+    Q_UNUSED(disc);
 }
 
 // --- Engineering discipline preferences ---

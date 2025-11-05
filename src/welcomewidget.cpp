@@ -199,7 +199,7 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
         l->addStretch();
     }
 
-    // Right column: Account/Status/Diagnostics
+    // Right column: Settings
     QFormLayout* form = new QFormLayout();
     form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
     form->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
@@ -222,35 +222,7 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
     
 
 
-    // Offline license input and status
-    m_accountLabel = new QLabel("Not activated", this);
-    form->addRow(new QLabel("License:", this), m_accountLabel);
-    m_statusLabel = new QLabel("", this);
-    form->addRow(new QLabel("Status:", this), m_statusLabel);
-    QLabel* licLabel = new QLabel("License Key:", this);
-    m_licenseEdit = new QLineEdit(this);
-    m_licenseEdit->setPlaceholderText("XXXX-XXXX-XXXX-XXXX");
-    m_licenseEdit->setEchoMode(QLineEdit::Password);
-    form->addRow(licLabel, m_licenseEdit);
-
     rightLayout->addLayout(form);
-
-    auto* buttons = new QHBoxLayout();
-    buttons->setSpacing(2);
-    buttons->addStretch();
-    m_studentButton = new QPushButton("Student Verification", this);
-    m_studentButton->setIcon(IconManager::iconUnique("star", "welcome_student", "ST"));
-    m_studentButton->setFont(descFont);
-    buttons->addWidget(m_studentButton);
-    m_buyButton = new QPushButton("Buy License", this);
-    m_buyButton->setIcon(IconManager::iconUnique("credit-card", "welcome_buy", "BY"));
-    m_buyButton->setFont(descFont);
-    buttons->addWidget(m_buyButton);
-    m_activateButton = new QPushButton("Activate", this);
-    m_activateButton->setFont(descFont);
-    m_activateButton->setDefault(true);
-    buttons->addWidget(m_activateButton);
-    rightLayout->addLayout(buttons);
 
     // Load .env into process environment (optional convenience)
     {
@@ -272,27 +244,15 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
 
     // Connections
     connect(m_disciplineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &WelcomeWidget::onDisciplineChanged);
-    connect(m_studentButton, &QPushButton::clicked, this, &WelcomeWidget::openStudentPage);
-    connect(m_buyButton, &QPushButton::clicked, this, &WelcomeWidget::openBuyPage);
-    connect(m_activateButton, &QPushButton::clicked, this, &WelcomeWidget::fetchLicense);
-
 
     refreshRecentList();
     reload();
-    updateAuthUI();
 }
 
  
 
 void WelcomeWidget::signOut()
 {
-    // Clear all local licenses and lock UI (offline)
-    const QStringList discs = AppSettings::availableDisciplines();
-    for (const QString& d : discs) AppSettings::clearLicenseFor(d);
-    m_verified = false;
-    setFeaturesLocked(true);
-    if (m_statusLabel) { m_statusLabel->setText("License removed"); m_statusLabel->setStyleSheet(""); }
-    if (m_accountLabel) m_accountLabel->setText("Not activated");
     emit disciplineChanged();
 }
 
@@ -306,86 +266,19 @@ void WelcomeWidget::reload()
         int idx = discs.indexOf(disc);
         if (idx >= 0) m_disciplineCombo->setCurrentIndex(idx);
     }
-    const bool has = AppSettings::hasLicenseFor(disc);
-    if (has) {
-        m_statusLabel->setText(QString("A license is active for %1.").arg(disc));
-        m_statusLabel->setStyleSheet("color: #8fda8f;");
-    } else {
-        m_statusLabel->setText("");
-        m_statusLabel->setStyleSheet("");
-    }
     refreshRecentList();
 }
 
-void WelcomeWidget::updateAuthUI()
-{
-    const QString disc = m_disciplineCombo ? m_disciplineCombo->currentText() : AppSettings::discipline();
-    const bool has = AppSettings::hasLicenseFor(disc);
-    if (m_accountLabel) m_accountLabel->setText(has ? "Activated" : "Not activated");
-    if (m_activateButton) m_activateButton->setText(has ? "Update License" : "Activate");
-    setFeaturesLocked(!has);
-}
 
  
 
-void WelcomeWidget::markLicensedLocally()
-{
-    const QString disc = m_disciplineCombo ? m_disciplineCombo->currentText() : AppSettings::discipline();
-    AppSettings::setDiscipline(disc);
-    m_statusLabel->setText(QString("Access saved for %1. Welcome!").arg(disc));
-    m_statusLabel->setStyleSheet("color: #16a34a;");
-    // Update offline grace start timestamp
-    QSettings s; s.setValue("license/lastVerifiedUtc", QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
-    if (!s.contains("license/offlineGraceDays")) s.setValue("license/offlineGraceDays", 5);
-    emit activated();
-}
 
  
 
-void WelcomeWidget::fetchLicense()
-{
-    const QString disc = m_disciplineCombo ? m_disciplineCombo->currentText() : AppSettings::discipline();
-    const QString key = m_licenseEdit ? m_licenseEdit->text().trimmed() : QString();
-    if (key.isEmpty()) {
-        if (m_statusLabel) { m_statusLabel->setText("Enter a license key to activate."); m_statusLabel->setStyleSheet("color: #d97706;"); }
-        return;
-    }
-    const QString prefix = AppSettings::licensePrefixFor(disc);
-    const QString upperKey = key.toUpper();
-    if (!prefix.isEmpty() && !upperKey.startsWith(prefix + "-")) {
-        if (m_statusLabel) { m_statusLabel->setText(QString("Invalid license for %1 (expected %2- prefix).").arg(disc, prefix)); m_statusLabel->setStyleSheet("color: #dc2626;"); }
-        return;
-    }
-    AppSettings::setDiscipline(disc);
-    // Validate and activate (HMAC-signed, machine-bound)
-    if (!AppSettings::activateLicense(disc, key, true)) {
-        if (m_statusLabel) { m_statusLabel->setText("Invalid or mismatched license key."); m_statusLabel->setStyleSheet("color: #dc2626;"); }
-        return;
-    }
-    // Also set verified timestamp and emit activation to the MainWindow
-    markLicensedLocally();
-}
 
  
  
-void WelcomeWidget::saveAndContinue()
-{
-    const QString disc = m_disciplineCombo ? m_disciplineCombo->currentText() : AppSettings::discipline();
-    if (AppSettings::hasLicenseFor(disc)) {
-        markLicensedLocally();
-    } else {
-        if (m_statusLabel) { m_statusLabel->setText("Enter a valid license key to continue."); m_statusLabel->setStyleSheet("color: #d97706;"); }
-    }
-}
 
-void WelcomeWidget::setFeaturesLocked(bool locked)
-{
-    if (m_newButton) m_newButton->setEnabled(!locked);
-    if (m_openButton) m_openButton->setEnabled(!locked);
-    if (m_templateButton) m_templateButton->setEnabled(!locked);
-    if (m_pinButton) m_pinButton->setEnabled(!locked);
-    if (m_unpinButton) m_unpinButton->setEnabled(!locked);
-}
 
  
  
@@ -396,25 +289,6 @@ void WelcomeWidget::setFeaturesLocked(bool locked)
  
 
 
-void WelcomeWidget::openBuyPage()
-{
-    const QString disc = m_disciplineCombo ? m_disciplineCombo->currentText() : AppSettings::discipline();
-    QUrl url(QStringLiteral("https://sitesurveyor.app/buy"));
-    QUrlQuery q;
-    q.addQueryItem(QStringLiteral("discipline"), disc);
-    q.addQueryItem(QStringLiteral("source"), QStringLiteral("desktop"));
-    url.setQuery(q);
-    openUrlExternalSilent(url);
-}
-
-void WelcomeWidget::openStudentPage()
-{
-    QUrl url(QStringLiteral("https://sitesurveyor.app/student"));
-    QUrlQuery q;
-    q.addQueryItem(QStringLiteral("source"), QStringLiteral("desktop"));
-    url.setQuery(q);
-    QDesktopServices::openUrl(url);
-}
 
 void WelcomeWidget::onDisciplineChanged(int index)
 {
@@ -422,14 +296,6 @@ void WelcomeWidget::onDisciplineChanged(int index)
     if (!m_disciplineCombo) return;
     const QString disc = m_disciplineCombo->currentText();
     AppSettings::setDiscipline(disc);
-    const bool has = AppSettings::hasLicenseFor(disc);
-    if (has) {
-        m_statusLabel->setText(QString("A license is active for %1.").arg(disc));
-        m_statusLabel->setStyleSheet("color: #8fda8f;");
-    } else {
-        m_statusLabel->setText("");
-        m_statusLabel->setStyleSheet("");
-    }
     emit disciplineChanged();
 }
 

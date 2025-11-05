@@ -626,9 +626,8 @@ void MainWindow::setupUI()
     m_centerStack = new QStackedWidget(this);
     // Ensure canvas exists already
     if (m_canvas) m_centerStack->addWidget(m_canvas);
-    // Welcome page with license entry
+    // Welcome page
     m_welcomeWidget = new WelcomeWidget(this);
-    connect(m_welcomeWidget, &WelcomeWidget::activated, this, &MainWindow::onLicenseActivated);
     connect(m_welcomeWidget, &WelcomeWidget::disciplineChanged, this, &MainWindow::onLicenseActivated);
     // Start tab actions
     connect(m_welcomeWidget, &WelcomeWidget::newProjectRequested, this, &MainWindow::newProject);
@@ -858,60 +857,26 @@ void MainWindow::onSelectionChanged(int points, int lines)
 
 void MainWindow::updateLicenseStateUI()
 {
-    // Offline license: presence of a saved key fully unlocks
-    const bool licensed = AppSettings::hasLicenseFor(AppSettings::discipline());
+    // Always unlocked: show canvas and enable UI
+    if (m_centerStack && m_canvas) m_centerStack->setCurrentWidget(m_canvas);
 
-    // Switch central page
-    if (m_centerStack && m_canvas && m_welcomeWidget) {
-        int canvasIdx = m_centerStack->indexOf(m_canvas);
-        int welcomeIdx = m_centerStack->indexOf(m_welcomeWidget);
-        if (licensed && canvasIdx >= 0) m_centerStack->setCurrentIndex(canvasIdx);
-        else if (welcomeIdx >= 0) m_centerStack->setCurrentIndex(welcomeIdx);
-    }
+    if (m_pointsDock) m_pointsDock->setVisible(true);
+    if (m_layersDock) m_layersDock->setVisible(true);
+    if (m_commandDock) m_commandDock->setVisible(true);
 
-    // Show/hide docks
-    if (m_pointsDock) m_pointsDock->setVisible(licensed);
-    if (m_layersDock) m_layersDock->setVisible(licensed);
-    if (m_commandDock) m_commandDock->setVisible(licensed);
-
-    // Show/hide all toolbars
     const auto toolbars = findChildren<QToolBar*>();
-    for (QToolBar* tb : toolbars) {
-        if (tb) tb->setVisible(licensed);
-    }
+    for (QToolBar* tb : toolbars) if (tb) tb->setVisible(true);
 
-    // Disable/enable all actions globally based on license
     const auto allActions = findChildren<QAction*>();
-    for (QAction* act : allActions) {
-        if (!act) continue;
-        act->setEnabled(licensed);
-    }
-    // Menus themselves (QMenu has an associated menuAction)
+    for (QAction* act : allActions) if (act) act->setEnabled(true);
+
     const auto menus = findChildren<QMenu*>();
-    for (QMenu* m : menus) {
-        if (!m) continue;
-        if (m->menuAction()) m->menuAction()->setEnabled(licensed);
-    }
+    for (QMenu* m : menus) if (m && m->menuAction()) m->menuAction()->setEnabled(true);
 
-    // When unlicensed, re-enable only License entry (and optionally Exit/About)
-    if (!licensed) {
-        if (m_leftPanelButton) m_leftPanelButton->setVisible(false);
-        if (m_rightPanelButton) m_rightPanelButton->setVisible(false);
-
-        if (m_settingsMenu && m_settingsMenu->menuAction()) m_settingsMenu->menuAction()->setEnabled(true);
-        // Keep Exit and About accessible if present
-        if (m_exitAction) m_exitAction->setEnabled(true);
-        if (m_aboutAction) m_aboutAction->setEnabled(true);
-
-        // Ensure Preferences is disabled while unlicensed
-        if (m_preferencesAction) m_preferencesAction->setEnabled(false);
-    } else {
-        // Licensed: restore panel action states and handles
-        if (m_toggleLeftPanelAction) m_toggleLeftPanelAction->setEnabled(true);
-        if (m_toggleRightPanelAction) m_toggleRightPanelAction->setEnabled(true);
-        if (m_toggleCommandPanelAction) m_toggleCommandPanelAction->setEnabled(true);
-        updatePanelToggleStates();
-    }
+    if (m_toggleLeftPanelAction) m_toggleLeftPanelAction->setEnabled(true);
+    if (m_toggleRightPanelAction) m_toggleRightPanelAction->setEnabled(true);
+    if (m_toggleCommandPanelAction) m_toggleCommandPanelAction->setEnabled(true);
+    updatePanelToggleStates();
 }
 
 void MainWindow::setupPointsDock()

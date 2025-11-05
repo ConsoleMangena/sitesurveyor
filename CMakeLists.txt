@@ -40,7 +40,6 @@ set(SOURCES
     src/layerpanel.cpp
     src/propertiespanel.cpp
     src/welcomewidget.cpp
-    src/licensedialog.cpp
 )
 
 # Header files
@@ -66,7 +65,6 @@ set(HEADERS
     include/layerpanel.h
     include/propertiespanel.h
     include/welcomewidget.h
-    include/licensedialog.h
 )
 
 # Create executable
@@ -106,16 +104,6 @@ set_target_properties(SiteSurveyor PROPERTIES
     MACOSX_BUNDLE TRUE
 )
 
-# Embed license secret from CMake variable or environment for release builds
-# Usage:
-#   cmake -DSS_LICENSE_SECRET="your-long-random-secret" ...
-if(DEFINED SS_LICENSE_SECRET)
-    add_compile_definitions(SS_LICENSE_SECRET_STR="${SS_LICENSE_SECRET}")
-elseif(DEFINED ENV{SS_LICENSE_SECRET})
-    add_compile_definitions(SS_LICENSE_SECRET_STR="$ENV{SS_LICENSE_SECRET}")
-else()
-    add_compile_definitions(SS_LICENSE_SECRET_DEV=1)
-endif()
 
 # Place the executable in a predictable folder (non-macOS)
 if(NOT APPLE)

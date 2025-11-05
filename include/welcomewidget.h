@@ -24,7 +24,6 @@ public:
     void signOut();
 
 signals:
-    void activated();
     void disciplineChanged();
     // Start actions
     void newProjectRequested();
@@ -32,11 +31,6 @@ signals:
     void openPathRequested(const QString& path);
 
 private slots:
-    void fetchLicense();
-    void saveAndContinue();
-    // UI helpers
-    void openBuyPage();
-    void openStudentPage();
     void onDisciplineChanged(int index);
     void onCreateNew();
     void onOpenProject();
@@ -49,10 +43,6 @@ private slots:
     
 
 private:
-    void updateAuthUI();
-    void setFeaturesLocked(bool locked);
-    void markLicensedLocally();
-    
     // Header
     QLabel* m_title{nullptr};
     QLabel* m_description{nullptr};
@@ -67,16 +57,7 @@ private:
     QListWidget* m_recentList{nullptr};
     QToolButton* m_pinButton{nullptr};
     QToolButton* m_unpinButton{nullptr};
-    // Account panel (offline)
-    QLineEdit* m_licenseEdit{nullptr};
-    QPushButton* m_activateButton{nullptr};
-    QPushButton* m_buyButton{nullptr};
-    QPushButton* m_studentButton{nullptr};
-    QLabel* m_accountLabel{nullptr};
-    QLabel* m_statusLabel{nullptr};
     QComboBox* m_disciplineCombo{nullptr};
-    bool m_purchasePrompted{false};
-    bool m_verified{false};
     QWidget* m_leftPane{nullptr};
     QWidget* m_rightPane{nullptr};
     

@@ -37,7 +37,6 @@ jobs:
         shell: pwsh
         env:
           VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-          SS_LICENSE_SECRET: ${{ secrets.SS_LICENSE_SECRET }}
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake"
 
       - name: Build

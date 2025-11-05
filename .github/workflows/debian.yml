@@ -22,8 +22,6 @@ jobs:
           sudo apt-get install -y build-essential debhelper cmake qt6-base-dev qt6-base-dev-tools libgdal-dev
 
       - name: Build .deb
-        env:
-          SS_LICENSE_SECRET: ${{ secrets.SS_LICENSE_SECRET }}
         run: |
           dpkg-buildpackage -us -uc -b
           mkdir -p dist
