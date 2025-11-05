@@ -475,15 +475,23 @@ bool AppSettings::activateLicense(const QString& disc, const QString& key, bool 
     const int SIG_LEN = 10;
     const QString sig = norm.right(SIG_LEN);
     const QString body = norm.left(norm.size() - SIG_LEN);
-    QByteArray msg;
-    msg.append(pref.toUtf8()); msg.append('|');
-    msg.append(disc.toUtf8()); msg.append('|');
-    msg.append(body.toUtf8()); msg.append('|');
-    if (bindToMachine) msg.append(licensePepper()); else msg.append('*');
-    const QString expected = base32(hmacSha256(licenseSecret(), msg)).left(SIG_LEN);
-    if (sig != expected) return false;
 
-    // Store hashed+signed state for offline checks
+    auto makeSig = [&](bool bind)->QString{
+        QByteArray msg;
+        msg.append(pref.toUtf8()); msg.append('|');
+        msg.append(disc.toUtf8()); msg.append('|');
+        msg.append(body.toUtf8()); msg.append('|');
+        if (bind) msg.append(licensePepper()); else msg.append('*');
+        return base32(hmacSha256(licenseSecret(), msg)).left(SIG_LEN);
+    };
+
+    bool ok = (sig == makeSig(true));
+    // Allow universal (unbound) keys only for Engineering Surveying
+    const bool allowUnbound = disc.compare(QStringLiteral("Engineering Surveying"), Qt::CaseInsensitive) == 0;
+    if (!ok && allowUnbound) ok = (sig == makeSig(false));
+    if (!ok) return false;
+
+    // Store hashed+signed state for offline checks (machine-bound)
     setLicenseKeyFor(disc, key);
     return true;
 }
