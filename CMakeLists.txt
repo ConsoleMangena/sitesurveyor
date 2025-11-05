@@ -83,10 +83,13 @@ endif()
 # Includes and libraries
 target_include_directories(SiteSurveyor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-# GDAL for CRS transformations
-find_package(GDAL REQUIRED)
+# GDAL for CRS transformations (optional on platforms without dev libs)
+find_package(GDAL QUIET)
 if (GDAL_FOUND)
     target_link_libraries(SiteSurveyor PRIVATE GDAL::GDAL)
+    target_compile_definitions(SiteSurveyor PRIVATE SS_HAVE_GDAL=1)
+else()
+    message(STATUS "GDAL not found; building without CRS transforms")
 endif()
 
 target_link_libraries(SiteSurveyor PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
