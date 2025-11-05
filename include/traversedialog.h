@@ -4,6 +4,7 @@
 #include <QDialog>
 #include <QVector>
 #include <QPointF>
+#include <QString>
 
 class QComboBox;
 class QTableWidget;
@@ -33,6 +34,8 @@ private:
     bool getClosePoint(Point& out) const;
     QVector<Leg> collectLegs() const;
     void appendReportLine(const QString& s);
+    bool parseAngleInput(const QString& text, double& outDegrees) const; // supports decimal or DMS (deg° min' sec")
+    bool parseDistanceInput(const QString& text, double& outDistance) const; // supports plain number or with unit suffix
 
     PointManager* m_pm{nullptr};
     CanvasWidget* m_canvas{nullptr};

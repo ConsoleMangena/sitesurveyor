@@ -22,6 +22,8 @@ public:
     enum class ToolMode { Select, Pan, ZoomWindow, DrawLine, DrawPolygon, DrawCircle, DrawArc, DrawRectangle, DrawRegularPolygonEdge, Trim, Extend, OffsetLine, FilletZero, Chamfer, LassoSelect, Lengthen };
     
     void addPoint(const Point& point);
+    bool setPointXYZ(const QString& name, double x, double y, double z);
+    bool renamePoint(const QString& oldName, const QString& newName);
     void addLine(const QPointF& start, const QPointF& end);
     void addText(const QString& text, const QPointF& pos, double height, double angle = 0.0, const QString& layer = QString());
     int textCount() const;
@@ -148,6 +150,7 @@ signals:
     void canvasClicked(const QPointF& worldPos);
     void zoomChanged(double zoom);
     void drawingDistanceChanged(double distanceMeters);
+    void drawingAngleChanged(double angleDegrees);
     void selectedLineChanged(int lineIndex);
     void selectionChanged(int pointCount, int lineCount);
     void osnapHintChanged(const QString& text);
@@ -186,8 +189,9 @@ private:
     bool hitTestLine(const QPoint& screen, int& outLineIndex) const;
     bool hitTestPoint(const QPoint& screen, int& outPointIndex) const;
     void setExclusiveSelectionLine(int idx);
-    // Helper to build a regular polygon from an edge
     QVector<QPointF> makeRegularPolygonFromEdge(const QPointF& a, const QPointF& b, int sides) const;
+    int polylineIndexForLine(int lineIndex) const;
+    QVector<int> currentLineIndicesForPolyline(int polyIndex) const;
     void toggleSelectionLine(int idx);
     void setExclusiveSelectionPoint(int idx);
     void toggleSelectionPoint(int idx);

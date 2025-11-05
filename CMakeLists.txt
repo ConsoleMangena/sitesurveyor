@@ -42,6 +42,7 @@ set(SOURCES
     src/welcomewidget.cpp
     src/appwriteclient.cpp
     src/authdialog.cpp
+    src/licensedialog.cpp
 )
 
 # Header files
@@ -69,6 +70,7 @@ set(HEADERS
     include/welcomewidget.h
     include/appwriteclient.h
     include/authdialog.h
+    include/licensedialog.h
 )
 
 # Create executable

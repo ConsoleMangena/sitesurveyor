@@ -220,8 +220,8 @@ void IntersectResectionDialog::computeIntersection()
     double dB = SurveyCalculator::distance(B.toQPointF(), out);
     double azA = SurveyCalculator::azimuth(A.toQPointF(), out);
     double azB = SurveyCalculator::azimuth(B.toQPointF(), out);
-    rep += QString("From A: d=%1, az=%2°\n").arg(dA,0,'f',3).arg(azA,0,'f',4);
-    rep += QString("From B: d=%1, az=%2°\n").arg(dB,0,'f',3).arg(azB,0,'f',4);
+    rep += QString("From A: d=%1, brg=%2\n").arg(dA,0,'f',3).arg(SurveyCalculator::toDMS(azA));
+    rep += QString("From B: d=%1, brg=%2\n").arg(dB,0,'f',3).arg(SurveyCalculator::toDMS(azB));
     m_report->setText(rep);
     if (m_addPointCheck->isChecked()) {
         Point P(name, out.x(), out.y(), 0.0);

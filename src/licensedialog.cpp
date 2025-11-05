@@ -89,7 +89,7 @@ void LicenseDialog::saveKey()
     if (key.isEmpty() || key.size() < 8) {
         m_statusLabel->setText("Please enter a valid license key.");
         // In dark mode keep text white; in light mode show red
-        m_statusLabel->setStyleSheet(AppSettings::darkMode() ? "" : "color: #ff8080;");
+        m_statusLabel->setStyleSheet("color: #ff8080;");
         return;
     }
     const QString disc = m_discCombo ? m_discCombo->currentText() : AppSettings::discipline();
@@ -99,14 +99,14 @@ void LicenseDialog::saveKey()
     if (!prefix.isEmpty() && !upperKey.startsWith(prefix + "-")) {
         m_statusLabel->setText(QString("Invalid license for %1 (expected prefix %2-).")
                                .arg(disc, prefix));
-        m_statusLabel->setStyleSheet(AppSettings::darkMode() ? "" : "color: #ff8080;");
+        m_statusLabel->setStyleSheet("color: #ff8080;");
         return;
     }
     AppSettings::setDiscipline(disc);
     AppSettings::setLicenseKeyFor(disc, key);
     m_statusLabel->setText(QString("License key saved for %1.").arg(disc));
     // In dark mode keep text white; in light mode show green
-    m_statusLabel->setStyleSheet(AppSettings::darkMode() ? "" : "color: #80ff80;");
+    m_statusLabel->setStyleSheet("color: #80ff80;");
     emit licenseSaved();
 }
 

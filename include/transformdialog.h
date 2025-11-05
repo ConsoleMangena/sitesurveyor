@@ -4,6 +4,7 @@
 #include <QDialog>
 #include <QVector>
 #include <QPointF>
+#include <QString>
 
 class QComboBox;
 class QTableWidget;

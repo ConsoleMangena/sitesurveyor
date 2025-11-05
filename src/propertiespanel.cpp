@@ -44,10 +44,10 @@ PropertiesPanel::PropertiesPanel(QWidget* parent)
         row->addStretch(1);
         layout->addLayout(row);
     }
-    // Azimuth row
+    // Bearing row
     {
         auto* row = new QHBoxLayout();
-        row->addWidget(new QLabel("Azimuth:"));
+        row->addWidget(new QLabel("Bearing:"));
         m_azLabel = new QLabel("-");
         row->addWidget(m_azLabel);
         row->addStretch(1);
@@ -129,7 +129,7 @@ void PropertiesPanel::updateLineInfo()
     const double len = SurveyCalculator::distance(a, b);
     const double az = SurveyCalculator::azimuth(a, b);
     m_lenLabel->setText(QString("%1 m").arg(len, 0, 'f', 3));
-    m_azLabel->setText(QString("%1°").arg(az, 0, 'f', 4));
+    m_azLabel->setText(SurveyCalculator::toDMS(az));
 }
 
 void PropertiesPanel::onLayerComboChanged(int idx)

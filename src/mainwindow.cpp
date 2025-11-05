@@ -60,6 +60,7 @@
 #include <QJsonArray>
 #include <QSaveFile>
 #include <QDateTime>
+#include <QSettings>
 #include <QWidgetAction>
 #include <limits>
 #include <QtMath>
@@ -118,9 +119,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     m_undoStack = new QUndoStack(this);
     m_canvas->setUndoStack(m_undoStack);
     
+    // Initialize More dock pointers to prevent crashes
+    m_moreDock = nullptr;
+    m_moreButton = nullptr;
+    m_morePinAction = nullptr;
+    m_morePinned = false;
+    
+    toggleDarkMode(false);
     setupUI();
-    // Apply last-used theme (default is light when unset)
-    toggleDarkMode(AppSettings::darkMode());
     setupMenus();
     setupToolbar();
     // Apply Engineering Surveying preset (layers, units) if needed
@@ -566,7 +572,8 @@ void MainWindow::toggleDarkMode(bool on)
         // Light mode
         qApp->setPalette(QApplication::style()->standardPalette());
         qApp->setStyleSheet("");
-        IconManager::setMonochrome(false);
+        IconManager::setMonochrome(true);
+        IconManager::setMonochromeColor(Qt::black);
         if (m_commandOutput) m_commandOutput->setStyleSheet("QTextEdit { color: #000000; background-color: #f0f0f0; }");
     }
     // Rebuild toolbars so icons pick up monochrome state, but only if they already exist
@@ -851,7 +858,14 @@ void MainWindow::onSelectionChanged(int points, int lines)
 
 void MainWindow::updateLicenseStateUI()
 {
-    const bool licensed = AppSettings::hasLicense();
+    // Gate UI by license state (set when admin issues access token) with offline grace TTL
+    const bool hasLocal = AppSettings::hasLicenseFor(AppSettings::discipline());
+    QSettings s;
+    const int graceDays = s.value("license/offlineGraceDays", 5).toInt();
+    const QString ts = s.value("license/lastVerifiedUtc").toString();
+    const QDateTime last = QDateTime::fromString(ts, Qt::ISODate);
+    bool withinGrace = last.isValid() && last.secsTo(QDateTime::currentDateTimeUtc()) <= graceDays * 86400;
+    const bool licensed = hasLocal && withinGrace;
 
     // Switch central page
     if (m_centerStack && m_canvas && m_welcomeWidget) {
@@ -883,12 +897,6 @@ void MainWindow::updateLicenseStateUI()
     for (QMenu* m : menus) {
         if (!m) continue;
         if (m->menuAction()) m->menuAction()->setEnabled(licensed);
-    }
-    // Disable all toolbuttons explicitly (status bar or others)
-    const auto buttons = findChildren<QToolButton*>();
-    for (QToolButton* b : buttons) {
-        if (!b) continue;
-        b->setEnabled(licensed);
     }
 
     // When unlicensed, re-enable only License entry (and optionally Exit/About)
@@ -935,6 +943,10 @@ void MainWindow::setupPointsDock()
     m_pointsDock->setWidget(m_pointsTable);
     addDockWidget(Qt::LeftDockWidgetArea, m_pointsDock);
     connect(m_pointsDock, &QDockWidget::visibilityChanged, this, [this](bool){ updatePanelToggleStates(); });
+
+    // Coordinates table interactions
+    connect(m_pointsTable, &QTableWidget::itemSelectionChanged, this, &MainWindow::onPointsTableSelectionChanged);
+    connect(m_pointsTable, &QTableWidget::itemChanged, this, &MainWindow::onPointsCellChanged);
 }
 
 void MainWindow::setupCommandDock()
@@ -981,6 +993,23 @@ void MainWindow::setupCommandDock()
     
     // Connect command input (press Enter to execute)
     connect(m_commandInput, &QLineEdit::returnPressed, this, &MainWindow::executeCommand);
+}
+
+void MainWindow::executeCommand()
+{
+    if (!m_commandProcessor || !m_commandInput) return;
+    const QString cmd = m_commandInput->text().trimmed();
+    if (cmd.isEmpty()) return;
+
+    if (m_commandOutput) m_commandOutput->append(QString("> %1").arg(cmd));
+    const QString result = m_commandProcessor->processCommand(cmd);
+    if (m_commandOutput && !result.trimmed().isEmpty()) m_commandOutput->append(result);
+
+    // Refresh UI to reflect changes made by commands
+    updatePointsTable();
+    updateStatus();
+
+    m_commandInput->clear();
 }
 
 void MainWindow::setupLayersDock()
@@ -1031,19 +1060,19 @@ void MainWindow::setupMenus()
     m_fileMenu = fileMenu;
     
     QAction* newProject = fileMenu->addAction("&New Project");
-    newProject->setIcon(IconManager::icon("file-plus"));
+    newProject->setIcon(IconManager::iconUnique("file-plus", "file_new", "N"));
     newProject->setShortcut(QKeySequence::New);
     connect(newProject, &QAction::triggered, this, &MainWindow::newProject);
     m_newProjectAction = newProject;
     
     QAction* openProject = fileMenu->addAction("&Open Project...");
-    openProject->setIcon(IconManager::icon("folder-open"));
+    openProject->setIcon(IconManager::iconUnique("folder-open", "file_open", "O"));
     openProject->setShortcut(QKeySequence::Open);
     connect(openProject, &QAction::triggered, this, &MainWindow::openProject);
     m_openProjectAction = openProject;
     
     QAction* saveProject = fileMenu->addAction("&Save Project");
-    saveProject->setIcon(IconManager::icon("device-floppy"));
+    saveProject->setIcon(IconManager::iconUnique("device-floppy", "file_save", "S"));
     saveProject->setShortcut(QKeySequence::Save);
     connect(saveProject, &QAction::triggered, this, &MainWindow::saveProject);
     m_saveProjectAction = saveProject;
@@ -1051,20 +1080,20 @@ void MainWindow::setupMenus()
     fileMenu->addSeparator();
     
     QAction* importPoints = fileMenu->addAction("&Import Coordinates...");
-    importPoints->setIcon(IconManager::icon("file-import"));
+    importPoints->setIcon(IconManager::iconUnique("file-import", "import_points", "IM"));
     connect(importPoints, &QAction::triggered, this, &MainWindow::importCoordinates);
     m_importPointsAction = importPoints;
     QAction* exportPoints = fileMenu->addAction("&Export Coordinates (CSV)...");
-    exportPoints->setIcon(IconManager::icon("file-export"));
+    exportPoints->setIcon(IconManager::iconUnique("file-export", "export_points", "EX"));
     connect(exportPoints, &QAction::triggered, this, &MainWindow::exportCoordinates);
     m_exportPointsAction = exportPoints;
 
     QAction* exportGeoJson = fileMenu->addAction("Export &GeoJSON...");
-    exportGeoJson->setIcon(IconManager::icon("file-export"));
+    exportGeoJson->setIcon(IconManager::iconUnique("file-export", "export_geojson", "GJ"));
     connect(exportGeoJson, &QAction::triggered, this, &MainWindow::exportGeoJSON);
     m_exportGeoJsonAction = exportGeoJson;
     QAction* exportDxf = fileMenu->addAction("Export D&XF (R12)...");
-    exportDxf->setIcon(IconManager::icon("file-export"));
+    exportDxf->setIcon(IconManager::iconUnique("file-export", "export_dxf", "DX"));
     connect(exportDxf, &QAction::triggered, this, [this](){
         const QString fileName = QFileDialog::getSaveFileName(this, "Export DXF (R12)", QString(), "DXF (*.dxf);;All Files (*)");
         if (fileName.isEmpty()) return;
@@ -1208,7 +1237,9 @@ void MainWindow::setupMenus()
     
     QAction* deletePointAction = editMenu->addAction("&Delete Coordinate");
     deletePointAction->setIcon(IconManager::icon("trash"));
-    deletePointAction->setShortcut(QKeySequence::Delete);
+    // Avoid conflict with global Delete (geometry). Use Shift+Delete for coordinates.
+    deletePointAction->setShortcut(QKeySequence("Shift+Delete"));
+    connect(deletePointAction, &QAction::triggered, this, &MainWindow::deleteSelectedCoordinates);
     editMenu->addSeparator();
     // Selection operations
     QAction* selectAllAct = editMenu->addAction("Select All");
@@ -1300,18 +1331,22 @@ void MainWindow::setupMenus()
     QMenu* toolsMenu = menuBar()->addMenu("&Tools");
     m_toolsMenu = toolsMenu;
     
-    QAction* calcDistance = toolsMenu->addAction("Calculate &Distance...");
-    calcDistance->setIcon(IconManager::icon("ruler-measure"));
-    connect(calcDistance, &QAction::triggered, this, &MainWindow::calculateDistance);
-    m_calcDistanceAction = calcDistance;
-    QAction* calcArea = toolsMenu->addAction("Calculate &Area...");
-    calcArea->setIcon(IconManager::icon("square"));
-    connect(calcArea, &QAction::triggered, this, &MainWindow::calculateArea);
-    m_calcAreaAction = calcArea;
-    QAction* calcAzimuth = toolsMenu->addAction("Calculate A&zimuth...");
-    calcAzimuth->setIcon(IconManager::icon("compass"));
-    connect(calcAzimuth, &QAction::triggered, this, &MainWindow::calculateAzimuth);
-    m_calcAzimuthAction = calcAzimuth;
+    // Modify tools (real tools)
+    m_toolTrimAction = toolsMenu->addAction("&Trim");
+    m_toolTrimAction->setIcon(IconManager::iconUnique("scissors", "mod_trim", "TR"));
+    connect(m_toolTrimAction, &QAction::triggered, this, &MainWindow::toolTrim);
+    m_toolExtendAction = toolsMenu->addAction("&Extend");
+    m_toolExtendAction->setIcon(IconManager::iconUnique("arrow-right", "mod_extend", "EX"));
+    connect(m_toolExtendAction, &QAction::triggered, this, &MainWindow::toolExtend);
+    m_toolOffsetAction = toolsMenu->addAction("&Offset...");
+    m_toolOffsetAction->setIcon(IconManager::iconUnique("offset", "mod_offset", "OF"));
+    connect(m_toolOffsetAction, &QAction::triggered, this, &MainWindow::toolOffset);
+    m_toolFilletZeroAction = toolsMenu->addAction("&Fillet (Zero Radius)");
+    m_toolFilletZeroAction->setIcon(IconManager::iconUnique("corner-round", "mod_fillet", "FR"));
+    connect(m_toolFilletZeroAction, &QAction::triggered, this, &MainWindow::toolFilletZero);
+    m_toolChamferAction = toolsMenu->addAction("C&hamfer...");
+    m_toolChamferAction->setIcon(IconManager::iconUnique("corner", "mod_chamfer", "CH"));
+    connect(m_toolChamferAction, &QAction::triggered, this, &MainWindow::toolChamfer);
     QAction* polarInputAct = toolsMenu->addAction("&Polar Input...");
     polarInputAct->setIcon(IconManager::icon("polar"));
     connect(polarInputAct, &QAction::triggered, this, &MainWindow::showPolarInput);
@@ -1385,12 +1420,6 @@ void MainWindow::setupMenus()
     viewMenu->addSeparator();
     m_resetLayoutAction = viewMenu->addAction("Reset &Layout");
     connect(m_resetLayoutAction, &QAction::triggered, this, &MainWindow::resetLayout);
-    m_darkModeAction = viewMenu->addAction("&Dark Mode");
-    m_darkModeAction->setIcon(IconManager::icon("moon"));
-    m_darkModeAction->setCheckable(true);
-    connect(m_darkModeAction, &QAction::toggled, this, &MainWindow::toggleDarkMode);
-    // Reflect persisted preference
-    m_darkModeAction->setChecked(AppSettings::darkMode());
 
     // Settings (top-level) Menu: reuse the same Preferences action
     QMenu* settingsMenu = menuBar()->addMenu("&Settings");
@@ -1452,7 +1481,7 @@ void MainWindow::setupToolbar()
     topBar->setMovable(true);
     topBar->setFloatable(false);
     topBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
-    topBar->setIconSize(QSize(14, 14));
+    topBar->setIconSize(QSize(12, 12));
     // Hover/press feedback for top bar
     topBar->setStyleSheet(
         "QToolBar { background: transparent; }"
@@ -1461,22 +1490,16 @@ void MainWindow::setupToolbar()
         " QToolBar QToolButton:pressed { background-color: rgba(74,144,217,0.30); }"
     );
 
-    auto addCategoryTo = [&](QToolBar* bar, const QString& name){
-        QLabel* chip = new QLabel(QString(" %1 ").arg(name), this);
-        const QString chipCss = m_darkMode
-            ? QStringLiteral("QLabel { background-color: #2a2a2a; color: #eaeaea; border: 1px solid #4a90d9; border-radius: 4px; padding: 1px 6px; font-size: 10px; }")
-            : QStringLiteral("QLabel { background-color: #f5f5f5; color: #333333; border: 1px solid #4a90d9; border-radius: 4px; padding: 1px 6px; font-size: 10px; }");
-        chip->setStyleSheet(chipCss);
-        bar->addSeparator();
-        bar->addWidget(chip);
+    auto addCategoryTo = [&](QToolBar* bar, const QString& /*name*/){
+        // Keep a subtle separator between groups; no text labels for a cleaner, icon-only look
         bar->addSeparator();
     };
     auto addMenuGroup = [&](QToolBar* bar, const QString& title, const QIcon& icon = QIcon()){
         QToolButton* btn = new QToolButton(this);
-        btn->setText(title + " ▾");
         if (!icon.isNull()) btn->setIcon(icon);
+        btn->setToolTip(title);
         btn->setPopupMode(QToolButton::InstantPopup);
-        btn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        btn->setToolButtonStyle(Qt::ToolButtonIconOnly);
         btn->setStyleSheet("QToolButton { font-size: 10px; }");
         QMenu* menu = new QMenu(btn);
         menu->setTearOffEnabled(true);
@@ -1509,34 +1532,35 @@ void MainWindow::setupToolbar()
     // Primary CAD groups: Draw | Modify | Layers | View | Aids
     // Draw (primary)
     addCategoryTo(topBar, "Draw");
-    QAction* drawLineAction = new QAction(IconManager::icon("line"), "Line", this);
+    QAction* drawLineAction = new QAction(IconManager::iconUnique("line", "draw_line", "L"), "Line", this);
     drawLineAction->setShortcut(QKeySequence("L"));
     drawLineAction->setCheckable(true);
     drawLineAction->setToolTip("Line (L) - Draw a line segment");
     connect(drawLineAction, &QAction::toggled, this, [this](bool on){ if (on) m_canvas->setToolMode(CanvasWidget::ToolMode::DrawLine); });
     topBar->addAction(drawLineAction);
-    QAction* drawPolyAction = new QAction(IconManager::icon("polygon"), "Polyline", this);
+    QAction* drawPolyAction = new QAction(IconManager::iconUnique("polygon", "draw_poly", "PL"), "Polyline", this);
     drawPolyAction->setShortcut(QKeySequence("PL"));
     drawPolyAction->setCheckable(true);
     drawPolyAction->setToolTip("Polyline (PL) - Draw connected segments");
     connect(drawPolyAction, &QAction::toggled, this, [this](bool on){ if (on) m_canvas->setToolMode(CanvasWidget::ToolMode::DrawPolygon); });
     topBar->addAction(drawPolyAction);
-    QAction* drawCircleAction = new QAction(IconManager::icon("circle"), "Circle", this);
+    QAction* drawCircleAction = new QAction(IconManager::iconUnique("circle", "draw_circle", "C"), "Circle", this);
     drawCircleAction->setCheckable(true);
     drawCircleAction->setToolTip("Circle - Click center, then radius (typed distance or D=diameter optional)");
     connect(drawCircleAction, &QAction::toggled, this, [this](bool on){ if (on) m_canvas->setToolMode(CanvasWidget::ToolMode::DrawCircle); });
     topBar->addAction(drawCircleAction);
-    QAction* drawArcAction = new QAction(IconManager::icon("arc"), "Arc", this);
+    QAction* drawArcAction = new QAction(IconManager::iconUnique("arc", "draw_arc", "A"), "Arc", this);
     drawArcAction->setCheckable(true);
     drawArcAction->setToolTip("Arc (3-point) - Click start, second point, then end");
     connect(drawArcAction, &QAction::toggled, this, [this](bool on){ if (on) m_canvas->setToolMode(CanvasWidget::ToolMode::DrawArc); });
     topBar->addAction(drawArcAction);
-    QAction* drawRectAction = new QAction(IconManager::icon("rectangle"), "Rectangle", this);
+    QAction* drawRectAction = new QAction(IconManager::iconUnique("rectangle", "draw_rectangle", "R"), "Rectangle", this);
     drawRectAction->setCheckable(true);
     drawRectAction->setToolTip("Rectangle - Click first corner, then opposite corner (Shift for square)");
     connect(drawRectAction, &QAction::toggled, this, [this](bool on){ if (on) m_canvas->setToolMode(CanvasWidget::ToolMode::DrawRectangle); });
     topBar->addAction(drawRectAction);
-    QAction* drawRegPolyAction = new QAction(IconManager::icon("regular-polygon"), "Regular Polygon", this);
+    QAction* drawRegPolyAction = new QAction(IconManager::iconUnique("regular-polygon", "draw_regpoly", "RP"), "Regular Polygon", this);
+    drawRegPolyAction->setToolTip("Regular Polygon");
     connect(drawRegPolyAction, &QAction::triggered, this, &MainWindow::drawRegularPolygon);
     topBar->addAction(drawRegPolyAction);
     // Store for pinning/exclusivity
@@ -1548,7 +1572,7 @@ void MainWindow::setupToolbar()
     m_drawRegularPolygonAction = drawRegPolyAction;
     // Pin button for Draw group
     m_drawPinButton = new QToolButton(this);
-    m_drawPinButton->setIcon(IconManager::icon("pin"));
+    m_drawPinButton->setIcon(IconManager::iconUnique("pin", "draw_pin"));
     m_drawPinButton->setCheckable(true);
     m_drawPinButton->setToolTip("Pin Draw group inline");
     topBar->addWidget(m_drawPinButton);
@@ -1556,56 +1580,57 @@ void MainWindow::setupToolbar()
 
     // Modify (Lengthen, Trim, Extend, Offset, Fillet, Chamfer, Delete)
     addCategoryTo(topBar, "Modify");
-    QAction* lengthenAct = new QAction(IconManager::icon("ruler-measure"), "Lengthen", this);
+    QAction* lengthenAct = new QAction(IconManager::iconUnique("ruler-measure", "modify_lengthen", "LN"), "Lengthen", this);
     lengthenAct->setCheckable(true);
     lengthenAct->setToolTip("Lengthen - adjust line length by value or click");
     connect(lengthenAct, &QAction::toggled, this, [this](bool on){ if (on) m_canvas->setToolMode(CanvasWidget::ToolMode::Lengthen); });
     topBar->addAction(lengthenAct);
-    QAction* trimAct = new QAction(IconManager::icon("scissors"), "Trim", this);
+    QAction* trimAct = new QAction(IconManager::iconUnique("scissors", "modify_trim", "TR"), "Trim", this);
+    trimAct->setToolTip("Trim");
     connect(trimAct, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->startTrim(); });
     topBar->addAction(trimAct);
-    QAction* extendAct = new QAction(IconManager::icon("arrow-right"), "Extend", this);
+    QAction* extendAct = new QAction(IconManager::iconUnique("arrow-right", "modify_extend", "EX"), "Extend", this);
+    extendAct->setToolTip("Extend");
     connect(extendAct, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->startExtend(); });
     topBar->addAction(extendAct);
-    QAction* offsetAct = new QAction(IconManager::icon("ruler"), "Offset", this);
+    QAction* offsetAct = new QAction(IconManager::iconUnique("ruler", "modify_offset", "OF"), "Offset", this);
     connect(offsetAct, &QAction::triggered, this, [this](){ bool ok=false; double d=QInputDialog::getDouble(this, "Offset", "Distance:", 1.0, 0.0, 1e9, 3, &ok); if (!ok) return; if (m_canvas) m_canvas->startOffset(d); });
     topBar->addAction(offsetAct);
-    QAction* filletAct = new QAction(IconManager::icon("corner-right-down"), "Fillet0", this);
+    QAction* filletAct = new QAction(IconManager::iconUnique("corner-right-down", "modify_fillet0", "F0"), "Fillet0", this);
     connect(filletAct, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->startFilletZero(); });
     topBar->addAction(filletAct);
-    QAction* chamferAct = new QAction(IconManager::icon("crop"), "Chamfer", this);
+    QAction* chamferAct = new QAction(IconManager::iconUnique("crop", "modify_chamfer", "CH"), "Chamfer", this);
     connect(chamferAct, &QAction::triggered, this, [this](){ bool ok=false; double d=QInputDialog::getDouble(this, "Chamfer", "Distance:", 1.0, 0.0, 1e9, 3, &ok); if (!ok) return; if (m_canvas) m_canvas->startChamfer(d); });
     topBar->addAction(chamferAct);
-    if (m_deleteSelectedAction) topBar->addAction(m_deleteSelectedAction);
+    // Avoid duplicating Delete Selected (kept under Edit group/menu)
 
     // Layers (Hide/Isolate/Lock/ShowAll) + Layer Panel toggle
     addCategoryTo(topBar, "Layers");
-    QAction* hideLayActTop = new QAction(IconManager::icon("eye-off"), "Hide", this);
+    QAction* hideLayActTop = new QAction(IconManager::iconUnique("eye-off", "layer_hide", "HD"), "Hide", this);
     hideLayActTop->setToolTip("Hide Selected Layers (Ctrl+Shift+H)");
     connect(hideLayActTop, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->hideSelectedLayers(); });
     topBar->addAction(hideLayActTop);
-    QAction* isoLayActTop = new QAction(IconManager::icon("filter"), "Isolate", this);
+    QAction* isoLayActTop = new QAction(IconManager::iconUnique("filter", "layer_isolate", "IS"), "Isolate", this);
     isoLayActTop->setToolTip("Isolate Selection Layers (Ctrl+Shift+I)");
     connect(isoLayActTop, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->isolateSelectionLayers(); });
     topBar->addAction(isoLayActTop);
-    QAction* lockLayActTop = new QAction(IconManager::icon("lock"), "Lock", this);
+    QAction* lockLayActTop = new QAction(IconManager::iconUnique("lock", "layer_lock", "LK"), "Lock", this);
     lockLayActTop->setToolTip("Lock Selected Layers (Ctrl+Shift+L)");
     connect(lockLayActTop, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->lockSelectedLayers(); });
     topBar->addAction(lockLayActTop);
-    QAction* showAllActTop = new QAction(IconManager::icon("eye"), "Show All", this);
+    QAction* showAllActTop = new QAction(IconManager::iconUnique("eye", "layer_show_all", "SA"), "Show All", this);
+    showAllActTop->setToolTip("Show All Layers (Ctrl+Shift+S)");
     connect(showAllActTop, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->showAllLayers(); });
     topBar->addAction(showAllActTop);
-    QAction* layerPanelAct = topBar->addAction(IconManager::icon("desktop"), "Layer Panel");
+    QAction* layerPanelAct = topBar->addAction(IconManager::iconUnique("desktop", "layer_panel", "LP"), "Layer Panel");
     layerPanelAct->setToolTip("Show/Hide Layers panel");
     connect(layerPanelAct, &QAction::triggered, this, [this](){ if (m_layersDock) m_layersDock->setVisible(!m_layersDock->isVisible()); });
     // Inline Layer selector
     {
-        QLabel* layerLabel = new QLabel(" Layer: ");
-        layerLabel->setStyleSheet("font-weight: bold;");
-        topBar->addWidget(layerLabel);
         m_layerCombo = new QComboBox(this);
-        m_layerCombo->setMinimumWidth(140);
-        m_layerCombo->setMaximumWidth(220);
+        m_layerCombo->setMinimumWidth(120);
+        m_layerCombo->setMaximumWidth(160);
+        m_layerCombo->setToolTip("Current Layer");
         topBar->addWidget(m_layerCombo);
         refreshLayerCombo();
         connect(m_layerCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onLayerComboChanged);
@@ -1613,34 +1638,42 @@ void MainWindow::setupToolbar()
 
     // View
     addCategoryTo(topBar, "View");
-    m_selectToolAction = new QAction(IconManager::icon("select"), "Select", this);
+    m_selectToolAction = new QAction(IconManager::iconUnique("select", "view_select", "SL"), "Select", this);
     m_selectToolAction->setShortcut(QKeySequence("ESC"));
+    m_selectToolAction->setToolTip("Select (Esc)");
     m_selectToolAction->setCheckable(true);
     m_selectToolAction->setChecked(true);
     connect(m_selectToolAction, &QAction::toggled, this, [this](bool on){ if(on) m_canvas->setToolMode(CanvasWidget::ToolMode::Select); });
     topBar->addAction(m_selectToolAction);
-    m_panToolAction = new QAction(IconManager::icon("pan"), "Pan", this);
+    m_panToolAction = new QAction(IconManager::iconUnique("pan", "view_pan", "PN"), "Pan", this);
     m_panToolAction->setShortcut(QKeySequence("P"));
+    m_panToolAction->setToolTip("Pan (P)");
     m_panToolAction->setCheckable(true);
     connect(m_panToolAction, &QAction::toggled, this, [this](bool on){ if(on) m_canvas->setToolMode(CanvasWidget::ToolMode::Pan); });
     topBar->addAction(m_panToolAction);
-    m_zoomWindowToolAction = new QAction(IconManager::icon("zoom-window"), "Zoom Window", this);
+    m_zoomWindowToolAction = new QAction(IconManager::iconUnique("zoom-window", "view_zoomwin", "ZW"), "Zoom Window", this);
     m_zoomWindowToolAction->setShortcut(QKeySequence("W"));
+    m_zoomWindowToolAction->setToolTip("Zoom Window (W)");
     m_zoomWindowToolAction->setCheckable(true);
     connect(m_zoomWindowToolAction, &QAction::toggled, this, [this](bool on){ if(on) m_canvas->setToolMode(CanvasWidget::ToolMode::ZoomWindow); });
     topBar->addAction(m_zoomWindowToolAction);
-    m_lassoToolAction = new QAction(IconManager::icon("lasso"), "Lasso", this);
+    m_lassoToolAction = new QAction(IconManager::iconUnique("lasso", "view_lasso", "LS"), "Lasso", this);
+    m_lassoToolAction->setToolTip("Lasso Select");
     m_lassoToolAction->setCheckable(true);
     connect(m_lassoToolAction, &QAction::toggled, this, [this](bool on){ if(on) m_canvas->setToolMode(CanvasWidget::ToolMode::LassoSelect); });
     topBar->addAction(m_lassoToolAction);
     // Zoom controls
-    QAction* zoomInAction = new QAction(IconManager::icon("zoom-in"), "Zoom In", this);
+    QAction* zoomInAction = new QAction(IconManager::iconUnique("zoom-in", "view_zoomin", "ZI"), "Zoom In", this);
+    zoomInAction->setToolTip("Zoom In");
     connect(zoomInAction, &QAction::triggered, m_canvas, &CanvasWidget::zoomInAnimated);
-    QAction* zoomOutAction = new QAction(IconManager::icon("zoom-out"), "Zoom Out", this);
+    QAction* zoomOutAction = new QAction(IconManager::iconUnique("zoom-out", "view_zoomout", "ZO"), "Zoom Out", this);
+    zoomOutAction->setToolTip("Zoom Out");
     connect(zoomOutAction, &QAction::triggered, m_canvas, &CanvasWidget::zoomOutAnimated);
-    QAction* fitAction = new QAction(IconManager::icon("fit"), "Extents", this);
+    QAction* fitAction = new QAction(IconManager::iconUnique("fit", "view_fit", "FT"), "Extents", this);
+    fitAction->setToolTip("Fit to Window");
     connect(fitAction, &QAction::triggered, m_canvas, &CanvasWidget::fitToWindowAnimated);
-    QAction* homeAction = new QAction(IconManager::icon("home"), "Home", this);
+    QAction* homeAction = new QAction(IconManager::iconUnique("home", "view_home", "HM"), "Home", this);
+    homeAction->setToolTip("Home");
     connect(homeAction, &QAction::triggered, m_canvas, &CanvasWidget::resetView);
     topBar->addAction(zoomInAction);
     topBar->addAction(zoomOutAction);
@@ -1648,15 +1681,15 @@ void MainWindow::setupToolbar()
     topBar->addAction(homeAction);
     // Display toggles inline with View panel
     {
-        QAction* toggleGridTop = new QAction(IconManager::icon("grid"), "Grid", this);
+        QAction* toggleGridTop = new QAction(IconManager::iconUnique("grid", "view_grid", "GD"), "Grid", this);
         toggleGridTop->setCheckable(true);
         toggleGridTop->setChecked(true);
         connect(toggleGridTop, &QAction::toggled, m_canvas, &CanvasWidget::setShowGrid);
-        QAction* toggleLabelsTop = new QAction(IconManager::icon("label"), "Labels", this);
+        QAction* toggleLabelsTop = new QAction(IconManager::iconUnique("label", "view_labels", "LB"), "Labels", this);
         toggleLabelsTop->setCheckable(true);
         toggleLabelsTop->setChecked(true);
         connect(toggleLabelsTop, &QAction::toggled, m_canvas, &CanvasWidget::setShowLabels);
-        if (!m_crosshairToggleAction) m_crosshairToggleAction = new QAction(IconManager::icon("crosshair"), "Crosshair", this);
+        if (!m_crosshairToggleAction) m_crosshairToggleAction = new QAction(IconManager::iconUnique("crosshair", "view_crosshair", "CR"), "Crosshair", this);
         m_crosshairToggleAction->setCheckable(true);
         m_crosshairToggleAction->setChecked(true);
         connect(m_crosshairToggleAction, &QAction::toggled, m_canvas, &CanvasWidget::setShowCrosshair);
@@ -1667,41 +1700,54 @@ void MainWindow::setupToolbar()
 
     // Aids group omitted on top bar (kept in status bar for AutoCAD-like UX)
 
+    // Quick Project Planner toggle on top row
+    addCategoryTo(topBar, "PlanToggle");
+    if (!m_toggleProjectPlanAction) {
+        m_toggleProjectPlanAction = new QAction(IconManager::iconUnique("plan-menu", "group_plan", "PL"), "Project Plan", this);
+        m_toggleProjectPlanAction->setCheckable(true);
+        connect(m_toggleProjectPlanAction, &QAction::triggered, this, &MainWindow::toggleProjectPlanPanel);
+    }
+    topBar->addAction(m_toggleProjectPlanAction);
+
     // Insert a separator between primary CAD groups and secondary groups
     topBar->addSeparator();
 
-    // Secondary groups: File | Edit | Data | Prefs | Plan
-    QMenu* fileMenuTb = addMenuGroup(topBar, "File", IconManager::icon("file-menu"));
-    if (m_newProjectAction) fileMenuTb->addAction(m_newProjectAction);
-    if (m_openProjectAction) fileMenuTb->addAction(m_openProjectAction);
-    if (m_saveProjectAction) fileMenuTb->addAction(m_saveProjectAction);
-    if (m_exitAction) fileMenuTb->addAction(m_exitAction);
-    if (QToolButton* tb = qobject_cast<QToolButton*>(fileMenuTb->parentWidget())) tb->setToolTip("New, Open, Save, Exit");
-    makeGroupDock(fileMenuTb, "File");
+    // Break to second row
+    addToolBarBreak(Qt::TopToolBarArea);
 
-    QMenu* editMenuTb = addMenuGroup(topBar, "Edit", IconManager::icon("edit-menu"));
-    if (m_undoAction) editMenuTb->addAction(m_undoAction);
-    if (m_redoAction) editMenuTb->addAction(m_redoAction);
-    if (m_deleteSelectedAction) editMenuTb->addAction(m_deleteSelectedAction);
-    if (QToolButton* tb = qobject_cast<QToolButton*>(editMenuTb->parentWidget())) tb->setToolTip("Undo, Redo, Delete Selected");
-    makeGroupDock(editMenuTb, "Edit");
+    QToolBar* bottomBar = addToolBar("TopBarRow2");
+    m_bottomBar = bottomBar;
+    bottomBar->setObjectName("TopBarRow2");
+    bottomBar->setAllowedAreas(Qt::TopToolBarArea);
+    bottomBar->setMovable(true);
+    bottomBar->setFloatable(false);
+    bottomBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    bottomBar->setIconSize(QSize(12, 12));
+    // Hover/press feedback for second row
+    bottomBar->setStyleSheet(
+        "QToolBar { background: transparent; }"
+        " QToolBar QToolButton { border-radius: 4px; padding: 1px 3px; font-size: 10px; }"
+        " QToolBar QToolButton:hover { background-color: rgba(74,144,217,0.18); }"
+        " QToolBar QToolButton:pressed { background-color: rgba(74,144,217,0.30); }"
+    );
 
-    QMenu* dataMenuTb = addMenuGroup(topBar, "Data", IconManager::icon("data-menu"));
+    // Secondary groups moved to second row: Data | Prefs | Plan
+
+    QMenu* dataMenuTb = addMenuGroup(bottomBar, "Data", IconManager::iconUnique("data-menu", "group_data", "DT"));
     if (m_importPointsAction) dataMenuTb->addAction(m_importPointsAction);
     if (m_exportPointsAction) dataMenuTb->addAction(m_exportPointsAction);
     if (QToolButton* tb = qobject_cast<QToolButton*>(dataMenuTb->parentWidget())) tb->setToolTip("Import Coordinates, Export Coordinates");
     makeGroupDock(dataMenuTb, "Data");
 
-    QMenu* prefsMenuTb = addMenuGroup(topBar, "Prefs", IconManager::icon("prefs-menu"));
+    QMenu* prefsMenuTb = addMenuGroup(bottomBar, "Prefs", IconManager::iconUnique("prefs-menu", "group_prefs", "PR"));
     if (m_preferencesAction) prefsMenuTb->addAction(m_preferencesAction);
-    if (m_darkModeAction) prefsMenuTb->addAction(m_darkModeAction);
     if (m_resetLayoutAction) prefsMenuTb->addAction(m_resetLayoutAction);
-    if (QToolButton* tb = qobject_cast<QToolButton*>(prefsMenuTb->parentWidget())) tb->setToolTip("Preferences, Dark Mode, Reset Layout");
+    if (QToolButton* tb = qobject_cast<QToolButton*>(prefsMenuTb->parentWidget())) tb->setToolTip("Preferences, Reset Layout");
     makeGroupDock(prefsMenuTb, "Prefs");
 
-    QMenu* planMenuTb = addMenuGroup(topBar, "Plan", IconManager::icon("plan-menu"));
+    QMenu* planMenuTb = addMenuGroup(bottomBar, "Plan", IconManager::iconUnique("plan-menu", "group_plan", "PL"));
     if (!m_toggleProjectPlanAction) {
-        m_toggleProjectPlanAction = new QAction(IconManager::icon("star"), "Project Plan", this);
+        m_toggleProjectPlanAction = new QAction(IconManager::iconUnique("plan-menu", "group_plan", "PL"), "Project Plan", this);
         m_toggleProjectPlanAction->setCheckable(true);
         connect(m_toggleProjectPlanAction, &QAction::triggered, this, &MainWindow::toggleProjectPlanPanel);
     }
@@ -1709,15 +1755,10 @@ void MainWindow::setupToolbar()
     if (QToolButton* tb = qobject_cast<QToolButton*>(planMenuTb->parentWidget())) tb->setToolTip("Show/Hide Project Plan panel");
     makeGroupDock(planMenuTb, "Plan");
 
-    // Annotation group (menu)
-    addCategoryTo(topBar, "Annotation");
+    // Annotation group moved to second row (icon-only menu)
+    addCategoryTo(bottomBar, "Annotation");
     {
-        QToolButton* annotBtn = new QToolButton(this);
-        annotBtn->setText("Annotation");
-        annotBtn->setStyleSheet("QToolButton { font-size: 10px; }");
-        annotBtn->setPopupMode(QToolButton::InstantPopup);
-        QMenu* annotMenu = new QMenu(annotBtn);
-        annotMenu->setTearOffEnabled(true);
+        QMenu* annotMenu = addMenuGroup(bottomBar, "Annotation", IconManager::iconUnique("label", "group_annotation", "AN"));
         QAction* textAct = annotMenu->addAction("Text");
         QAction* dimAct = annotMenu->addAction("Dimension");
         connect(textAct, &QAction::triggered, this, [this](){
@@ -1748,45 +1789,33 @@ void MainWindow::setupToolbar()
             if (pa.name.isEmpty() || pb.name.isEmpty()) return;
             m_canvas->addDimension(pa.toQPointF(), pb.toQPointF(), h);
         });
-        annotBtn->setMenu(annotMenu);
-        topBar->addWidget(annotBtn);
     }
 
-    // Blocks group (menu)
-    addCategoryTo(topBar, "Blocks");
+    // Blocks group moved to second row (icon-only menu)
+    addCategoryTo(bottomBar, "Blocks");
     {
-        QToolButton* blocksBtn = new QToolButton(this);
-        blocksBtn->setText("Blocks");
-        blocksBtn->setPopupMode(QToolButton::InstantPopup);
-        QMenu* blocksMenu = new QMenu(blocksBtn);
-        blocksMenu->setTearOffEnabled(true);
+        QMenu* blocksMenu = addMenuGroup(bottomBar, "Blocks", IconManager::iconUnique("square", "group_blocks", "BL"));
         QAction* insertBlk = blocksMenu->addAction("Insert Block...");
         QAction* createBlk = blocksMenu->addAction("Create Block from Selection");
         QAction* explodeBlk = blocksMenu->addAction("Explode");
         connect(insertBlk, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Blocks", "Insert Block coming soon."); });
         connect(createBlk, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Blocks", "Create Block coming soon."); });
         connect(explodeBlk, &QAction::triggered, this, [this](){ QMessageBox::information(this, "Blocks", "Explode coming soon."); });
-        blocksBtn->setMenu(blocksMenu);
-        topBar->addWidget(blocksBtn);
     }
 
-    // Properties quick access
-    addCategoryTo(topBar, "Properties");
-    QAction* propsAct = topBar->addAction(IconManager::icon("settings"), "Properties");
+    // Properties quick access moved to second row (icon-only action)
+    addCategoryTo(bottomBar, "Properties");
+    QAction* propsAct = bottomBar->addAction(IconManager::iconUnique("settings", "group_properties", "PR"), "Properties");
     propsAct->setToolTip("Show Properties tab");
     connect(propsAct, &QAction::triggered, this, [this](){
         if (m_layersDock) { m_layersDock->setVisible(true); m_layersDock->raise(); int rpw = AppSettings::rightPanelWidth(); if (rpw < 200) rpw = 200; m_layersDock->resize(rpw, m_layersDock->height()); }
         if (m_rightTabs && m_propertiesPanel) m_rightTabs->setCurrentWidget(m_propertiesPanel);
     });
 
-    // Utilities group (menu)
-    addCategoryTo(topBar, "Utilities");
+    // Utilities group moved to second row (icon-only menu)
+    addCategoryTo(bottomBar, "Utilities");
     {
-        QToolButton* utilBtn = new QToolButton(this);
-        utilBtn->setText("Utilities");
-        utilBtn->setStyleSheet("QToolButton { font-size: 10px; }");
-        utilBtn->setPopupMode(QToolButton::InstantPopup);
-        QMenu* utilMenu = new QMenu(utilBtn);
+        QMenu* utilMenu = addMenuGroup(bottomBar, "Utilities", IconManager::iconUnique("prefs-menu", "group_utilities", "UT"));
         QAction* idPt = utilMenu->addAction("ID Point");
         QAction* measAng = utilMenu->addAction("Measure Angle");
         QAction* listProps = utilMenu->addAction("List Properties");
@@ -1824,84 +1853,50 @@ void MainWindow::setupToolbar()
             QMessageBox::information(this, "Measure Angle", QString("Azimuth %1 -> %2: %3° (%4)").arg(a, b).arg(az, 0, 'f', 4).arg(dms));
         });
         connect(listProps, &QAction::triggered, this, &MainWindow::showSelectedProperties);
-        utilBtn->setMenu(utilMenu);
-        topBar->addWidget(utilBtn);
     }
-
-    // Break to second row
-    addToolBarBreak(Qt::TopToolBarArea);
-
-    QToolBar* bottomBar = addToolBar("TopBarRow2");
-    m_bottomBar = bottomBar;
-    bottomBar->setObjectName("TopBarRow2");
-    bottomBar->setAllowedAreas(Qt::TopToolBarArea);
-    bottomBar->setMovable(true);
-    bottomBar->setFloatable(false);
-    bottomBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
-    bottomBar->setIconSize(QSize(14, 14));
-    // Hover/press feedback for second row
-    bottomBar->setStyleSheet(
-        "QToolBar { background: transparent; }"
-        " QToolBar QToolButton { border-radius: 4px; padding: 1px 3px; font-size: 10px; }"
-        " QToolBar QToolButton:hover { background-color: rgba(74,144,217,0.18); }"
-        " QToolBar QToolButton:pressed { background-color: rgba(74,144,217,0.30); }"
-    );
     
     // Survey group
     addCategoryTo(bottomBar, "Survey");
-    QAction* polarToolbarAct = bottomBar->addAction(IconManager::icon("polar"), "Polar");
+    QAction* polarToolbarAct = bottomBar->addAction(IconManager::iconUnique("polar", "survey_polar", "PO"), "Polar");
+    polarToolbarAct->setToolTip("Polar Input");
     connect(polarToolbarAct, &QAction::triggered, this, &MainWindow::showPolarInput);
-    QAction* joinToolbarAct = bottomBar->addAction(IconManager::icon("join"), "Join");
+    QAction* joinToolbarAct = bottomBar->addAction(IconManager::iconUnique("join", "survey_join", "JN"), "Join");
+    joinToolbarAct->setToolTip("Join (Polar)");
     connect(joinToolbarAct, &QAction::triggered, this, &MainWindow::showJoinPolar);
-    QAction* traverseToolbarAct = bottomBar->addAction(IconManager::icon("compass"), "Traverse");
+    QAction* traverseToolbarAct = bottomBar->addAction(IconManager::iconUnique("compass", "survey_traverse", "TV"), "Traverse");
+    traverseToolbarAct->setToolTip("Traverse");
     connect(traverseToolbarAct, &QAction::triggered, this, &MainWindow::showTraverse);
-    QAction* addPointAction = bottomBar->addAction(IconManager::icon("add-point"), "Add Point");
+    QAction* addPointAction = bottomBar->addAction(IconManager::iconUnique("add-point", "survey_add_point", "AP"), "Add Point");
+    addPointAction->setToolTip("Add Coordinate");
     connect(addPointAction, &QAction::triggered, this, &MainWindow::showAddPointDialog);
 
-    addCategoryTo(bottomBar, "Measure");
-    if (m_calcDistanceAction) bottomBar->addAction(m_calcDistanceAction);
-    if (m_calcAreaAction) bottomBar->addAction(m_calcAreaAction);
-    if (m_calcAzimuthAction) bottomBar->addAction(m_calcAzimuthAction);
+    addCategoryTo(bottomBar, "Modify");
+    if (m_toolTrimAction) bottomBar->addAction(m_toolTrimAction);
+    if (m_toolExtendAction) bottomBar->addAction(m_toolExtendAction);
+    if (m_toolOffsetAction) bottomBar->addAction(m_toolOffsetAction);
+    if (m_toolFilletZeroAction) bottomBar->addAction(m_toolFilletZeroAction);
+    if (m_toolChamferAction) bottomBar->addAction(m_toolChamferAction);
 
     // Display group moved to top View panel; keep second row compact
 
     // Selection tools
     addCategoryTo(bottomBar, "Select");
-    QAction* selAllActTb = bottomBar->addAction(IconManager::icon("square"), "All");
+    QAction* selAllActTb = bottomBar->addAction(IconManager::iconUnique("square", "sel_all", "AL"), "All");
     selAllActTb->setToolTip("Select All (Ctrl+A)");
     connect(selAllActTb, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->selectAllVisible(); });
-    QAction* invSelActTb = bottomBar->addAction(IconManager::icon("clear"), "Invert");
+    QAction* invSelActTb = bottomBar->addAction(IconManager::iconUnique("clear", "sel_invert", "IV"), "Invert");
     invSelActTb->setToolTip("Invert Selection (Ctrl+I)");
     connect(invSelActTb, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->invertSelectionVisible(); });
-    QAction* selByLayerActTb = bottomBar->addAction(IconManager::icon("search"), "ByLayer");
+    QAction* selByLayerActTb = bottomBar->addAction(IconManager::iconUnique("search", "sel_bylayer", "BL"), "ByLayer");
     selByLayerActTb->setToolTip("Select by Current Layer");
     connect(selByLayerActTb, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->selectByCurrentLayer(); });
-    QAction* clearSelActTb = bottomBar->addAction(IconManager::icon("eraser"), "Clear");
+    QAction* clearSelActTb = bottomBar->addAction(IconManager::iconUnique("eraser", "sel_clear", "CL"), "Clear");
     clearSelActTb->setToolTip("Clear Selection (Esc)");
     connect(clearSelActTb, &QAction::triggered, this, [this](){ if (m_canvas) { m_canvas->clearSelection(); m_canvas->update(); onSelectionChanged(0,0); } });
 
-    QAction* hideSelLayersTb = bottomBar->addAction(IconManager::icon("filter-crossed"), "Hide");
-    hideSelLayersTb->setToolTip("Hide Selected Layers (Ctrl+Shift+H)");
-    connect(hideSelLayersTb, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->hideSelectedLayers(); });
-    QAction* isoSelLayersTb = bottomBar->addAction(IconManager::icon("funnel"), "Isolate");
-    isoSelLayersTb->setToolTip("Isolate Selection Layers (Ctrl+Shift+I)");
-    connect(isoSelLayersTb, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->isolateSelectionLayers(); });
-    QAction* lockSelLayersTb = bottomBar->addAction(IconManager::icon("lock-screen"), "Lock");
-    lockSelLayersTb->setToolTip("Lock Selected Layers (Ctrl+Shift+L)");
-    connect(lockSelLayersTb, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->lockSelectedLayers(); });
-    QAction* showAllLayersTb = bottomBar->addAction(IconManager::icon("preview"), "ShowAll");
-    showAllLayersTb->setToolTip("Show All Layers (Ctrl+Shift+S)");
-    connect(showAllLayersTb, &QAction::triggered, this, [this](){ if (m_canvas) m_canvas->showAllLayers(); });
+    // Avoid duplicating layer visibility tools on second row
 
     topBar->addSeparator();
-    m_moreButton = new QToolButton(this);
-    m_moreButton->setText("More");
-    m_moreButton->setStyleSheet("QToolButton { font-size: 10px; }");
-    m_moreButton->setPopupMode(QToolButton::InstantPopup);
-    if (!m_moreButton->menu()) m_moreButton->setMenu(new QMenu(m_moreButton));
-    connect(m_moreButton->menu(), &QMenu::aboutToShow, this, &MainWindow::updateMoreDock);
-    topBar->addWidget(m_moreButton);
-    updateMoreDock();
 
     // Group tool selection actions for exclusivity
     QActionGroup* toolGroup = new QActionGroup(this);
@@ -1919,7 +1914,7 @@ void MainWindow::setupToolbar()
     lengthenAct->setActionGroup(toolGroup);
     enableOverflowTearOff(topBar);
     enableOverflowTearOff(bottomBar);
-    updateMoreDock();
+    
     // Initial pin UI state
     updatePinnedGroupsUI();
 }
@@ -1943,6 +1938,7 @@ void MainWindow::setupConnections()
     connect(m_canvas, &CanvasWidget::canvasClicked, this, &MainWindow::handleCanvasClick);
     connect(m_canvas, &CanvasWidget::zoomChanged, this, &MainWindow::onZoomChanged);
     connect(m_canvas, &CanvasWidget::drawingDistanceChanged, this, &MainWindow::onDrawingDistanceChanged);
+    connect(m_canvas, &CanvasWidget::drawingAngleChanged, this, &MainWindow::onDrawingAngleChanged);
     
     // Point manager signals
     connect(m_pointManager, &PointManager::pointAdded, this, &MainWindow::updatePointsTable);
@@ -2021,147 +2017,9 @@ void MainWindow::enableOverflowTearOff(QToolBar* bar)
 
 void MainWindow::updateMoreDock()
 {
-    if (!m_moreButton || !m_moreButton->menu()) return;
-    QMenu* more = m_moreButton->menu();
-    more->clear();
-    // Ensure menu is visible (non-transparent) per theme
-    const QString menuCss = m_darkMode
-        ? QStringLiteral("QMenu { background-color: #2a2a2a; color: #eaeaea; border: 1px solid #4a90d9; } QMenu::item:selected { background-color: rgba(74,144,217,0.30); }")
-        : QStringLiteral("QMenu { background-color: #ffffff; color: #333333; border: 1px solid #c8c8c8; } QMenu::item:selected { background-color: rgba(74,144,217,0.18); }");
-    more->setStyleSheet(menuCss);
-
-    auto addSection = [&](const QString& title){
-        QAction* section = new QAction(title, more);
-        section->setEnabled(false);
-        more->addAction(section);
-    };
-
-    auto populateMenuFromBar = [&](QToolBar* src, const QString& title){
-        if (!src) return int(0);
-        int added = 0;
-        // Prefer Qt's built-in overflow menu if available
-        if (QToolButton* ext = src->findChild<QToolButton*>("qt_toolbar_ext_button")) {
-            if (QMenu* m = ext->menu()) {
-                const auto acts = m->actions();
-                if (!acts.isEmpty()) addSection(title);
-                for (QAction* a : acts) {
-                    if (!a || a->isSeparator()) continue;
-                    more->addAction(a);
-                    ++added;
-                }
-                if (added > 0) more->addSeparator();
-                return added;
-            }
-        }
-        // Fallback: infer overflow by invisible widgets in the toolbar
-        QList<QAction*> toAdd;
-        for (QAction* a : src->actions()) {
-            if (!a || a->isSeparator()) continue;
-            QWidget* w = src->widgetForAction(a);
-            if (w == m_moreButton) continue;
-            bool overflowed = (w && !w->isVisible());
-            if (overflowed) toAdd.append(a);
-        }
-        if (!toAdd.isEmpty()) addSection(title);
-        for (QAction* a : toAdd) { more->addAction(a); ++added; }
-        if (added > 0) more->addSeparator();
-        return added;
-    };
-
-    int topCount = populateMenuFromBar(m_topBar, QStringLiteral("Top toolbar"));
-    int bottomCount = populateMenuFromBar(m_bottomBar, QStringLiteral("Second row"));
-    const bool any = (topCount + bottomCount) > 0;
-
-    // Add pin/lock action at the bottom of the menu
-    if (!m_morePinAction) {
-        m_morePinAction = new QAction(tr("Pin 'More' Panel"), more);
-        m_morePinAction->setCheckable(true);
-        connect(m_morePinAction, &QAction::toggled, this, [this](bool on){
-            m_morePinned = on;
-            if (on) {
-                // Ensure dock exists and show it
-                if (!m_moreDock) {
-                    m_moreDock = new QDockWidget(tr("More"), this);
-                    m_moreDock->setObjectName("MoreDock");
-                    QWidget* mw = new QWidget(m_moreDock);
-                    QVBoxLayout* lay = new QVBoxLayout(mw);
-                    lay->setContentsMargins(6,6,6,6);
-                    QToolBar* overflowTop = new QToolBar(tr("Overflow (Top)"), mw);
-                    overflowTop->setObjectName("MoreOverflowTop");
-                    overflowTop->setIconSize(QSize(14,14));
-                    QToolBar* overflowBottom = new QToolBar(tr("Overflow (Bottom)"), mw);
-                    overflowBottom->setObjectName("MoreOverflowBottom");
-                    overflowBottom->setIconSize(QSize(14,14));
-                    lay->addWidget(overflowTop);
-                    lay->addWidget(overflowBottom);
-                    mw->setLayout(lay);
-                    mw->setStyleSheet(m_darkMode ? QStringLiteral("QWidget { background-color: #2a2a2a; }") : QStringLiteral("QWidget { background-color: #ffffff; }"));
-                    m_moreDock->setWidget(mw);
-                    addDockWidget(Qt::RightDockWidgetArea, m_moreDock);
-                    connect(m_moreDock, &QDockWidget::visibilityChanged, this, [this](bool vis){
-                        if (m_morePinAction) { QSignalBlocker b(m_morePinAction); m_morePinAction->setChecked(vis); }
-                        if (!vis) m_morePinned = false;
-                    });
-                }
-                m_moreDock->show();
-                m_moreDock->raise();
-            } else {
-                if (m_moreDock) m_moreDock->hide();
-            }
-            // Repopulate to reflect state
-            updateMoreDock();
-        });
-    }
-    more->addSeparator();
-    more->addAction(m_morePinAction);
-    if (m_morePinAction) m_morePinAction->setChecked(m_morePinned);
-
-    // Mirror into dock when pinned
-    if (m_morePinned) {
-        if (!m_moreDock) {
-            // Trigger creation via action to keep logic in one place
-            if (m_morePinAction && !m_morePinAction->isChecked()) {
-                QSignalBlocker b(m_morePinAction);
-                m_morePinAction->setChecked(true);
-            }
-        }
-        QToolBar* overflowTop = m_moreDock ? m_moreDock->findChild<QToolBar*>("MoreOverflowTop") : nullptr;
-        QToolBar* overflowBottom = m_moreDock ? m_moreDock->findChild<QToolBar*>("MoreOverflowBottom") : nullptr;
-        auto clearBar = [](QToolBar* tb){ if (!tb) return; const auto acts = tb->actions(); for (QAction* a : acts) tb->removeAction(a); };
-        clearBar(overflowTop);
-        clearBar(overflowBottom);
-        auto populateBar = [&](QToolBar* src, QToolBar* dst){
-            if (!src || !dst) return int(0);
-            int added = 0;
-            if (QToolButton* ext = src->findChild<QToolButton*>("qt_toolbar_ext_button")) {
-                if (QMenu* m = ext->menu()) {
-                    for (QAction* a : m->actions()) { if (a && !a->isSeparator()) { dst->addAction(a); ++added; } }
-                    return added;
-                }
-            }
-            for (QAction* a : src->actions()) {
-                if (!a || a->isSeparator()) continue; QWidget* w = src->widgetForAction(a); if (w == m_moreButton) continue; if (w && !w->isVisible()) { dst->addAction(a); ++added; }
-            }
-            return added;
-        };
-        populateBar(m_topBar, overflowTop);
-        populateBar(m_bottomBar, overflowBottom);
-        if (m_moreDock && !m_moreDock->isVisible()) m_moreDock->show();
-    }
-
-    m_moreButton->setVisible(any);
-}
-
-void MainWindow::executeCommand()
-{
-    QString command = m_commandInput ? m_commandInput->text() : QString();
-    if (command.isEmpty()) return;
-    if (m_commandOutput) m_commandOutput->append(QString("> %1").arg(command));
-    QString result = m_commandProcessor ? m_commandProcessor->processCommand(command) : QString();
-    if (!result.isEmpty() && m_commandOutput) m_commandOutput->append(result);
-    if (m_commandInput) m_commandInput->clear();
-    updatePointsTable();
-    updateStatus();
+    // This function is temporarily disabled due to stability issues
+    // The overflow menu functionality has been removed to prevent crashes
+    return;
 }
 
 void MainWindow::showAddPointDialog()
@@ -2490,29 +2348,77 @@ void MainWindow::drawRegularPolygon()
 void MainWindow::calculateAzimuth()
 {
     const QStringList names = m_pointManager->getPointNames();
-    if (names.size() < 2) { QMessageBox::information(this, "Azimuth", "Need at least two points."); return; }
+    if (names.size() < 2) { QMessageBox::information(this, "Bearing", "Need at least two points."); return; }
     bool ok = false;
-    const QString a = QInputDialog::getItem(this, "Azimuth", "From point:", names, 0, false, &ok);
+    const QString a = QInputDialog::getItem(this, "Bearing", "From point:", names, 0, false, &ok);
     if (!ok || a.isEmpty()) return;
-    const QString b = QInputDialog::getItem(this, "Azimuth", "To point:", names, 1, false, &ok);
+    const QString b = QInputDialog::getItem(this, "Bearing", "To point:", names, 1, false, &ok);
     if (!ok || b.isEmpty()) return;
     const Point p1 = m_pointManager->getPoint(a);
     const Point p2 = m_pointManager->getPoint(b);
     const double az = SurveyCalculator::azimuth(p1, p2);
-    const bool useDecimal = AppSettings::angleFormat().compare(QStringLiteral("decimal"), Qt::CaseInsensitive) == 0;
-    QString msg;
-    if (useDecimal) {
-        msg = QString("Azimuth %1 -> %2 = %3°").arg(a, b).arg(az, 0, 'f', 4);
-    } else {
-        const QString dms = SurveyCalculator::toDMS(az);
-        msg = QString("Azimuth %1 -> %2 = %3").arg(a, b, dms);
-    }
-    QMessageBox::information(this, "Azimuth", msg);
+    const QString dms = SurveyCalculator::toDMS(az);
+    const QString msg = QString("Bearing %1 -> %2 = %3").arg(a, b, dms);
+    QMessageBox::information(this, "Bearing", msg);
     if (m_commandOutput) m_commandOutput->append(msg);
+}
+
+void MainWindow::toolTrim()
+{
+    if (!m_canvas) return;
+    m_canvas->startTrim();
+    statusBar()->showMessage(QStringLiteral("Trim: select cutting edges and objects; press Esc to finish"), 3000);
+}
+
+void MainWindow::toolExtend()
+{
+    if (!m_canvas) return;
+    m_canvas->startExtend();
+    statusBar()->showMessage(QStringLiteral("Extend: select boundary edges and objects; press Esc to finish"), 3000);
+}
+
+void MainWindow::toolOffset()
+{
+    if (!m_canvas) return;
+    const bool imperial = AppSettings::measurementUnits().compare(QStringLiteral("imperial"), Qt::CaseInsensitive) == 0;
+    const QString unit = imperial ? QStringLiteral("ft") : QStringLiteral("m");
+    bool ok = false;
+    double val = QInputDialog::getDouble(this, QStringLiteral("Offset"),
+                                         QStringLiteral("Distance (%1):").arg(unit),
+                                         imperial ? (1.0/3.28084) : 1.0, -1e6, 1e6, 3, &ok);
+    if (!ok) return;
+    double meters = imperial ? (val * 0.3048) : val;
+    m_canvas->startOffset(meters);
+    statusBar()->showMessage(QStringLiteral("Offset: pick side; press Esc to finish"), 3000);
+}
+
+void MainWindow::toolFilletZero()
+{
+    if (!m_canvas) return;
+    m_canvas->startFilletZero();
+    statusBar()->showMessage(QStringLiteral("Fillet (0): select two lines; press Esc to finish"), 3000);
+}
+
+void MainWindow::toolChamfer()
+{
+    if (!m_canvas) return;
+    const bool imperial = AppSettings::measurementUnits().compare(QStringLiteral("imperial"), Qt::CaseInsensitive) == 0;
+    const QString unit = imperial ? QStringLiteral("ft") : QStringLiteral("m");
+    bool ok = false;
+    double val = QInputDialog::getDouble(this, QStringLiteral("Chamfer"),
+                                         QStringLiteral("Distance (%1):").arg(unit),
+                                         imperial ? (1.0/3.28084) : 1.0, -1e6, 1e6, 3, &ok);
+    if (!ok) return;
+    double meters = imperial ? (val * 0.3048) : val;
+    m_canvas->startChamfer(meters);
+    statusBar()->showMessage(QStringLiteral("Chamfer: select two lines; press Esc to finish"), 3000);
 }
 
 void MainWindow::updatePointsTable()
 {
+    if (!m_pointsTable || !m_pointManager) return;
+    QSignalBlocker block1(m_pointsTable);
+    m_updatingPointsTable = true;
     auto points = m_pointManager->getAllPoints();
     m_pointsTable->setRowCount(points.size());
     // Update headers based on Gauss mode
@@ -2527,15 +2433,19 @@ void MainWindow::updatePointsTable()
     
     int row = 0;
     for (const auto& point : points) {
-        m_pointsTable->setItem(row, 0, new QTableWidgetItem(point.name));
+        // Name (editable)
+        QTableWidgetItem* nameItem = new QTableWidgetItem(point.name);
+        nameItem->setFlags((nameItem->flags() | Qt::ItemIsEditable));
+        nameItem->setData(Qt::UserRole, point.name); // original name for rename tracking
+        m_pointsTable->setItem(row, 0, nameItem);
         if (AppSettings::gaussMode()) {
-            m_pointsTable->setItem(row, 1, new QTableWidgetItem(QString::number(point.y, 'f', 3)));
-            m_pointsTable->setItem(row, 2, new QTableWidgetItem(QString::number(point.x, 'f', 3)));
+            QTableWidgetItem* yi = new QTableWidgetItem(QString::number(point.y, 'f', 3)); yi->setFlags(yi->flags() | Qt::ItemIsEditable); yi->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter); m_pointsTable->setItem(row, 1, yi);
+            QTableWidgetItem* xi = new QTableWidgetItem(QString::number(point.x, 'f', 3)); xi->setFlags(xi->flags() | Qt::ItemIsEditable); xi->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter); m_pointsTable->setItem(row, 2, xi);
         } else {
-            m_pointsTable->setItem(row, 1, new QTableWidgetItem(QString::number(point.x, 'f', 3)));
-            m_pointsTable->setItem(row, 2, new QTableWidgetItem(QString::number(point.y, 'f', 3)));
+            QTableWidgetItem* xi = new QTableWidgetItem(QString::number(point.x, 'f', 3)); xi->setFlags(xi->flags() | Qt::ItemIsEditable); xi->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter); m_pointsTable->setItem(row, 1, xi);
+            QTableWidgetItem* yi = new QTableWidgetItem(QString::number(point.y, 'f', 3)); yi->setFlags(yi->flags() | Qt::ItemIsEditable); yi->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter); m_pointsTable->setItem(row, 2, yi);
         }
-        m_pointsTable->setItem(row, 3, new QTableWidgetItem(QString::number(point.z, 'f', 3)));
+        QTableWidgetItem* zi = new QTableWidgetItem(QString::number(point.z, 'f', 3)); zi->setFlags(zi->flags() | Qt::ItemIsEditable); zi->setTextAlignment(Qt::AlignRight|Qt::AlignVCenter); m_pointsTable->setItem(row, 3, zi);
 
         // Layer combobox in column 4
         QComboBox* layerCombo = new QComboBox(m_pointsTable);
@@ -2557,8 +2467,98 @@ void MainWindow::updatePointsTable()
         m_pointsTable->setCellWidget(row, 4, layerCombo);
         row++;
     }
-    
+    m_updatingPointsTable = false;
     updateStatus();
+}
+
+void MainWindow::deleteSelectedCoordinates()
+{
+    if (!m_pointsTable || !m_pointManager) return;
+    auto sel = m_pointsTable->selectionModel()->selectedRows();
+    if (sel.isEmpty()) return;
+    // Collect names first
+    QStringList names;
+    for (const auto& idx : sel) {
+        int r = idx.row();
+        if (r < 0 || r >= m_pointsTable->rowCount()) continue;
+        QTableWidgetItem* it = m_pointsTable->item(r, 0);
+        if (!it) continue;
+        names << it->text();
+    }
+    for (const QString& name : names) {
+        if (m_canvas) m_canvas->removePointByName(name);
+        m_pointManager->removePoint(name);
+    }
+    updatePointsTable();
+}
+
+void MainWindow::onPointsCellChanged(QTableWidgetItem* item)
+{
+    if (!item || !m_pointsTable || !m_pointManager) return;
+    if (m_updatingPointsTable) return;
+    int row = item->row();
+    int col = item->column();
+    QTableWidgetItem* nameItem = m_pointsTable->item(row, 0);
+    if (!nameItem) return;
+    QString oldName = nameItem->data(Qt::UserRole).toString();
+    if (oldName.isEmpty()) oldName = nameItem->text();
+    // Column mapping
+    const bool gauss = AppSettings::gaussMode();
+    const int colX = gauss ? 2 : 1;
+    const int colY = gauss ? 1 : 2;
+    const int colZ = 3;
+
+    if (col == 0) {
+        // Rename
+        const QString newName = nameItem->text().trimmed();
+        if (newName.isEmpty() || newName == oldName) return;
+        if (m_pointManager->hasPoint(newName)) {
+            // Revert
+            m_updatingPointsTable = true;
+            nameItem->setText(oldName);
+            m_updatingPointsTable = false;
+            showToast(QString("Name '%1' exists.").arg(newName));
+            return;
+        }
+        Point p = m_pointManager->getPoint(oldName);
+        if (p.name.isEmpty()) return;
+        // Update PM: remove old, add new
+        m_pointManager->removePoint(oldName);
+        p.name = newName;
+        m_pointManager->addPoint(p);
+        // Update canvas: rename point entity
+        if (m_canvas) m_canvas->renamePoint(oldName, newName);
+        // Update table's stored original name and layer connection will be refreshed on rebuild
+        nameItem->setData(Qt::UserRole, newName);
+        updatePointsTable();
+        return;
+    }
+
+    // Coordinate edits: parse values
+    auto parseCell = [&](int c, double& out){
+        QTableWidgetItem* it = m_pointsTable->item(row, c);
+        if (!it) return false;
+        bool ok=false; double v = it->text().trimmed().toDouble(&ok);
+        if (!ok) return false;
+        out = v; return true;
+    };
+    double x=0.0,y=0.0,z=0.0;
+    // Read from table for the edited cell and siblings
+    if (!parseCell(colX, x)) return;
+    if (!parseCell(colY, y)) return;
+    if (!parseCell(colZ, z)) z = 0.0;
+    // Update PointManager
+    Point p = m_pointManager->getPoint(oldName);
+    if (p.name.isEmpty()) return;
+    p.x = x; p.y = y; p.z = z;
+    m_pointManager->addPoint(p);
+    // Update Canvas
+    if (m_canvas) m_canvas->setPointXYZ(oldName, x, y, z);
+    // Normalize formatting for edited cell
+    m_updatingPointsTable = true;
+    if (col == colX || col == colY) item->setText(QString::number((col==colX?x:y), 'f', 3));
+    else if (col == colZ) item->setText(QString::number(z, 'f', 3));
+    m_updatingPointsTable = false;
 }
 
 void MainWindow::updateCoordinates(const QPointF& worldPos)
@@ -2611,7 +2611,12 @@ void MainWindow::showSettings()
                 updateStatus();
                 refreshLayerCombo();
                 if (m_canvas) m_canvas->update();
-                if (m_welcomeWidget) m_welcomeWidget->reload();
+                updateMeasureLabelText();
+            });
+            connect(m_settingsDialog, &SettingsDialog::signOutRequested, this, [this](){
+                if (m_welcomeWidget) m_welcomeWidget->signOut();
+                updateLicenseStateUI();
+                if (m_centerStack && m_welcomeWidget) m_centerStack->setCurrentWidget(m_welcomeWidget);
             });
         }
     }
@@ -2944,20 +2949,38 @@ void MainWindow::onLayerComboChanged(int index)
 void MainWindow::onDrawingDistanceChanged(double meters)
 {
     if (!m_measureLabel) return;
+    m_liveDistanceMeters = meters;
+    updateMeasureLabelText();
+    pulseLabel(m_measureLabel);
+}
+
+void MainWindow::onDrawingAngleChanged(double degrees)
+{
+    if (!m_measureLabel) return;
+    m_liveAngleDegrees = degrees;
+    updateMeasureLabelText();
+}
+
+void MainWindow::updateMeasureLabelText()
+{
+    if (!m_measureLabel) return;
     const bool imperial = AppSettings::measurementUnits().compare(QStringLiteral("imperial"), Qt::CaseInsensitive) == 0;
     const double factor = imperial ? 3.28084 : 1.0; // m->ft
     const QString unit = imperial ? QStringLiteral("ft") : QStringLiteral("m");
-    // Show R/D for circle tool, length for lines/others
     QString text;
     if (m_canvas && (m_canvas->toolMode() == CanvasWidget::ToolMode::DrawCircle)) {
-        text = QString("R: %1 %2  D: %3 %4").arg(meters * factor, 0, 'f', 3).arg(unit)
-                                           .arg(meters * 2.0 * factor, 0, 'f', 3).arg(unit);
+        text = QString("R: %1 %2  D: %3 %4").arg(m_liveDistanceMeters * factor, 0, 'f', 3).arg(unit)
+                                             .arg(m_liveDistanceMeters * 2.0 * factor, 0, 'f', 3).arg(unit);
+    } else if (m_canvas && (m_canvas->toolMode() == CanvasWidget::ToolMode::DrawLine)) {
+        // For line drawing, show L and Brg (bearing) in DMS
+        text = QString("L=%1 %2").arg(m_liveDistanceMeters * factor, 0, 'f', 3).arg(unit);
+        text += QString("  Brg=%1").arg(SurveyCalculator::toDMS(m_liveAngleDegrees));
     } else {
-        text = QString("Len: %1 %2").arg(meters * factor, 0, 'f', 3).arg(unit);
+        // Default (other tools): show length and bearing
+        text = QString("Len: %1 %2").arg(m_liveDistanceMeters * factor, 0, 'f', 3).arg(unit);
+        text += QString("  Brg=%1").arg(SurveyCalculator::toDMS(m_liveAngleDegrees));
     }
     m_measureLabel->setText(text);
-    // Subtle pulse to draw attention
-    pulseLabel(m_measureLabel);
 }
 
 void MainWindow::updateLayerStatusText()

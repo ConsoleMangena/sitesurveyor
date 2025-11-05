@@ -57,12 +57,15 @@ SettingsDialog::SettingsDialog(CanvasWidget* canvas, QWidget *parent)
     profileForm->addRow(new QLabel("First name:", profileBox), m_firstEdit);
     profileForm->addRow(new QLabel("Surname:", profileBox), m_lastEdit);
     profileForm->addRow(new QLabel("Email:", profileBox), m_emailEdit);
+    m_signOutButton = new QPushButton("Sign Out", profileBox);
+    profileForm->addRow(new QLabel("" , profileBox), m_signOutButton);
 
     m_applyButton = new QPushButton("Apply", this);
     m_closeButton = new QPushButton("Close", this);
 
     connect(m_applyButton, &QPushButton::clicked, this, &SettingsDialog::applyChanges);
     connect(m_closeButton, &QPushButton::clicked, this, &SettingsDialog::close);
+    connect(m_signOutButton, &QPushButton::clicked, this, [this](){ emit signOutRequested(); close(); });
 
     QHBoxLayout* gridSizeLayout = new QHBoxLayout();
     gridSizeLayout->addWidget(gridSizeLabel);

@@ -4,6 +4,8 @@
 #include <QObject>
 #include <QMap>
 #include <QVector>
+#include <QString>
+#include <QStringList>
 #include "point.h"
 
 class PointManager : public QObject {

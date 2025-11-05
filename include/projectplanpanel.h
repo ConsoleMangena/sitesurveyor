@@ -8,6 +8,8 @@
 class QTableWidget;
 class QPushButton;
 class QComboBox;
+class QLineEdit;
+class QDateEdit;
 
 class ProjectPlanPanel : public QWidget
 {
@@ -24,6 +26,11 @@ private slots:
     void moveTaskUp();
     void moveTaskDown();
     void onCellChanged(int row, int column);
+    void quickAddTask();
+    void markDoneSelected();
+    void duplicateSelected();
+    void onFilterChanged();
+    void onSearchChanged(const QString& text);
 
 private:
     struct Task {
@@ -41,6 +48,8 @@ private:
     void rebuildCombosForRow(int row);
     QVector<Task> collectTasks() const;
     void setTasks(const QVector<Task>& tasks);
+    void applyFilters();
+    void updateRowVisuals(int row);
 
     QTableWidget* m_table{nullptr};
     QPushButton* m_addBtn{nullptr};
@@ -48,6 +57,16 @@ private:
     QPushButton* m_upBtn{nullptr};
     QPushButton* m_downBtn{nullptr};
     QPushButton* m_saveBtn{nullptr};
+    QLineEdit* m_quickTitle{nullptr};
+    QComboBox* m_quickStatus{nullptr};
+    QComboBox* m_quickPriority{nullptr};
+    QDateEdit* m_quickDue{nullptr};
+    QPushButton* m_quickAdd{nullptr};
+    QComboBox* m_filterStatus{nullptr};
+    QComboBox* m_filterPriority{nullptr};
+    QLineEdit* m_search{nullptr};
+    QPushButton* m_markDoneBtn{nullptr};
+    QPushButton* m_duplicateBtn{nullptr};
 };
 
 #endif // PROJECTPLANPANEL_H

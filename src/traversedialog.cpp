@@ -80,14 +80,19 @@ TraverseDialog::TraverseDialog(PointManager* pm, CanvasWidget* canvas, QWidget* 
     m_legsTable = new QTableWidget(this);
     m_legsTable->setColumnCount(3);
     QString unit = AppSettings::measurementUnits().compare("imperial", Qt::CaseInsensitive) == 0 ? "ft" : "m";
-    m_legsTable->setHorizontalHeaderLabels(QStringList() << "Name" << "Azimuth (deg)" << QString("Distance (%1)").arg(unit));
+    m_legsTable->setHorizontalHeaderLabels(QStringList() << "Name" << "Bearing (DMS)" << QString("Distance (%1)").arg(unit));
     m_legsTable->horizontalHeader()->setStretchLastSection(true);
+    if (auto* h1 = m_legsTable->horizontalHeaderItem(1)) h1->setToolTip("Bearing formats: 123°45'56.7\"  |  123:45:56.7  |  123:45  |  decimal 123.456");
+    if (auto* h2 = m_legsTable->horizontalHeaderItem(2)) h2->setToolTip("Distance may include suffix (m or ft); if omitted, uses project units");
     m_legsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_legsTable->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_legsTable->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::SelectedClicked | QAbstractItemView::EditKeyPressed);
     m_legsTable->setMinimumHeight(200);
 
     main->addWidget(m_legsTable, 1);
+    auto* hint = new QLabel("Enter bearing in DMS or decimal (e.g. 123°45'56.7\" or 123.456). Distance can be suffixed with m/ft or uses project units.", this);
+    hint->setWordWrap(true);
+    main->addWidget(hint);
 
     // Buttons for table
     {
@@ -184,10 +189,11 @@ QVector<TraverseDialog::Leg> TraverseDialog::collectLegs() const
         auto* distItem = m_legsTable->item(r, 2);
         if (!azItem || !distItem) continue;
         bool ok1=false, ok2=false;
-        double az = azItem->text().trimmed().toDouble(&ok1);
-        double d = distItem->text().trimmed().toDouble(&ok2);
+        double az=0.0, d=0.0;
+        ok1 = parseAngleInput(azItem->text().trimmed(), az);
+        ok2 = parseDistanceInput(distItem->text().trimmed(), d);
         if (!ok1 || !ok2) continue;
-        Leg L; L.azimuthDeg = az; L.distance = d; L.name = nameItem ? nameItem->text().trimmed() : QString();
+        Leg L; L.azimuthDeg = SurveyCalculator::normalizeAngle(az); L.distance = d; L.name = nameItem ? nameItem->text().trimmed() : QString();
         legs.append(L);
     }
     return legs;
@@ -200,6 +206,91 @@ void TraverseDialog::appendReportLine(const QString& s)
     if (!t.isEmpty()) t += "\n";
     t += s;
     m_report->setPlainText(t);
+}
+
+// Accepts decimal degrees (e.g., 123.456) or DMS forms:
+//  - 123°45'56.7"  or 123d45'56.7"
+//  - 123:45:56.7   or 123:45
+//  - 123 45 56.7   (spaces)
+bool TraverseDialog::parseAngleInput(const QString& text, double& outDegrees) const
+{
+    QString t = text.trimmed();
+    if (t.isEmpty()) return false;
+    // Normalize common symbols
+    t.replace("º", "°");
+    // Colon-separated
+    if (t.contains(QLatin1Char(':'))) {
+        const QStringList parts = t.split(QLatin1Char(':'), Qt::SkipEmptyParts);
+        bool okd=false, okm=true, oks=true;
+        double d=0.0, m=0.0, s=0.0;
+        if (parts.size() >= 1) d = parts[0].trimmed().toDouble(&okd);
+        if (parts.size() >= 2) m = parts[1].trimmed().toDouble(&okm);
+        if (parts.size() >= 3) s = parts[2].trimmed().toDouble(&oks);
+        if (okd && okm && oks) { outDegrees = d + m/60.0 + s/3600.0; return true; }
+        return false;
+    }
+    // Strip spaces for symbol-based parsing
+    QString n = t; n.remove(' ');
+    int di = n.indexOf(QChar(0x00B0)); // °
+    if (di < 0) di = n.indexOf('d');   // allow 'd'
+    int mi = n.indexOf('\'');
+    int si = n.indexOf('"');
+    if (di >= 0 || mi >= 0 || si >= 0) {
+        // DMS-like
+        int start = 0;
+        QString dStr, mStr, sStr;
+        if (di >= 0) { dStr = n.left(di); start = di+1; }
+        else if (mi >= 0) { dStr = n.left(mi); start = mi+1; }
+        else if (si >= 0) { dStr = n.left(si); start = si+1; }
+        if (mi >= 0 && mi >= start) { mStr = n.mid(start, mi - start); start = mi+1; }
+        if (si >= 0 && si >= start) { sStr = n.mid(start, si - start); }
+        bool okd=false, okm=true, oks=true;
+        double dd=0.0, mm=0.0, ss=0.0;
+        if (!dStr.isEmpty()) dd = dStr.toDouble(&okd);
+        if (!mStr.isEmpty()) mm = mStr.toDouble(&okm);
+        if (!sStr.isEmpty()) ss = sStr.toDouble(&oks);
+        if (okd && okm && oks) { outDegrees = dd + mm/60.0 + ss/3600.0; return true; }
+        return false;
+    }
+    // Decimal fallback
+    bool ok=false; double val = t.toDouble(&ok);
+    if (ok) { outDegrees = val; return true; }
+    return false;
+}
+
+// Parses a distance possibly suffixed with units (m or ft). Returns value in current project units
+// as per AppSettings::measurementUnits(). If a suffix is present, converts accordingly.
+bool TraverseDialog::parseDistanceInput(const QString& text, double& outDistance) const
+{
+    QString t = text.trimmed();
+    if (t.isEmpty()) return false;
+    QString tl = t.toLower();
+    bool suffixM = tl.endsWith(" m") || tl.endsWith("m") || tl.endsWith("meter") || tl.endsWith("meters") || tl.endsWith("metre") || tl.endsWith("metres");
+    bool suffixFt = tl.endsWith(" ft") || tl.endsWith("ft") || tl.endsWith("feet");
+    // Extract numeric portion at the start
+    QString num;
+    bool started = false;
+    for (const QChar& ch : t) {
+        if (ch.isDigit() || ch == '.' || ch == '-' || ch == '+') { num.append(ch); started = true; }
+        else if (!started && ch.isSpace()) { continue; }
+        else break;
+    }
+    bool ok=false; double val = num.toDouble(&ok);
+    if (!ok) return false;
+    const bool imperial = AppSettings::measurementUnits().compare("imperial", Qt::CaseInsensitive) == 0;
+    if (suffixM) {
+        // Input meters
+        outDistance = imperial ? (val / 0.3048) : val; // convert to feet if project is imperial
+        return true;
+    }
+    if (suffixFt) {
+        // Input feet
+        outDistance = imperial ? val : (val * 0.3048); // convert to meters if project is metric
+        return true;
+    }
+    // No suffix: assume project units
+    outDistance = val;
+    return true;
 }
 
 void TraverseDialog::computeTraverse()
@@ -229,18 +320,21 @@ void TraverseDialog::computeTraverse()
     const bool useSL = (m_seaLevelCheck && m_seaLevelCheck->isChecked());
     const double H = (m_meanElev ? m_meanElev->value() : 0.0);
     const double Re = 6371000.0; // mean Earth radius (m)
+    double totalMeters = 0.0;
     for (int i = 0; i < legs.size(); ++i) {
         const auto& L = legs[i];
         // Convert entered distance to meters for internal computation
         double dMeters = L.distance * toMeters;
         if (ppm != 0.0) dMeters = dMeters * (1.0 + ppm / 1e6);
         if (useSL) dMeters = dMeters * (Re / (Re + H));
+        totalMeters += dMeters;
         QPointF nextXY = SurveyCalculator::polarToRectangular(QPointF(current.x, current.y), dMeters, L.azimuthDeg);
         Point next(L.name.isEmpty() ? QString("T%1").arg(i+1) : L.name, nextXY.x(), nextXY.y(), current.z);
         computed.push_back(next);
-        appendReportLine(QString("Leg %1: Az=%2°, Dist=%3 %4  -> %5 (X=%6, Y=%7)")
+        const QString brgText = SurveyCalculator::toDMS(L.azimuthDeg);
+        appendReportLine(QString("Leg %1: Brg=%2, Dist=%3 %4  -> %5 (X=%6, Y=%7)")
                          .arg(i+1)
-                         .arg(QString::number(L.azimuthDeg, 'f', 4))
+                         .arg(brgText)
                          .arg(QString::number(L.distance, 'f', 3))
                          .arg(unit)
                          .arg(next.name)
@@ -259,11 +353,21 @@ void TraverseDialog::computeTraverse()
         double miscloseMeters = qSqrt(dx*dx + dy*dy);
         double az = SurveyCalculator::azimuth(QPointF(close.x, close.y), QPointF(current.x, current.y));
         const double miscloseDisplay = imperial ? miscloseMeters / 0.3048 : miscloseMeters;
-        appendReportLine(QString("\nClosure to %1: Misclose=%2 %3  Az=%4°")
-                         .arg(close.name)
-                         .arg(QString::number(miscloseDisplay, 'f', 3))
+        const QString brgText = SurveyCalculator::toDMS(az);
+        appendReportLine(QString("\nClosure to %1: Misclose=%2 %3  Brg=%4")
+                          .arg(close.name)
+                          .arg(QString::number(miscloseDisplay, 'f', 3))
+                          .arg(unit)
+                          .arg(brgText));
+
+        // Total length and closure ratio
+        const double totalDisplay = imperial ? totalMeters / 0.3048 : totalMeters;
+        double ratio = (miscloseMeters > 1e-9 ? totalMeters / miscloseMeters : 0.0);
+        QString ratioStr = (ratio <= 0.0 ? QString::fromUtf8("∞") : QString::number(qRound(ratio)));
+        appendReportLine(QString("Total length=%1 %2  Closure ratio=1:%3")
+                         .arg(QString::number(totalDisplay, 'f', 3))
                          .arg(unit)
-                         .arg(QString::number(az, 'f', 4)));
+                         .arg(ratioStr));
 
         if (methodIdx > 0 && miscloseMeters > 0) {
             // Build leg vectors

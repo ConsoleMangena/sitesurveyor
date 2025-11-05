@@ -42,10 +42,10 @@ MassPolarDialog::MassPolarDialog(PointManager* pm, CanvasWidget* canvas, QWidget
         main->addLayout(row);
     }
 
-    // Table: Name, Distance, Azimuth, Z(optional)
+    // Table: Name, Distance, Bearing, Z(optional)
     m_table = new QTableWidget(this);
     m_table->setColumnCount(4);
-    m_table->setHorizontalHeaderLabels(QStringList() << "Name" << "Distance (m)" << "Azimuth" << "Z (opt)" );
+    m_table->setHorizontalHeaderLabels(QStringList() << "Name" << "Distance (m)" << "Bearing (DMS)" << "Z (opt)" );
     m_table->horizontalHeader()->setStretchLastSection(true);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::ExtendedSelection);
@@ -149,7 +149,7 @@ void MassPolarDialog::exportCSV()
     QFile f(fn);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) { QMessageBox::warning(this, "Export CSV", QString("Failed to write %1").arg(fn)); return; }
     QTextStream out(&f);
-    out << "Name,Distance,Azimuth,Z\n";
+    out << "Name,Distance,Bearing,Z\n";
     for (int r=0;r<m_table->rowCount();++r) {
         auto get = [&](int c){ if (auto* it=m_table->item(r,c)) return it->text(); return QString(); };
         out << get(0) << "," << get(1) << "," << get(2) << "," << get(3) << "\n";

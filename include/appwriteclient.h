@@ -4,6 +4,8 @@
 #include <QObject>
 #include <QUrl>
 #include <QJsonObject>
+#include <QString>
+#include <QByteArray>
 
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -27,6 +29,9 @@ public:
     QNetworkReply* signUp(const QString& email, const QString& password, const QString& name = QString());
     QNetworkReply* login(const QString& email, const QString& password);
     QNetworkReply* logout();
+
+    // OAuth (native token exchange)
+    QNetworkReply* oauth2CreateToken(const QString& provider, const QString& userId, const QString& secret);
 
     // Account info and preferences
     QNetworkReply* getAccount();

@@ -36,6 +36,7 @@ class QStackedWidget;
 class QTabWidget;
 class WelcomeWidget;
 class QTimer;
+class QTableWidgetItem;
 
 class MainWindow : public QMainWindow
 {
@@ -81,6 +82,12 @@ private slots:
     void calculateArea();
     void calculateAzimuth();
     void drawRegularPolygon();
+    // Real tools
+    void toolTrim();
+    void toolExtend();
+    void toolOffset();
+    void toolFilletZero();
+    void toolChamfer();
     void onZoomChanged(double zoom);
     void onPointsTableSelectionChanged();
     void onLayerComboChanged(int index);
@@ -89,6 +96,7 @@ private slots:
     void resetLayout();
     void toggleDarkMode(bool on);
     void onDrawingDistanceChanged(double meters);
+    void onDrawingAngleChanged(double degrees);
     void toggleLeftPanel();
     void toggleRightPanel();
     void toggleCommandPanel();
@@ -99,6 +107,8 @@ private slots:
     void onRightDockVisibilityChanged(bool visible);
     void setRightPanelsVisible(bool visible);
     void onSelectionChanged(int points, int lines);
+    void deleteSelectedCoordinates();
+    void onPointsCellChanged(QTableWidgetItem* item);
 
 private:
     void setupUI();
@@ -113,6 +123,7 @@ private:
     void updateLicenseStateUI();
     void applyEngineeringPresetIfNeeded();
     void updatePinnedGroupsUI();
+    void updateMeasureLabelText();
     void enableOverflowTearOff(QToolBar* bar);
     void updateMoreDock();
     // UI animation helpers
@@ -130,6 +141,7 @@ private:
     // UI components
     CanvasWidget* m_canvas{nullptr};
     QTableWidget* m_pointsTable{nullptr};
+    bool m_updatingPointsTable{false};
     QTextEdit* m_commandOutput{nullptr};
     QLineEdit* m_commandInput{nullptr};
     QLabel* m_coordLabel{nullptr};
@@ -219,6 +231,12 @@ private:
     QAction* m_calcDistanceAction{nullptr};
     QAction* m_calcAreaAction{nullptr};
     QAction* m_calcAzimuthAction{nullptr};
+    // Modify tool actions
+    QAction* m_toolTrimAction{nullptr};
+    QAction* m_toolExtendAction{nullptr};
+    QAction* m_toolOffsetAction{nullptr};
+    QAction* m_toolFilletZeroAction{nullptr};
+    QAction* m_toolChamferAction{nullptr};
     // Menu pointers for license locking
     QMenu* m_fileMenu{nullptr};
     QMenu* m_editMenu{nullptr};
@@ -246,6 +264,9 @@ private:
     bool m_morePinned{false};
     bool m_syncingRightDock{false};
     bool m_rightDockClosingByUser{false};
+    // Live measure HUD
+    double m_liveDistanceMeters{0.0};
+    double m_liveAngleDegrees{0.0};
     // Dialogs (created on demand)
     IntersectResectionDialog* m_intersectResectionDlg{nullptr};
     LevelingDialog* m_levelingDlg{nullptr};

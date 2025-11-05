@@ -42,6 +42,104 @@ CanvasWidget::CanvasWidget(QWidget *parent) : QWidget(parent),
     updateTransform();
 }
 
+bool CanvasWidget::setPointXYZ(const QString& name, double x, double y, double z)
+{
+    QVector<int> idxs; QVector<QPointF> oldXY; QVector<double> oldZ;
+    for (int i=0;i<m_points.size();++i) {
+        auto& dp = m_points[i];
+        if (dp.point.name.compare(name, Qt::CaseInsensitive) == 0) {
+            idxs.append(i);
+            oldXY.append(dp.point.toQPointF());
+            oldZ.append(dp.point.z);
+        }
+    }
+    if (idxs.isEmpty()) return false;
+    if (m_undoStack) {
+        class SetPointXYZCommand : public QUndoCommand {
+        public:
+            SetPointXYZCommand(CanvasWidget* w, const QString& name, const QVector<int>& idxs,
+                               const QVector<QPointF>& oldXY, const QVector<double>& oldZ,
+                               double nx, double ny, double nz)
+                : m_w(w), m_name(name), m_idxs(idxs), m_oldXY(oldXY), m_oldZ(oldZ), m_newX(nx), m_newY(ny), m_newZ(nz)
+            { setText("Edit Point Coordinates"); }
+            void undo() override {
+                if (!m_w) return;
+                for (int k=0;k<m_idxs.size();++k) {
+                    int i = m_idxs[k]; if (i<0 || i>=m_w->m_points.size()) continue;
+                    m_w->m_points[i].point.x = m_oldXY[k].x();
+                    m_w->m_points[i].point.y = m_oldXY[k].y();
+                    m_w->m_points[i].point.z = m_oldZ[k];
+                }
+                m_w->update();
+            }
+            void redo() override {
+                if (!m_w) return;
+                for (int i : m_idxs) {
+                    if (i<0 || i>=m_w->m_points.size()) continue;
+                    m_w->m_points[i].point.x = m_newX;
+                    m_w->m_points[i].point.y = m_newY;
+                    m_w->m_points[i].point.z = m_newZ;
+                }
+                m_w->update();
+            }
+        private:
+            CanvasWidget* m_w{nullptr}; QString m_name; QVector<int> m_idxs; QVector<QPointF> m_oldXY; QVector<double> m_oldZ; double m_newX, m_newY, m_newZ;
+        };
+        m_undoStack->push(new SetPointXYZCommand(this, name, idxs, oldXY, oldZ, x, y, z));
+    } else {
+        for (int i : idxs) {
+            if (i<0 || i>=m_points.size()) continue;
+            m_points[i].point.x = x;
+            m_points[i].point.y = y;
+            m_points[i].point.z = z;
+        }
+        update();
+    }
+    return true;
+}
+
+bool CanvasWidget::renamePoint(const QString& oldName, const QString& newName)
+{
+    if (oldName.compare(newName, Qt::CaseInsensitive) == 0) return true;
+    QVector<int> idxs;
+    for (int i=0;i<m_points.size();++i) {
+        if (m_points[i].point.name.compare(oldName, Qt::CaseInsensitive) == 0) idxs.append(i);
+    }
+    if (idxs.isEmpty()) return false;
+    if (m_undoStack) {
+        class RenamePointCommand : public QUndoCommand {
+        public:
+            RenamePointCommand(CanvasWidget* w, const QVector<int>& idxs, const QString& oldN, const QString& newN)
+                : m_w(w), m_idxs(idxs), m_old(oldN), m_new(newN) { setText("Rename Point"); }
+            void undo() override { if (!m_w) return; for (int i: m_idxs){ if (i>=0 && i<m_w->m_points.size()) m_w->m_points[i].point.name = m_old; } m_w->update(); }
+            void redo() override { if (!m_w) return; for (int i: m_idxs){ if (i>=0 && i<m_w->m_points.size()) m_w->m_points[i].point.name = m_new; } m_w->update(); }
+        private: CanvasWidget* m_w{nullptr}; QVector<int> m_idxs; QString m_old, m_new; };
+        m_undoStack->push(new RenamePointCommand(this, idxs, oldName, newName));
+    } else {
+        for (int i: idxs) { if (i>=0 && i<m_points.size()) m_points[i].point.name = newName; }
+        update();
+    }
+    return true;
+}
+int CanvasWidget::polylineIndexForLine(int lineIndex) const
+{
+    if (lineIndex < 0 || lineIndex >= m_lines.size()) return -1;
+    for (int i = 0; i < m_polylines.size(); ++i) {
+        const auto& pl = m_polylines[i];
+        for (int li : pl.lineIndices) { if (li == lineIndex) return i; }
+    }
+    return -1;
+}
+
+QVector<int> CanvasWidget::currentLineIndicesForPolyline(int polyIndex) const
+{
+    QVector<int> res;
+    if (polyIndex < 0 || polyIndex >= m_polylines.size()) return res;
+    const auto& pl = m_polylines[polyIndex];
+    for (int li : pl.lineIndices) { if (li >= 0 && li < m_lines.size()) res.append(li); }
+    return res;
+}
+
 void CanvasWidget::addDimension(const QPointF& a, const QPointF& b, double textHeight, const QString& layer)
 {
     QString lay = !layer.isEmpty() ? layer : (m_layerManager ? m_layerManager->currentLayer() : QStringLiteral("0"));
@@ -296,7 +394,15 @@ void CanvasWidget::setExclusiveSelectionLine(int idx)
     }
     m_selectedLineIndices.clear();
     m_selectedPointIndices.clear();
-    if (idx >= 0 && idx < m_lines.size()) m_selectedLineIndices.insert(idx);
+    if (idx >= 0 && idx < m_lines.size()) {
+        int pli = polylineIndexForLine(idx);
+        if (pli >= 0) {
+            QVector<int> segs = currentLineIndicesForPolyline(pli);
+            for (int li : segs) m_selectedLineIndices.insert(li);
+        } else {
+            m_selectedLineIndices.insert(idx);
+        }
+    }
     int lc = m_selectedLineIndices.size() + ((m_selectedLineIndex>=0 && !m_selectedLineIndices.contains(m_selectedLineIndex))?1:0);
     emit selectionChanged(m_selectedPointIndices.size(), lc);
 }
@@ -305,8 +411,20 @@ void CanvasWidget::toggleSelectionLine(int idx)
 {
     if (idx < 0 || idx >= m_lines.size()) return;
     if (m_layerManager) { Layer L = m_layerManager->getLayer(m_lines[idx].layer); if (!L.name.isEmpty() && L.locked) return; }
-    if (m_selectedLineIndices.contains(idx)) m_selectedLineIndices.remove(idx);
-    else m_selectedLineIndices.insert(idx);
+    int pli = polylineIndexForLine(idx);
+    if (pli >= 0) {
+        QVector<int> segs = currentLineIndicesForPolyline(pli);
+        bool allPresent = true;
+        for (int li : segs) { if (!m_selectedLineIndices.contains(li)) { allPresent = false; break; } }
+        if (allPresent) {
+            for (int li : segs) m_selectedLineIndices.remove(li);
+        } else {
+            for (int li : segs) m_selectedLineIndices.insert(li);
+        }
+    } else {
+        if (m_selectedLineIndices.contains(idx)) m_selectedLineIndices.remove(idx);
+        else m_selectedLineIndices.insert(idx);
+    }
     int lc = m_selectedLineIndices.size() + ((m_selectedLineIndex>=0 && !m_selectedLineIndices.contains(m_selectedLineIndex))?1:0);
     emit selectionChanged(m_selectedPointIndices.size(), lc);
 }
@@ -353,10 +471,36 @@ public:
         : m_w(w) {
         // Capture selection snapshot (indices and items)
         if (!m_w) return;
-        // Lines
-        QSet<int> lines = m_w->m_selectedLineIndices;
-        if (m_w->m_selectedLineIndex >= 0) lines.insert(m_w->m_selectedLineIndex);
-        QList<int> lineIdxs = lines.values();
+        // Lines (expand to full polyline entities)
+        QSet<int> toCapture;
+        {
+            QSet<int> sel = m_w->m_selectedLineIndices;
+            if (m_w->m_selectedLineIndex >= 0) sel.insert(m_w->m_selectedLineIndex);
+            for (int idx : sel) {
+                if (idx < 0 || idx >= m_w->m_lines.size()) continue;
+                int pli = m_w->polylineIndexForLine(idx);
+                if (pli >= 0) {
+                    const auto segs = m_w->currentLineIndicesForPolyline(pli);
+                    for (int li : segs) toCapture.insert(li);
+                } else {
+                    toCapture.insert(idx);
+                }
+            }
+        }
+        // Cache affected polylines to restore on undo
+        {
+            QSet<int> affectedPl;
+            for (int pi = 0; pi < m_w->m_polylines.size(); ++pi) {
+                const auto& pl = m_w->m_polylines[pi];
+                bool hit = false;
+                for (int li : pl.lineIndices) { if (toCapture.contains(li)) { hit = true; break; } }
+                if (hit) affectedPl.insert(pi);
+            }
+            QList<int> plIdxs = affectedPl.values();
+            std::sort(plIdxs.begin(), plIdxs.end());
+            for (int pi : plIdxs) m_polylines.append(m_w->m_polylines[pi]);
+        }
+        QList<int> lineIdxs = toCapture.values();
         std::sort(lineIdxs.begin(), lineIdxs.end());
         for (int idx : lineIdxs) {
             if (idx >= 0 && idx < m_w->m_lines.size()) {
@@ -384,7 +528,12 @@ public:
         setText("Delete Selected");
     }
     void undo() override {
-        if (m_w) m_w->applyRestoreSelection(m_points, m_lines);
+        if (m_w) {
+            m_w->applyRestoreSelection(m_points, m_lines);
+            // Restore polyline entities
+            for (const auto& pl : m_polylines) m_w->m_polylines.append(pl);
+            m_w->update();
+        }
     }
     void redo() override {
         if (m_w) m_w->applyDeleteSelection();
@@ -393,17 +542,44 @@ private:
     CanvasWidget* m_w{nullptr};
     QVector<QPair<int, CanvasWidget::DrawnPoint>> m_points;
     QVector<QPair<int, CanvasWidget::DrawnLine>> m_lines;
+    QVector<CanvasWidget::DrawnPolyline> m_polylines;
 };
 
 void CanvasWidget::applyDeleteSelection()
 {
-    // Remove lines (descending indices)
-    QList<int> lineIdxs = m_selectedLineIndices.values();
-    if (m_selectedLineIndex >= 0) lineIdxs.append(m_selectedLineIndex);
+    // Aggregate full-entity (polyline) line indices to remove
+    QSet<int> toRemove;
+    {
+        QList<int> base = m_selectedLineIndices.values();
+        if (m_selectedLineIndex >= 0) base.append(m_selectedLineIndex);
+        for (int idx : base) {
+            if (idx < 0 || idx >= m_lines.size()) continue;
+            int pli = polylineIndexForLine(idx);
+            if (pli >= 0) {
+                QVector<int> segs = currentLineIndicesForPolyline(pli);
+                for (int li : segs) toRemove.insert(li);
+            } else {
+                toRemove.insert(idx);
+            }
+        }
+    }
+    // Respect layer lock per line
+    QList<int> lineIdxs = toRemove.values();
     std::sort(lineIdxs.begin(), lineIdxs.end(), std::greater<int>());
+    // Remove corresponding polylines fully if any of their segments are removed
+    if (!lineIdxs.isEmpty()) {
+        QVector<int> removePl;
+        for (int pi = 0; pi < m_polylines.size(); ++pi) {
+            const auto& pl = m_polylines[pi];
+            bool hit = false;
+            for (int li : pl.lineIndices) { if (toRemove.contains(li)) { hit = true; break; } }
+            if (hit) removePl.append(pi);
+        }
+        std::sort(removePl.begin(), removePl.end(), std::greater<int>());
+        for (int pi : removePl) { if (pi>=0 && pi < m_polylines.size()) m_polylines.remove(pi); }
+    }
     for (int idx : lineIdxs) {
         if (idx >= 0 && idx < m_lines.size()) {
-            // Respect layer lock
             if (m_layerManager) { Layer L = m_layerManager->getLayer(m_lines[idx].layer); if (!L.name.isEmpty() && L.locked) continue; }
             m_lines.remove(idx);
         }
@@ -1132,17 +1308,7 @@ void CanvasWidget::paintEvent(QPaintEvent *event)
             painter.drawLine(toDisplay(p2), toDisplay(p3));
             painter.drawLine(toDisplay(p3), toDisplay(p4));
             painter.drawLine(toDisplay(p4), toDisplay(p1));
-        } else if (m_toolMode == ToolMode::DrawRegularPolygonEdge && m_regPolyHasFirst) {
-            QVector<QPointF> pts = makeRegularPolygonFromEdge(m_regPolyFirst, m_currentHoverWorld, m_regPolySides);
-            painter.save();
-            QPen prevPen(QColor(0, 200, 255)); prevPen.setStyle(Qt::DashLine); prevPen.setWidthF(1.5 / m_zoom);
-            painter.setPen(prevPen);
-            for (int i = 0; i < pts.size(); ++i) {
-                QPointF a = pts[i]; QPointF b = pts[(i+1)%pts.size()];
-                painter.drawLine(toDisplay(a), toDisplay(b));
-            }
-            painter.restore();
-        } else if (m_toolMode == ToolMode::DrawRegularPolygonEdge) {
+        } else if (m_toolMode == ToolMode::DrawArc && m_drawVertices.size() == 2) {
             // Preview three-point arc using hover as third point
             auto angleDeg = [&](const QPointF& ctr, const QPointF& p){
                 double th = qAtan2(p.x()-ctr.x(), p.y()-ctr.y());
@@ -1215,6 +1381,21 @@ void CanvasWidget::paintEvent(QPaintEvent *event)
                 preview = SurveyCalculator::polarToRectangular(last, useDist, useAng);
             }
             painter.drawLine(toDisplay(m_drawVertices.last()), toDisplay(preview));
+        }
+        painter.restore();
+    }
+
+    // Regular polygon (by edge) preview: shown after first edge click, even if not using m_isDrawing
+    if (m_toolMode == ToolMode::DrawRegularPolygonEdge && m_regPolyHasFirst) {
+        painter.save();
+        QPen prevPen(QColor(0, 200, 255));
+        prevPen.setStyle(Qt::DashLine);
+        prevPen.setWidthF(1.5 / m_zoom);
+        painter.setPen(prevPen);
+        QVector<QPointF> pts = makeRegularPolygonFromEdge(m_regPolyFirst, m_currentHoverWorld, m_regPolySides);
+        for (int i = 0; i < pts.size(); ++i) {
+            QPointF a = pts[i]; QPointF b = pts[(i+1)%pts.size()];
+            painter.drawLine(toDisplay(a), toDisplay(b));
         }
         painter.restore();
     }
@@ -1302,7 +1483,7 @@ void CanvasWidget::paintEvent(QPaintEvent *event)
     }
 
     // Dynamic input overlay text (near cursor) and real-time shape measurements
-    if (m_dynInputEnabled && (m_isDrawing || m_draggingVertex || m_draggingSelection || m_toolMode == ToolMode::Lengthen)) {
+    if (m_dynInputEnabled && (m_isDrawing || m_draggingVertex || m_draggingSelection || m_toolMode == ToolMode::Lengthen || (m_toolMode == ToolMode::DrawRegularPolygonEdge && m_regPolyHasFirst))) {
         QString tip;
         bool hasDist=false, hasAngle=false; double dist=0.0, ang=0.0;
         if (!m_dynBuffer.isEmpty()) parseDistanceAngleInput(m_dynBuffer, hasDist, dist, hasAngle, ang);
@@ -1329,7 +1510,8 @@ void CanvasWidget::paintEvent(QPaintEvent *event)
                         useDist = SurveyCalculator::distance(last, m_currentHoverWorld);
                     }
                 }
-                tip = QString("L=%1  A=%2°").arg(useDist, 0, 'f', 3).arg(useAng, 0, 'f', 2);
+                QString dms = SurveyCalculator::toDMS(useAng);
+                tip = QString("L=%1  Brg=%2").arg(useDist, 0, 'f', 3).arg(dms);
             } else if (m_toolMode == ToolMode::DrawCircle && !m_drawVertices.isEmpty()) {
                 QPointF c = m_drawVertices.first();
                 double r = SurveyCalculator::distance(c, m_currentHoverWorld);
@@ -1368,6 +1550,11 @@ void CanvasWidget::paintEvent(QPaintEvent *event)
                     double arcLen = r * SurveyCalculator::degreesToRadians(qAbs(sweep));
                     tip = QString("R=%1  Ang=%2°  L=%3").arg(r, 0, 'f', 3).arg(sweep, 0, 'f', 2).arg(arcLen, 0, 'f', 3);
                 }
+            } else if (m_toolMode == ToolMode::DrawRegularPolygonEdge && m_regPolyHasFirst) {
+                double side = SurveyCalculator::distance(m_regPolyFirst, m_currentHoverWorld);
+                double angb = SurveyCalculator::azimuth(m_regPolyFirst, m_currentHoverWorld);
+                QString dms = SurveyCalculator::toDMS(angb);
+                tip = QString("Side=%1  Brg=%2").arg(side, 0, 'f', 3).arg(dms);
             }
         }
         if (!tip.isEmpty()) {
@@ -1914,6 +2101,7 @@ else if (m_toolMode == ToolMode::OffsetLine) {
             m_fromActive = m_fromAwaitingBase = false;
             m_tkActive = m_tkAwaitingBase = false;
             emit drawingDistanceChanged(0.0);
+            emit drawingAngleChanged(0.0);
             update();
             return;
         }
@@ -1964,9 +2152,11 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
     m_currentHoverWorld = worldPos;
     // Live measurement while drawing/dragging (use dynamic input preview if applicable)
     if (m_toolMode == ToolMode::DrawRegularPolygonEdge && m_regPolyHasFirst) {
-        // Report current side length as drawing distance
         double side = SurveyCalculator::distance(m_regPolyFirst, adjustedWorldFromScreen(event->pos()));
         emit drawingDistanceChanged(side);
+        double ang = SurveyCalculator::azimuth(m_regPolyFirst, adjustedWorldFromScreen(event->pos()));
+        emit drawingAngleChanged(ang);
+        update();
     } else if (m_isDrawing && !m_drawVertices.isEmpty()) {
         QPointF last = m_drawVertices.last();
         QPointF preview = worldPos;
@@ -1994,12 +2184,20 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
         }
         double distance = SurveyCalculator::distance(last, preview);
         emit drawingDistanceChanged(distance);
+        double ang = SurveyCalculator::azimuth(last, preview);
+        emit drawingAngleChanged(ang);
+        // Ensure live preview repaints while moving
+        update();
     } else if (m_draggingVertex) {
         double dx = worldPos.x() - m_dragOldPos.x();
         double dy = worldPos.y() - m_dragOldPos.y();
         emit drawingDistanceChanged(qSqrt(dx*dx + dy*dy));
+        double ang = SurveyCalculator::normalizeAngle(qRadiansToDegrees(qAtan2(dx, dy)));
+        if (AppSettings::gaussMode()) ang = SurveyCalculator::normalizeAngle(ang - 180.0);
+        emit drawingAngleChanged(ang);
     } else {
         emit drawingDistanceChanged(0.0);
+        emit drawingAngleChanged(0.0);
     }
     
     if (m_isPanning) {
@@ -2226,7 +2424,15 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent *event)
                     } else {
                         take = insideA && insideB;
                     }
-                    if (take) m_selectedLineIndices.insert(i);
+                    if (take) {
+                        int pli = polylineIndexForLine(i);
+                        if (pli >= 0) {
+                            auto segs = currentLineIndicesForPolyline(pli);
+                            for (int li : segs) m_selectedLineIndices.insert(li);
+                        } else {
+                            m_selectedLineIndices.insert(i);
+                        }
+                    }
                 }
                 // Emit selection count
                 int lc = m_selectedLineIndices.size() + ((m_selectedLineIndex>=0 && !m_selectedLineIndices.contains(m_selectedLineIndex))?1:0);
@@ -2398,7 +2604,15 @@ void CanvasWidget::mouseReleaseEvent(QMouseEvent *event)
                     if (m_layerManager) { Layer L = m_layerManager->getLayer(m_lines[i].layer); if (!L.name.isEmpty() && (!L.visible || L.locked)) continue; }
                     bool insideA = pointInPoly(m_lines[i].start);
                     bool insideB = pointInPoly(m_lines[i].end);
-                    if (insideA || insideB || polyIntersectSegment(m_lines[i].start, m_lines[i].end)) m_selectedLineIndices.insert(i);
+                    if (insideA || insideB || polyIntersectSegment(m_lines[i].start, m_lines[i].end)) {
+                        int pli = polylineIndexForLine(i);
+                        if (pli >= 0) {
+                            auto segs = currentLineIndicesForPolyline(pli);
+                            for (int li : segs) m_selectedLineIndices.insert(li);
+                        } else {
+                            m_selectedLineIndices.insert(i);
+                        }
+                    }
                 }
                 int lc = m_selectedLineIndices.size() + ((m_selectedLineIndex>=0 && !m_selectedLineIndices.contains(m_selectedLineIndex))?1:0);
                 emit selectionChanged(m_selectedPointIndices.size(), lc);
@@ -2455,6 +2669,7 @@ void CanvasWidget::keyPressEvent(QKeyEvent *event)
             m_hasPendingAngle = false;
             m_dynInputActive = false;
             emit drawingDistanceChanged(0.0);
+            emit drawingAngleChanged(0.0);
             update();
         }
         if (m_toolMode == ToolMode::DrawRegularPolygonEdge) {
@@ -2462,6 +2677,7 @@ void CanvasWidget::keyPressEvent(QKeyEvent *event)
             m_regPolyEdgeActive = false;
             m_toolMode = ToolMode::Select;
             emit drawingDistanceChanged(0.0);
+            emit drawingAngleChanged(0.0);
             update();
         }
         if (hasSelection()) { clearSelection(); update(); emit selectionChanged(0,0); }

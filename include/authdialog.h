@@ -20,6 +20,9 @@ private slots:
     void doSignup();
     void doLogout();
 
+signals:
+    void loggedOut();
+
 private:
     void buildUi();
     void attachDebug(QNetworkReply* r, const QString& op);

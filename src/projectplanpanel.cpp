@@ -11,6 +11,9 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QDate>
+#include <QDateEdit>
+#include <QLineEdit>
+#include <QBrush>
 
 ProjectPlanPanel::ProjectPlanPanel(QWidget* parent)
     : QWidget(parent)
@@ -18,6 +21,53 @@ ProjectPlanPanel::ProjectPlanPanel(QWidget* parent)
     auto* main = new QVBoxLayout(this);
     main->setContentsMargins(4, 4, 4, 4);
     main->setSpacing(4);
+
+    // Quick add bar
+    {
+        auto* quick = new QHBoxLayout();
+        m_quickTitle = new QLineEdit(this);
+        m_quickTitle->setPlaceholderText("Task title...");
+        m_quickStatus = new QComboBox(this);
+        m_quickStatus->addItems({"Pending", "In Progress", "Blocked", "Done"});
+        m_quickPriority = new QComboBox(this);
+        m_quickPriority->addItems({"High", "Medium", "Low"});
+        m_quickDue = new QDateEdit(QDate::currentDate(), this);
+        m_quickDue->setCalendarPopup(true);
+        m_quickDue->setDisplayFormat("yyyy-MM-dd");
+        m_quickAdd = new QPushButton("Add", this);
+        quick->addWidget(m_quickTitle, 2);
+        quick->addWidget(m_quickStatus, 0);
+        quick->addWidget(m_quickPriority, 0);
+        quick->addWidget(m_quickDue, 0);
+        quick->addWidget(m_quickAdd, 0);
+        main->addLayout(quick);
+        connect(m_quickAdd, &QPushButton::clicked, this, &ProjectPlanPanel::quickAddTask);
+    }
+
+    // Filters/search
+    {
+        auto* filt = new QHBoxLayout();
+        m_filterStatus = new QComboBox(this);
+        m_filterStatus->addItems({"All Statuses", "Pending", "In Progress", "Blocked", "Done"});
+        m_filterPriority = new QComboBox(this);
+        m_filterPriority->addItems({"All Priorities", "High", "Medium", "Low"});
+        m_search = new QLineEdit(this);
+        m_search->setPlaceholderText("Search title...");
+        m_markDoneBtn = new QPushButton("Mark Done", this);
+        m_duplicateBtn = new QPushButton("Duplicate", this);
+        filt->addWidget(m_filterStatus);
+        filt->addWidget(m_filterPriority);
+        filt->addStretch();
+        filt->addWidget(m_search, 1);
+        filt->addWidget(m_markDoneBtn);
+        filt->addWidget(m_duplicateBtn);
+        main->addLayout(filt);
+        connect(m_filterStatus, &QComboBox::currentTextChanged, this, &ProjectPlanPanel::onFilterChanged);
+        connect(m_filterPriority, &QComboBox::currentTextChanged, this, &ProjectPlanPanel::onFilterChanged);
+        connect(m_search, &QLineEdit::textChanged, this, &ProjectPlanPanel::onSearchChanged);
+        connect(m_markDoneBtn, &QPushButton::clicked, this, &ProjectPlanPanel::markDoneSelected);
+        connect(m_duplicateBtn, &QPushButton::clicked, this, &ProjectPlanPanel::duplicateSelected);
+    }
 
     m_table = new QTableWidget(this);
     m_table->setColumnCount(4);
@@ -106,6 +156,7 @@ void ProjectPlanPanel::addTask()
     m_table->setItem(r, 0, new QTableWidgetItem("New Task"));
     m_table->setItem(r, 3, new QTableWidgetItem(QDate::currentDate().toString(Qt::ISODate)));
     rebuildCombosForRow(r);
+    updateRowVisuals(r);
 }
 
 void ProjectPlanPanel::removeSelectedTasks()
@@ -130,6 +181,7 @@ void ProjectPlanPanel::moveTaskUp()
     rebuildCombosForRow(r-1);
     m_table->removeRow(r+1);
     m_table->selectRow(r-1);
+    updateRowVisuals(r-1);
 }
 
 void ProjectPlanPanel::moveTaskDown()
@@ -146,13 +198,85 @@ void ProjectPlanPanel::moveTaskDown()
     rebuildCombosForRow(r+2);
     m_table->removeRow(r);
     m_table->selectRow(r+1);
+    updateRowVisuals(r+1);
 }
 
 void ProjectPlanPanel::onCellChanged(int row, int column)
 {
     Q_UNUSED(row);
     Q_UNUSED(column);
-    // No-op for now; combos handle status/priority
+    updateRowVisuals(row);
+    applyFilters();
+}
+
+void ProjectPlanPanel::quickAddTask()
+{
+    const QString title = m_quickTitle ? m_quickTitle->text().trimmed() : QString();
+    if (title.isEmpty()) return;
+    const QString sDisp = m_quickStatus ? m_quickStatus->currentText() : QString("Pending");
+    const QString pDisp = m_quickPriority ? m_quickPriority->currentText() : QString("Medium");
+    const QString due = m_quickDue ? m_quickDue->date().toString(Qt::ISODate) : QDate::currentDate().toString(Qt::ISODate);
+    int r = m_table->rowCount();
+    m_table->insertRow(r);
+    m_table->setItem(r, 0, new QTableWidgetItem(title));
+    m_table->setItem(r, 1, new QTableWidgetItem(sDisp));
+    m_table->setItem(r, 2, new QTableWidgetItem(pDisp));
+    m_table->setItem(r, 3, new QTableWidgetItem(due));
+    rebuildCombosForRow(r);
+    updateRowVisuals(r);
+    m_quickTitle->clear();
+    applyFilters();
+}
+
+void ProjectPlanPanel::markDoneSelected()
+{
+    auto rows = m_table->selectionModel()->selectedRows();
+    for (const auto& idx : rows) {
+        const int r = idx.row();
+        if (!m_table->item(r,1)) m_table->setItem(r,1,new QTableWidgetItem("Done"));
+        else m_table->item(r,1)->setText("Done");
+        updateRowVisuals(r);
+    }
+    applyFilters();
+}
+
+void ProjectPlanPanel::duplicateSelected()
+{
+    auto rows = m_table->selectionModel()->selectedRows();
+    std::sort(rows.begin(), rows.end(), [](const QModelIndex& a, const QModelIndex& b){ return a.row() < b.row(); });
+    QVector<Task> toAdd;
+    for (const auto& idx : rows) {
+        const int r = idx.row();
+        Task t;
+        t.title = m_table->item(r,0) ? m_table->item(r,0)->text() : QString();
+        const QString sDisp = m_table->item(r,1) ? m_table->item(r,1)->text() : QString("Pending");
+        t.status = statusCode(sDisp);
+        const QString pDisp = m_table->item(r,2) ? m_table->item(r,2)->text() : QString("Medium");
+        t.priority = priorityCode(pDisp);
+        t.due = m_table->item(r,3) ? m_table->item(r,3)->text() : QString();
+        toAdd.append(t);
+    }
+    for (const auto& t : toAdd) {
+        int r = m_table->rowCount();
+        m_table->insertRow(r);
+        m_table->setItem(r, 0, new QTableWidgetItem(t.title));
+        m_table->setItem(r, 1, new QTableWidgetItem(statusDisplay(t.status)));
+        m_table->setItem(r, 2, new QTableWidgetItem(priorityDisplay(t.priority)));
+        m_table->setItem(r, 3, new QTableWidgetItem(t.due));
+        rebuildCombosForRow(r);
+        updateRowVisuals(r);
+    }
+    applyFilters();
+}
+
+void ProjectPlanPanel::onFilterChanged()
+{
+    applyFilters();
+}
+
+void ProjectPlanPanel::onSearchChanged(const QString&)
+{
+    applyFilters();
 }
 
 QString ProjectPlanPanel::statusDisplay(const QString& s)
@@ -244,7 +368,44 @@ void ProjectPlanPanel::setTasks(const QVector<ProjectPlanPanel::Task>& tasks)
         m_table->setItem(r, 2, new QTableWidgetItem(priorityDisplay(t.priority)));
         m_table->setItem(r, 3, new QTableWidgetItem(t.due));
         rebuildCombosForRow(r);
+        updateRowVisuals(r);
         ++r;
     }
     m_table->blockSignals(false);
+    applyFilters();
+}
+
+void ProjectPlanPanel::applyFilters()
+{
+    const QString sSel = m_filterStatus ? m_filterStatus->currentText() : QString("All Statuses");
+    const QString pSel = m_filterPriority ? m_filterPriority->currentText() : QString("All Priorities");
+    const QString term = m_search ? m_search->text().trimmed() : QString();
+    for (int r = 0; r < m_table->rowCount(); ++r) {
+        const QString title = m_table->item(r,0) ? m_table->item(r,0)->text() : QString();
+        const QString sDisp = m_table->item(r,1) ? m_table->item(r,1)->text() : QString("Pending");
+        const QString pDisp = m_table->item(r,2) ? m_table->item(r,2)->text() : QString("Medium");
+        bool vis = true;
+        if (sSel != "All Statuses" && sDisp.compare(sSel, Qt::CaseInsensitive) != 0) vis = false;
+        if (pSel != "All Priorities" && pDisp.compare(pSel, Qt::CaseInsensitive) != 0) vis = false;
+        if (!term.isEmpty() && !title.contains(term, Qt::CaseInsensitive)) vis = false;
+        m_table->setRowHidden(r, !vis);
+    }
+}
+
+void ProjectPlanPanel::updateRowVisuals(int row)
+{
+    if (row < 0 || row >= m_table->rowCount()) return;
+    const QString sDisp = m_table->item(row,1) ? m_table->item(row,1)->text() : QString("Pending");
+    const QString dueStr = m_table->item(row,3) ? m_table->item(row,3)->text() : QString();
+    const QDate due = QDate::fromString(dueStr, Qt::ISODate);
+    const bool isDone = sDisp.compare("Done", Qt::CaseInsensitive) == 0;
+    const bool overdue = (!isDone && due.isValid() && due < QDate::currentDate());
+    QBrush bg;
+    if (isDone) bg = QBrush(QColor(220, 245, 220));
+    else if (overdue) bg = QBrush(QColor(245, 220, 220));
+    else bg = QBrush(Qt::NoBrush);
+    for (int c=0;c<m_table->columnCount();++c) {
+        if (!m_table->item(row,c)) m_table->setItem(row,c,new QTableWidgetItem(""));
+        m_table->item(row,c)->setBackground(bg);
+    }
 }

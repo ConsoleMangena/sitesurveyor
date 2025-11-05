@@ -58,6 +58,7 @@
     <file alias="funnel.svg">icons/16/action/funnel.svg</file>
     <file alias="lock-screen.svg">icons/16/action/lock-screen.svg</file>
     <file alias="preview.svg">icons/16/action/preview.svg</file>
+    <file alias="github.svg">icons/24/brand/github.svg</file>
   </qresource>
   <qresource prefix="/styles">
     <file alias="freecad-dark.qss">styles/freecad-dark.qss</file>

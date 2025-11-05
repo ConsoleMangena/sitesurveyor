@@ -23,6 +23,7 @@ private slots:
 
 signals:
     void settingsApplied();
+    void signOutRequested();
 
 private:
     void loadFromCanvas();
@@ -41,6 +42,7 @@ private:
     QLineEdit* m_firstEdit;
     QLineEdit* m_lastEdit;
     QLineEdit* m_emailEdit;
+    QPushButton* m_signOutButton;
     QPushButton* m_applyButton;
     QPushButton* m_closeButton;
 };

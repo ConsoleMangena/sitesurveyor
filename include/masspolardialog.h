@@ -2,6 +2,7 @@
 #define MASSPOLARDIALOG_H
 
 #include <QDialog>
+#include <QString>
 
 class QComboBox;
 class QTableWidget;

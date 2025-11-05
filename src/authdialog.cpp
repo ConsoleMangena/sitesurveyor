@@ -1,5 +1,6 @@
 #include "authdialog.h"
 #include "appwriteclient.h"
+#include "iconmanager.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -16,18 +17,26 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QDesktopServices>
+#include <QUrl>
 
 AuthDialog::AuthDialog(AppwriteClient* client, QWidget* parent)
     : QDialog(parent), m_client(client)
 {
     setWindowTitle("Account");
-    resize(420, 260);
+    resize(480, 340);
     buildUi();
 }
 
 void AuthDialog::buildUi()
 {
     auto* main = new QVBoxLayout(this);
+    setStyleSheet(
+        "QDialog { background-color: palette(base); }"
+        " QLineEdit { padding: 4px 6px; }"
+        " QPushButton { padding: 6px 10px; border-radius: 4px; }"
+        " QPushButton:default { background-color: palette(highlight); color: palette(highlighted-text); }"
+    );
     m_tabs = new QTabWidget(this);
 
     // Login tab
@@ -41,6 +50,7 @@ void AuthDialog::buildUi()
     lf->addRow(new QLabel("Email:", loginPage), m_loginEmail);
     lf->addRow(new QLabel("Password:", loginPage), m_loginPass);
     lf->addRow(new QLabel("", loginPage), m_loginBtn);
+    
     m_tabs->addTab(loginPage, "Log In");
     connect(m_loginBtn, &QPushButton::clicked, this, &AuthDialog::doLogin);
 
@@ -64,8 +74,14 @@ void AuthDialog::buildUi()
     sf->addRow(new QLabel("First name:", signPage), m_signupFirstName);
     sf->addRow(new QLabel("Surname:", signPage), m_signupLastName);
     sf->addRow(new QLabel("", signPage), m_signupBtn);
+    
     m_tabs->addTab(signPage, "Sign Up");
     connect(m_signupBtn, &QPushButton::clicked, this, &AuthDialog::doSignup);
+
+    m_tabs->setTabIcon(0, IconManager::iconUnique("key", "auth_tab_login", "IN"));
+    m_tabs->setTabIcon(1, IconManager::iconUnique("file-plus", "auth_tab_signup", "SU"));
+    m_loginBtn->setIcon(IconManager::iconUnique("key", "auth_login_btn", "IN"));
+    m_signupBtn->setIcon(IconManager::iconUnique("file-plus", "auth_signup_btn", "SU"));
 
     main->addWidget(m_tabs);
 
@@ -73,6 +89,7 @@ void AuthDialog::buildUi()
     auto* bottom = new QHBoxLayout();
     m_status = new QLabel("", this);
     m_logoutBtn = new QPushButton("Log Out", this);
+    m_logoutBtn->setIcon(IconManager::iconUnique("logout-2", "auth_logout_btn", "LO"));
     connect(m_logoutBtn, &QPushButton::clicked, this, &AuthDialog::doLogout);
     bottom->addWidget(m_status, 1);
     bottom->addWidget(m_logoutBtn, 0);
@@ -213,5 +230,6 @@ void AuthDialog::doLogout()
     connect(r, &QNetworkReply::finished, this, [this, r](){
         r->deleteLater();
         if (m_status) m_status->setText("Signed out");
+        emit loggedOut();
     });
 }

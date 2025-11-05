@@ -52,7 +52,7 @@ QString CommandProcessor::processCommand(const QString& command)
         return addPolarPoint(parts);
     } else if (operation == "dist" || operation == "distance") {
         return calculateDistance(parts);
-    } else if (operation == "azimuth" || operation == "az") {
+    } else if (operation == "azimuth" || operation == "az" || operation == "bearing" || operation == "brg") {
         return calculateAzimuth(parts);
     } else if (operation == "area") {
         return calculateArea(parts);
@@ -120,7 +120,7 @@ QString CommandProcessor::addPoint(const QStringList& parts)
 QString CommandProcessor::addPolarPoint(const QStringList& parts)
 {
     if (parts.size() < 6) {
-        return "Usage: polar <from_coordinate> <new_coordinate> <distance> <azimuth> <z>";
+        return "Usage: polar <from_coordinate> <new_coordinate> <distance> <bearing> <z>";
     }
     
     QString fromName = parts[1];
@@ -135,7 +135,7 @@ QString CommandProcessor::addPolarPoint(const QStringList& parts)
     double distance = parts[3].toDouble(&ok);
     if (!ok || distance <= 0) return "Invalid distance (must be positive)";
     double azimuth = parts[4].toDouble(&ok);
-    if (!ok) return "Invalid azimuth";
+    if (!ok) return "Invalid bearing";
     double z = parts[5].toDouble(&ok);
     if (!ok) return "Invalid Z coordinate";
     
@@ -150,14 +150,18 @@ QString CommandProcessor::addPolarPoint(const QStringList& parts)
     m_pointManager->addPoint(newPoint);
     m_canvas->addPoint(newPoint);
     
+    const QString brgDms = SurveyCalculator::toDMS(azimuth);
+    const QString distStr = QString::number(distance, 'f', 3);
+    const QString zStr = QString::number(z, 'f', 3);
+    const QString xStr = QString::number(newPoint.x, 'f', 3);
+    const QString yStr = QString::number(newPoint.y, 'f', 3);
+    const QString zOutStr = QString::number(newPoint.z, 'f', 3);
     if (AppSettings::gaussMode()) {
-        return QString("Added coordinate %1 from polar: dist=%.3f, az=%.4f°, z=%.3f -> (%.3f, %.3f, %.3f)")
-            .arg(newName).arg(distance).arg(azimuth).arg(z)
-            .arg(newPoint.y).arg(newPoint.x).arg(newPoint.z);
+        return QString("Added coordinate %1 from polar: dist=%2, brg=%3, z=%4 -> (%5, %6, %7)")
+            .arg(newName, distStr, brgDms, zStr, yStr, xStr, zOutStr);
     } else {
-        return QString("Added coordinate %1 from polar: dist=%.3f, az=%.4f°, z=%.3f -> (%.3f, %.3f, %.3f)")
-            .arg(newName).arg(distance).arg(azimuth).arg(z)
-            .arg(newPoint.x).arg(newPoint.y).arg(newPoint.z);
+        return QString("Added coordinate %1 from polar: dist=%2, brg=%3, z=%4 -> (%5, %6, %7)")
+            .arg(newName, distStr, brgDms, zStr, xStr, yStr, zOutStr);
     }
 }
 
@@ -196,8 +200,8 @@ QString CommandProcessor::calculateAzimuth(const QStringList& parts)
     double azimuth = SurveyCalculator::azimuth(from, to);
     QString dms = SurveyCalculator::toDMS(azimuth);
     
-    return QString("Azimuth from %1 to %2: %.4f° (%3)")
-        .arg(from.name).arg(to.name).arg(azimuth).arg(dms);
+    return QString("Bearing from %1 to %2: %3")
+        .arg(from.name).arg(to.name).arg(dms);
 }
 
 QString CommandProcessor::joinPolar(const QStringList& parts)
@@ -254,14 +258,8 @@ QString CommandProcessor::joinPolar(const QStringList& parts)
     out += deltaLine + "\n";
     out += QString("  Distance 2D: %.3f m\n").arg(d2);
     if (is3D) out += QString("  Distance 3D: %.3f m\n").arg(d3);
-    out += QString("  Azimuth FWD: %1° (%2)  Bearing: %3\n")
-              .arg(QString::number(azFwd, 'f', 4))
-              .arg(azFwdDms)
-              .arg(azFwdBrg);
-    out += QString("  Azimuth BKW: %1° (%2)  Bearing: %3\n")
-              .arg(QString::number(azBack, 'f', 4))
-              .arg(azBackDms)
-              .arg(azBackBrg);
+    out += QString("  Bearing FWD: %1\n").arg(azFwdDms);
+    out += QString("  Bearing BKW: %1\n").arg(azBackDms);
     if (is3D) {
         out += QString("  Slope angle: %.4f°  Gradient: %.3f%%\n").arg(slopeDeg, 0, 'f', 4).arg(gradePct, 0, 'f', 3);
     }
@@ -366,10 +364,10 @@ QString CommandProcessor::showHelp()
     QString help;
     help += "Available Commands:\n";
     help += QString("  %1           - Add a coordinate (aliases: point, coordinate, coord)\n").arg(addUsage);
-    help += "  polar <from> <name> <dist> <az> <z> - Add coordinate using polar data\n";
+    help += "  polar <from> <name> <dist> <bearing> <z> - Add coordinate using polar data\n";
     help += "  join <from> <to>                 - Polar join between coordinates (aliases: joinpolar, jp)\n";
     help += "  distance <coord1> <coord2>       - Calculate distance (alias: dist)\n";
-    help += "  azimuth <from> <to>              - Calculate azimuth (alias: az)\n";
+    help += "  bearing <from> <to>              - Calculate bearing (aliases: brg, azimuth, az)\n";
     help += "  area <c1> <c2> <c3> [c4...]      - Calculate area of polygon\n";
     help += "  line <coord1> <coord2>           - Draw a line between coordinates\n";
     help += "  list                             - List all coordinates (alias: ls)\n";

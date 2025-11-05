@@ -185,6 +185,17 @@ QNetworkReply* AppwriteClient::logout()
     return r;
 }
 
+QNetworkReply* AppwriteClient::oauth2CreateToken(const QString& provider, const QString& userId, const QString& secret)
+{
+    QJsonObject body; body.insert("userId", userId); body.insert("secret", secret);
+    const QString path = QString("/v1/account/sessions/oauth2/%1/token").arg(provider);
+    QNetworkReply* r = sendJson("POST", path, body);
+    connect(r, &QNetworkReply::finished, this, [this, r](){
+        if (r->error() == QNetworkReply::NoError) m_loggedIn = true; else m_loggedIn = false;
+    });
+    return r;
+}
+
 QNetworkReply* AppwriteClient::getAccount()
 {
     return send("GET", "/v1/account");

@@ -31,7 +31,7 @@
 LevelingDialog::LevelingDialog(PointManager* pm, CanvasWidget* canvas, QWidget* parent)
     : QDialog(parent), m_pm(pm), m_canvas(canvas)
 {
-    setWindowTitle("Leveling Adjustment");
+    setWindowTitle("Levelling (Zimbabwe)");
     resize(560, 420);
     QVBoxLayout* root = new QVBoxLayout(this);
 
@@ -39,9 +39,14 @@ LevelingDialog::LevelingDialog(PointManager* pm, CanvasWidget* canvas, QWidget* 
     m_startCombo = new QComboBox(this);
     m_closeCombo = new QComboBox(this);
     m_inputMode = new QComboBox(this);
-    m_inputMode->addItems(QStringList() << "dH legs" << "BS/IS/FS log");
+    m_inputMode->addItems(QStringList()
+                          << "dH (ΔRL per leg)"
+                          << "BS/IS/FS log");
+    m_inputMode->setCurrentIndex(1);
     m_calcMethod = new QComboBox(this);
-    m_calcMethod->addItems(QStringList() << "Height of Instrument (HI)" << "Rise and Fall");
+    m_calcMethod->addItems(QStringList()
+                           << "HI (Height of Collimation)"
+                           << "Rise and Fall");
     m_tolMmPerSqrtKm = new QDoubleSpinBox(this);
     m_tolMmPerSqrtKm->setRange(0.0, 50.0);
     m_tolMmPerSqrtKm->setDecimals(2);
@@ -52,9 +57,17 @@ LevelingDialog::LevelingDialog(PointManager* pm, CanvasWidget* canvas, QWidget* 
     top->addRow("Input:", m_inputMode);
     top->addRow("Method:", m_calcMethod);
     top->addRow("Tolerance (mm/√km):", m_tolMmPerSqrtKm);
+    m_weightMethod = new QComboBox(this);
+    m_weightMethod->addItems(QStringList()
+                             << "By Distance"
+                             << "Equal"
+                             << "Per-leg σ"
+                             << "By Setups");
+    m_weightMethod->setCurrentIndex(0);
+    top->addRow("Weighting:", m_weightMethod);
     root->addLayout(top);
 
-    m_table = new QTableWidget(0, 6, this);
+    m_table = new QTableWidget(0, 5, this);
     m_table->horizontalHeader()->setStretchLastSection(true);
     rebuildTableForMode();
     root->addWidget(m_table);
@@ -67,11 +80,9 @@ LevelingDialog::LevelingDialog(PointManager* pm, CanvasWidget* canvas, QWidget* 
 
     QHBoxLayout* opts = new QHBoxLayout();
     m_outPrefix = new QLineEdit(this); m_outPrefix->setPlaceholderText("Optional prefix for new points");
-    m_applyZ = new QCheckBox("Apply Z to points", this); m_applyZ->setChecked(true);
-    m_weightMethod = new QComboBox(this); m_weightMethod->addItems(QStringList()<<"By Distance"<<"Equal"<<"Per-leg σ"<<"By Setups");
+    m_applyZ = new QCheckBox("Apply RL to coordinates", this); m_applyZ->setChecked(true);
     QPushButton* computeBtn = new QPushButton("Compute", this);
     opts->addWidget(new QLabel("Prefix:")); opts->addWidget(m_outPrefix);
-    opts->addWidget(new QLabel("Weight:")); opts->addWidget(m_weightMethod);
     opts->addStretch(); opts->addWidget(m_applyZ); opts->addWidget(computeBtn);
     root->addLayout(opts);
 
@@ -84,9 +95,9 @@ LevelingDialog::LevelingDialog(PointManager* pm, CanvasWidget* canvas, QWidget* 
 
     // Import/Export and drawing actions
     QHBoxLayout* actions = new QHBoxLayout();
-    QPushButton* importCsvBtn = new QPushButton("Import CSV", this);
-    QPushButton* exportCsvBtn = new QPushButton("Export CSV", this);
-    QPushButton* exportReportBtn = new QPushButton("Export Report CSV", this);
+    QPushButton* importCsvBtn = new QPushButton("Import Levelling CSV", this);
+    QPushButton* exportCsvBtn = new QPushButton("Export Levelling CSV", this);
+    QPushButton* exportReportBtn = new QPushButton("Export Results CSV", this);
     QPushButton* exportPdfBtn = new QPushButton("Export Profile PDF", this);
     QPushButton* addProfileBtn = new QPushButton("Add Profile to Drawing", this);
     actions->addWidget(importCsvBtn);
@@ -134,6 +145,7 @@ void LevelingDialog::reload()
             if (!m_table->cellWidget(r,5)) { QSpinBox* loop = new QSpinBox(m_table); loop->setRange(1, 999); loop->setValue(1); m_table->setCellWidget(r,5,loop);} // Loop
             if (!m_table->cellWidget(r,6)) { QComboBox* close = new QComboBox(m_table); close->addItem(""); close->addItems(names); m_table->setCellWidget(r,6,close);} // CloseTo
             if (!m_table->cellWidget(r,7)) { QDoubleSpinBox* sig = new QDoubleSpinBox(m_table); sig->setRange(0, 100.0); sig->setDecimals(3); sig->setValue(3.0); m_table->setCellWidget(r,7,sig);} // σ
+            if (!m_table->cellWidget(r,8)) { QLineEdit* remark = new QLineEdit(m_table); m_table->setCellWidget(r,8,remark);} // Remarks
         } else {
             if (!m_table->cellWidget(r,1)) { QDoubleSpinBox* ds = new QDoubleSpinBox(m_table); ds->setRange(-1e6, 1e6); ds->setDecimals(4); m_table->setCellWidget(r,1,ds);} // dH
             if (!m_table->cellWidget(r,2)) { QDoubleSpinBox* ds2 = new QDoubleSpinBox(m_table); ds2->setRange(0, 1e9); ds2->setDecimals(3); m_table->setCellWidget(r,2,ds2);} // Dist
@@ -373,8 +385,8 @@ void LevelingDialog::rebuildTableForMode()
     const bool logMode = (m_inputMode && m_inputMode->currentIndex() == 1);
     m_table->clear();
     if (logMode) {
-        m_table->setColumnCount(8);
-        m_table->setHorizontalHeaderLabels(QStringList() << "To" << "BS" << "IS" << "FS" << "Dist (m)" << "Loop" << "CloseTo" << "σ (mm/√km)");
+        m_table->setColumnCount(9);
+        m_table->setHorizontalHeaderLabels(QStringList() << "To" << "BS" << "IS" << "FS" << "Dist (m)" << "Loop" << "CloseTo" << "σ (mm/√km)" << "Remarks");
     } else {
         m_table->setColumnCount(6);
         m_table->setHorizontalHeaderLabels(QStringList() << "To" << "dH (m)" << "Dist (m)" << "Loop" << "CloseTo" << "σ (mm/√km)");
@@ -430,7 +442,7 @@ void LevelingDialog::importCSV()
         auto setI = [&](int c, int v){ if (auto* isb=qobject_cast<QSpinBox*>(m_table->cellWidget(r,c))) isb->setValue(v); };
         auto setC = [&](int c, const QString& v){ if (auto* co=qobject_cast<QComboBox*>(m_table->cellWidget(r,c))) { int idx = co->findText(v); if (idx<0) co->addItem(v); co->setCurrentText(v);} };
         if (logMode) {
-            // Expect: To,BS,IS,FS,Dist,Loop,CloseTo,Sigma
+            // Expect: To,BS,IS,FS,Dist,Loop,CloseTo,Sigma[,Remarks]
             if (cols.size()>=1) setC(0, cols.value(0));
             if (cols.size()>=2) setD(1, cols.value(1).toDouble());
             if (cols.size()>=3) setD(2, cols.value(2).toDouble());
@@ -439,6 +451,7 @@ void LevelingDialog::importCSV()
             if (cols.size()>=6) setI(5, cols.value(5).toInt());
             if (cols.size()>=7) setC(6, cols.value(6));
             if (cols.size()>=8) setD(7, cols.value(7).toDouble());
+            if (cols.size()>=9) { if (auto* le=qobject_cast<QLineEdit*>(m_table->cellWidget(r,8))) le->setText(cols.value(8)); }
         } else {
             // Expect: To,dH,Dist,Loop,CloseTo,Sigma
             if (cols.size()>=1) setC(0, cols.value(0));
@@ -458,14 +471,15 @@ void LevelingDialog::exportCSV()
     QFile f(fn); if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) { QMessageBox::warning(this, "Export CSV", QString("Failed to write %1").arg(fn)); return; }
     QTextStream out(&f);
     const bool logMode = (m_inputMode && m_inputMode->currentIndex() == 1);
-    if (logMode) out << "To,BS,IS,FS,Dist,Loop,CloseTo,Sigma\n";
+    if (logMode) out << "To,BS,IS,FS,Dist,Loop,CloseTo,Sigma,Remarks\n";
     else out << "To,dH,Dist,Loop,CloseTo,Sigma\n";
     for (int r=0;r<m_table->rowCount();++r) {
         auto getD = [&](int c){ if (auto* ds=qobject_cast<QDoubleSpinBox*>(m_table->cellWidget(r,c))) return ds->value(); return 0.0; };
         auto getI = [&](int c){ if (auto* isb=qobject_cast<QSpinBox*>(m_table->cellWidget(r,c))) return isb->value(); return 1; };
         auto getC = [&](int c){ if (auto* co=qobject_cast<QComboBox*>(m_table->cellWidget(r,c))) return co->currentText(); return QString(); };
+        auto getT = [&](int c){ if (auto* le=qobject_cast<QLineEdit*>(m_table->cellWidget(r,c))) return le->text(); return QString(); };
         if (logMode) {
-            out << getC(0) << "," << getD(1) << "," << getD(2) << "," << getD(3) << "," << getD(4) << "," << getI(5) << "," << getC(6) << "," << getD(7) << "\n";
+            out << getC(0) << "," << getD(1) << "," << getD(2) << "," << getD(3) << "," << getD(4) << "," << getI(5) << "," << getC(6) << "," << getD(7) << "," << getT(8) << "\n";
         } else {
             out << getC(0) << "," << getD(1) << "," << getD(2) << "," << getI(3) << "," << getC(4) << "," << getD(5) << "\n";
         }

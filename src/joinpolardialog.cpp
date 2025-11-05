@@ -104,13 +104,11 @@ QString JoinPolarDialog::formatJoinResult(const Point& from, const Point& to) co
     double d2 = SurveyCalculator::distance2D(from, to);
     double d3 = SurveyCalculator::distance3D(from, to);
 
-    // Azimuths (SurveyCalculator already accounts for Gauss/Zimbabwe mode)
-    double azFwd = SurveyCalculator::azimuth(from, to);
-    double azBack = SurveyCalculator::azimuth(to, from);
-    QString azFwdDms = SurveyCalculator::toDMS(azFwd);
-    QString azBackDms = SurveyCalculator::toDMS(azBack);
-    QString azFwdBrg = toQuadrantBearingLocal(azFwd);
-    QString azBackBrg = toQuadrantBearingLocal(azBack);
+    // Bearings (SurveyCalculator already accounts for Gauss/Zimbabwe mode)
+    double brgFwd = SurveyCalculator::azimuth(from, to);
+    double brgBack = SurveyCalculator::azimuth(to, from);
+    QString brgFwdDms = SurveyCalculator::toDMS(brgFwd);
+    QString brgBackDms = SurveyCalculator::toDMS(brgBack);
 
     // Slope/grade
     bool is3D = AppSettings::use3D();
@@ -136,22 +134,9 @@ QString JoinPolarDialog::formatJoinResult(const Point& from, const Point& to) co
     out += deltaLine + "\n";
     out += QString("  Distance 2D: %1 m\n").arg(QString::number(d2, 'f', 3));
     if (is3D) out += QString("  Distance 3D: %1 m\n").arg(QString::number(d3, 'f', 3));
-    // Azimuth (numeric 0-360) and complete-circle bearing (identical to azimuth but labeled as Bearing)
-    out += QString("  Azimuth FWD: %1° (%2)\n")
-              .arg(QString::number(azFwd, 'f', 4))
-              .arg(azFwdDms);
-    out += QString("  Bearing FWD (0–360): %1° (%2)\n")
-              .arg(QString::number(azFwd, 'f', 4))
-              .arg(azFwdDms);
-    out += QString("  Bearing FWD (quadrant): %1\n").arg(azFwdBrg);
-
-    out += QString("  Azimuth BKW: %1° (%2)\n")
-              .arg(QString::number(azBack, 'f', 4))
-              .arg(azBackDms);
-    out += QString("  Bearing BKW (0–360): %1° (%2)\n")
-              .arg(QString::number(azBack, 'f', 4))
-              .arg(azBackDms);
-    out += QString("  Bearing BKW (quadrant): %1\n").arg(azBackBrg);
+    // Bearing in DMS only (Zimbabwean records)
+    out += QString("  Bearing FWD: %1\n").arg(brgFwdDms);
+    out += QString("  Bearing BKW: %1\n").arg(brgBackDms);
     if (is3D) out += QString("  Slope angle: %1°  Gradient: %2%%\n")
                             .arg(QString::number(slopeDeg, 'f', 4))
                             .arg(QString::number(gradePct, 'f', 3));

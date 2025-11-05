@@ -7,8 +7,8 @@
 
 class IconManager {
 public:
-    // Retrieve icon by logical name from resources. In monochrome mode, icons are tinted to the monochrome color.
     static QIcon icon(const QString& name);
+    static QIcon iconUnique(const QString& name, const QString& key, const QString& badgeText = QString());
 
     // Enable/disable monochrome icons (useful for dark mode to force white icons)
     static void setMonochrome(bool enabled);

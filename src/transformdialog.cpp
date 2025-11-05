@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QtMath>
+#include <cmath>
 #include <algorithm>
 #include "pointmanager.h"
 #include "canvaswidget.h"
@@ -44,7 +45,6 @@ TransformDialog::TransformDialog(PointManager* pm, CanvasWidget* canvas, QWidget
     top->addRow(new QLabel("Source CRS (GDAL):", this), m_srcCrsEdit);
     top->addRow(new QLabel("Target CRS (GDAL):", this), m_dstCrsEdit);
 
-    root->addLayout(top);
 
     // GDAL-only mode: no control pairs table
     m_table = nullptr;

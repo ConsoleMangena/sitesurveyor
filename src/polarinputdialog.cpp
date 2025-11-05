@@ -39,16 +39,16 @@ PolarInputDialog::PolarInputDialog(PointManager* pm, CanvasWidget* canvas, QWidg
     row1->addWidget(m_nameEdit, 1);
     layout->addLayout(row1);
 
-    // Row: distance + azimuth
+    // Row: distance + bearing
     auto *row2 = new QHBoxLayout();
     row2->addWidget(new QLabel("Distance (m):"));
     m_distanceEdit = new QLineEdit(this);
     m_distanceEdit->setPlaceholderText("e.g. 25.6");
     row2->addWidget(m_distanceEdit);
     row2->addSpacing(12);
-    row2->addWidget(new QLabel("Azimuth (deg or DMS):"));
+    row2->addWidget(new QLabel("Bearing (DMS):"));
     m_azimuthEdit = new QLineEdit(this);
-    m_azimuthEdit->setPlaceholderText("e.g. 123.45 or 123 27 00");
+    m_azimuthEdit->setPlaceholderText("e.g. 123 27 00");
     row2->addWidget(m_azimuthEdit);
     layout->addLayout(row2);
 
@@ -111,7 +111,7 @@ void PolarInputDialog::reload()
 
     const bool gauss = AppSettings::gaussMode();
     QString ref = gauss ? "South" : "North";
-    m_hintLabel->setText(QString("Azimuths are measured clockwise from 0° %1. DMS accepted as 'd m s'.").arg(ref));
+    m_hintLabel->setText(QString("Bearings are measured clockwise from 0° %1 (per settings). Enter as DMS: d m s.").arg(ref));
 }
 
 static double parseDmsComponents(const QStringList &parts, bool *ok)
@@ -161,7 +161,7 @@ bool PolarInputDialog::parseInputs(Point& from, QString& newName, double& distan
     if (!okd || distance <= 0) { err = "Please enter a valid distance"; return false; }
 
     bool oka=false; azimuthDeg = parseAngleDMS(m_azimuthEdit->text(), &oka);
-    if (!oka) { err = "Please enter a valid azimuth (deg or DMS)"; return false; }
+    if (!oka) { err = "Please enter a valid bearing (DMS)"; return false; }
 
     bool use3D = AppSettings::use3D();
     if (use3D) {
@@ -177,9 +177,9 @@ QString PolarInputDialog::formatResult(const Point& from, const Point& to, doubl
 {
     QString out;
     out += QString("Polar from %1 -> %2\n").arg(from.name).arg(to.name);
-    out += QString("  Input: dist=%1 m, az=%2°, z=%3\n")
+    out += QString("  Input: dist=%1 m, brg=%2, z=%3\n")
               .arg(QString::number(distance, 'f', 3))
-              .arg(QString::number(azimuthDeg, 'f', 4))
+              .arg(SurveyCalculator::toDMS(azimuthDeg))
               .arg(QString::number(z, 'f', 3));
     out += QString("  Result: (%1, %2, %3)\n")
         .arg(QString::number(to.x, 'f', 3))
