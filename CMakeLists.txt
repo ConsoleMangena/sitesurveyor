@@ -8,8 +8,8 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # Find Qt (support Qt6 and Qt5)
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Widgets Network)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Widgets Network)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Widgets)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Widgets)
 
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_standard_project_setup()
@@ -40,8 +40,6 @@ set(SOURCES
     src/layerpanel.cpp
     src/propertiespanel.cpp
     src/welcomewidget.cpp
-    src/appwriteclient.cpp
-    src/authdialog.cpp
     src/licensedialog.cpp
 )
 
@@ -68,8 +66,6 @@ set(HEADERS
     include/layerpanel.h
     include/propertiespanel.h
     include/welcomewidget.h
-    include/appwriteclient.h
-    include/authdialog.h
     include/licensedialog.h
 )
 
@@ -92,7 +88,7 @@ else()
     message(STATUS "GDAL not found; building without CRS transforms")
 endif()
 
-target_link_libraries(SiteSurveyor PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Network)
+target_link_libraries(SiteSurveyor PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Widgets)
 
 # Windows: embed application icon in the executable (optional if ICO present)
 if(WIN32)
@@ -109,6 +105,17 @@ set_target_properties(SiteSurveyor PROPERTIES
     WIN32_EXECUTABLE TRUE
     MACOSX_BUNDLE TRUE
 )
+
+# Embed license secret from CMake variable or environment for release builds
+# Usage:
+#   cmake -DSS_LICENSE_SECRET="your-long-random-secret" ...
+if(DEFINED SS_LICENSE_SECRET)
+    add_compile_definitions(SS_LICENSE_SECRET_STR="${SS_LICENSE_SECRET}")
+elseif(DEFINED ENV{SS_LICENSE_SECRET})
+    add_compile_definitions(SS_LICENSE_SECRET_STR="$ENV{SS_LICENSE_SECRET}")
+else()
+    add_compile_definitions(SS_LICENSE_SECRET_DEV=1)
+endif()
 
 # Place the executable in a predictable folder (non-macOS)
 if(NOT APPLE)

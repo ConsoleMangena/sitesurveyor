@@ -7,6 +7,7 @@
 #include <QSysInfo>
 #include <QByteArray>
 #include <QSet>
+#include <QMap>
 
 namespace {
 // Derive a per-machine pepper so hashes are not portable across machines
@@ -17,6 +18,60 @@ QByteArray licensePepper()
     if (mid.isEmpty()) mid = QSysInfo::machineHostName().toUtf8();
     pepper += mid;
     return pepper;
+}
+
+// Compile-time secret (provide via -DSS_LICENSE_SECRET or env SS_LICENSE_SECRET at build)
+QByteArray licenseSecret()
+{
+#ifdef SS_LICENSE_SECRET_STR
+    static const QByteArray k = QByteArray(SS_LICENSE_SECRET_STR);
+    return k;
+#else
+    // Dev fallback secret; DO NOT SHIP BUILDS WITH THIS
+    static const QByteArray k = QByteArray("DEV-SECRET-CHANGE-ME");
+    return k;
+#endif
+}
+
+// RFC 4648 Base32 (uppercase)
+QString base32(const QByteArray& in)
+{
+    static const char* alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    QString out;
+    int bits = 0;
+    int value = 0;
+    for (unsigned char c : in) {
+        value = (value << 8) | c;
+        bits += 8;
+        while (bits >= 5) {
+            int idx = (value >> (bits - 5)) & 0x1F;
+            out.append(QChar(alphabet[idx]));
+            bits -= 5;
+        }
+    }
+    if (bits > 0) {
+        int idx = (value << (5 - bits)) & 0x1F;
+        out.append(QChar(alphabet[idx]));
+    }
+    return out;
+}
+
+QByteArray hmacSha256(const QByteArray& key, const QByteArray& data)
+{
+    const int blockSize = 64; // SHA-256 block size
+    QByteArray k = key;
+    if (k.size() > blockSize) k = QCryptographicHash::hash(k, QCryptographicHash::Sha256);
+    if (k.size() < blockSize) k.append(QByteArray(blockSize - k.size(), '\0'));
+    QByteArray o_key_pad(blockSize, '\x5c');
+    QByteArray i_key_pad(blockSize, '\x36');
+    for (int i = 0; i < blockSize; ++i) {
+        o_key_pad[i] = o_key_pad[i] ^ k[i];
+        i_key_pad[i] = i_key_pad[i] ^ k[i];
+    }
+    QByteArray inner = i_key_pad + data;
+    QByteArray innerHash = QCryptographicHash::hash(inner, QCryptographicHash::Sha256);
+    QByteArray outer = o_key_pad + innerHash;
+    return QCryptographicHash::hash(outer, QCryptographicHash::Sha256);
 }
 
 // --- Recent / Pinned files (Welcome Start) ---
@@ -54,6 +109,30 @@ QString hashedDigestPath(const QString& disc)
     return QString("license/hashed/%1/digest").arg(disc);
 }
 
+QString hashedSigPath(const QString& disc)
+{
+    return QString("license/hashed/%1/sig").arg(disc);
+}
+
+QString normalizeKey(const QString& key)
+{
+    QString k;
+    k.reserve(key.size());
+    for (QChar ch : key) {
+        if (ch.isLetterOrNumber()) k.append(ch);
+    }
+    return k.toUpper();
+}
+
+QString computeStoredSig(const QByteArray& salt, const QByteArray& digest)
+{
+    QByteArray msg;
+    msg.reserve(licensePepper().size() + 1 + salt.size() + 1 + digest.size());
+    msg.append(licensePepper()); msg.append(':'); msg.append(salt); msg.append(':'); msg.append(digest);
+    QByteArray mac = hmacSha256(licenseSecret(), msg);
+    return base32(mac).left(20);
+}
+
 bool hasHashedFor(const QString& disc)
 {
     QSettings s;
@@ -75,6 +154,8 @@ void migratePlainTextIfNeeded(const QString& disc)
     const QByteArray digest = computeDigest(salt, key);
     s.setValue(hashedSaltPath(disc), salt.toBase64());
     s.setValue(hashedDigestPath(disc), digest.toBase64());
+    // Also set a signature so tampering is detectable
+    s.setValue(hashedSigPath(disc), computeStoredSig(salt, digest));
     s.remove(keyPath); // remove plaintext
 }
 }
@@ -331,13 +412,26 @@ void AppSettings::setLicenseKeyFor(const QString& disc, const QString& key)
     const QByteArray digest = computeDigest(salt, trimmed);
     s.setValue(hashedSaltPath(disc), salt.toBase64());
     s.setValue(hashedDigestPath(disc), digest.toBase64());
+    // Store tamper-evident signature bound to this machine
+    s.setValue(hashedSigPath(disc), computeStoredSig(salt, digest));
     s.remove(QString("license/keys/%1").arg(disc));
 }
 
 bool AppSettings::hasLicenseFor(const QString& disc)
 {
     migratePlainTextIfNeeded(disc);
-    return hasHashedFor(disc);
+    if (!hasHashedFor(disc)) return false;
+    QSettings s;
+    const QByteArray salt = QByteArray::fromBase64(s.value(hashedSaltPath(disc)).toByteArray());
+    const QByteArray digest = QByteArray::fromBase64(s.value(hashedDigestPath(disc)).toByteArray());
+    const QString sig = s.value(hashedSigPath(disc)).toString();
+#ifdef SS_LICENSE_SECRET_DEV
+    // In dev builds, fall back to accepting unsigned hashed licenses
+    if (sig.isEmpty()) return true;
+#endif
+    if (salt.isEmpty() || digest.isEmpty() || sig.isEmpty()) return false;
+    const QString expected = computeStoredSig(salt, digest);
+    return sig == expected;
 }
 
 // Backwards-compatible helpers resolve to current discipline
@@ -355,6 +449,43 @@ void AppSettings::setLicenseKey(const QString& key)
 bool AppSettings::hasLicense()
 {
     return hasLicenseFor(discipline());
+}
+
+bool AppSettings::activateLicense(const QString& disc, const QString& key, bool bindToMachine)
+{
+    const QString pref = licensePrefixFor(disc).toUpper();
+    if (pref.isEmpty()) return false;
+    const QString trimmed = key.trimmed().toUpper();
+    if (!trimmed.startsWith(pref + QLatin1Char('-'))) return false;
+
+#ifndef SS_LICENSE_SECRET_STR
+    // Dev builds (no release secret provided): allow DEV- keys unconditionally
+    if (trimmed.startsWith(QStringLiteral("DEV-"))) {
+        setLicenseKeyFor(disc, key);
+        return true;
+    }
+#endif
+
+    // Validate structure: PREFIX-<BODY>-<SIG>, where SIG = base32(HMAC(secret, PREFIX|disc|BODY|device))[:10]
+    QString norm = normalizeKey(trimmed);
+    // Remove PREFIX
+    if (!norm.startsWith(pref)) return false;
+    norm.remove(0, pref.size());
+    if (norm.size() < 18) return false; // require at least 8 body + 10 sig
+    const int SIG_LEN = 10;
+    const QString sig = norm.right(SIG_LEN);
+    const QString body = norm.left(norm.size() - SIG_LEN);
+    QByteArray msg;
+    msg.append(pref.toUtf8()); msg.append('|');
+    msg.append(disc.toUtf8()); msg.append('|');
+    msg.append(body.toUtf8()); msg.append('|');
+    if (bindToMachine) msg.append(licensePepper()); else msg.append('*');
+    const QString expected = base32(hmacSha256(licenseSecret(), msg)).left(SIG_LEN);
+    if (sig != expected) return false;
+
+    // Store hashed+signed state for offline checks
+    setLicenseKeyFor(disc, key);
+    return true;
 }
 
 QString AppSettings::licensePrefixFor(const QString& disc)
@@ -378,7 +509,14 @@ bool AppSettings::verifyLicenseFor(const QString& disc, const QString& key)
     const QByteArray salt = QByteArray::fromBase64(saltB64);
     const QByteArray stored = QByteArray::fromBase64(digB64);
     const QByteArray candidate = computeDigest(salt, trimmed);
-    return stored == candidate;
+    const bool match = (stored == candidate);
+    if (!match) return false;
+    // Also ensure signature matches (tamper detection)
+    const QString sig = s.value(hashedSigPath(disc)).toString();
+#ifdef SS_LICENSE_SECRET_DEV
+    if (sig.isEmpty()) return true;
+#endif
+    return sig == computeStoredSig(salt, stored);
 }
 
 void AppSettings::clearLicenseFor(const QString& disc)

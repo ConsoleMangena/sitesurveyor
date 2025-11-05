@@ -13,10 +13,7 @@ class QTabWidget;
 class QListWidget;
 class QListWidgetItem;
 class QToolButton;
-class AppwriteClient;
-class QNetworkReply;
 class QTimer;
-class QTcpServer;
 
 class WelcomeWidget : public QWidget
 {
@@ -35,7 +32,6 @@ signals:
     void openPathRequested(const QString& path);
 
 private slots:
-    void openAuthDialog();
     void fetchLicense();
     void saveAndContinue();
     // UI helpers
@@ -50,15 +46,13 @@ private slots:
     void onPinSelected();
     void onUnpinSelected();
     void refreshRecentList();
-    void openGithubOAuth();
+    
 
 private:
     void updateAuthUI();
     void setFeaturesLocked(bool locked);
     void markLicensedLocally();
-    void startLabelPolling();
-    void stopLabelPolling();
-    void stopOAuthServer();
+    
     // Header
     QLabel* m_title{nullptr};
     QLabel* m_description{nullptr};
@@ -73,13 +67,8 @@ private:
     QListWidget* m_recentList{nullptr};
     QToolButton* m_pinButton{nullptr};
     QToolButton* m_unpinButton{nullptr};
-    // Account panel
-    AppwriteClient* m_appwrite{nullptr};
-    QPushButton* m_signInButton{nullptr};
-    QPushButton* m_githubButton{nullptr};
-    QTcpServer* m_oauthServer{nullptr};
-    QString m_oauthProvider;
-    // License/activation controls
+    // Account panel (offline)
+    QLineEdit* m_licenseEdit{nullptr};
     QPushButton* m_activateButton{nullptr};
     QPushButton* m_buyButton{nullptr};
     QPushButton* m_studentButton{nullptr};
@@ -88,24 +77,9 @@ private:
     QComboBox* m_disciplineCombo{nullptr};
     bool m_purchasePrompted{false};
     bool m_verified{false};
-    // Realtime network op state to avoid UI overriding messages mid-request
-    bool m_netActive{false};
-    QString m_netOp;
-    // Auto-refresh and diagnostics
-    QTimer* m_labelPollTimer{nullptr};
-    QTimer* m_chipTimer{nullptr};
-    int m_chipPhase{0};
     QWidget* m_leftPane{nullptr};
     QWidget* m_rightPane{nullptr};
-    QLabel* m_pollChip{nullptr};
-    QLabel* m_diagEndpoint{nullptr};
-    QLabel* m_diagProject{nullptr};
-    QLabel* m_diagEndpointTitle{nullptr};
-    QLabel* m_diagProjectTitle{nullptr};
-    QLabel* m_diagAccountId{nullptr};
-    QLabel* m_diagEmail{nullptr};
-    QLabel* m_diagLabels{nullptr};
-    bool m_showSecrets{false};
+    
 };
 
 #endif // WELCOMEWIDGET_H

@@ -103,8 +103,13 @@ void LicenseDialog::saveKey()
         return;
     }
     AppSettings::setDiscipline(disc);
-    AppSettings::setLicenseKeyFor(disc, key);
-    m_statusLabel->setText(QString("License key saved for %1.").arg(disc));
+    // Secure activation (validates signature, binds to machine)
+    if (!AppSettings::activateLicense(disc, key, true)) {
+        m_statusLabel->setText("Invalid or mismatched license key.");
+        m_statusLabel->setStyleSheet("color: #ff8080;");
+        return;
+    }
+    m_statusLabel->setText(QString("License activated for %1.").arg(disc));
     // In dark mode keep text white; in light mode show green
     m_statusLabel->setStyleSheet("color: #80ff80;");
     emit licenseSaved();

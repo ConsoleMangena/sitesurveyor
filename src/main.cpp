@@ -16,6 +16,8 @@ int main(int argc, char *argv[])
     qputenv("QT_XCB_GL_INTEGRATION", "none");
     qputenv("LIBGL_ALWAYS_SOFTWARE", "1");
 
+    QApplication app(argc, argv);
+
     // Ensure GDAL/PROJ data paths are available when bundled (Windows zip)
     {
         const QByteArray gdalEnv = qgetenv("GDAL_DATA");
@@ -37,8 +39,6 @@ int main(int argc, char *argv[])
             for (const QString& p : projCandidates) { if (QDir(p).exists()) { qputenv("PROJ_LIB", p.toUtf8()); break; } }
         }
     }
-
-    QApplication app(argc, argv);
     app.setApplicationName("SiteSurveyor");
     app.setOrganizationName("Geomatics");
     app.setWindowIcon(QIcon(":/branding/logo.svg"));

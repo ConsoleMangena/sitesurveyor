@@ -858,14 +858,8 @@ void MainWindow::onSelectionChanged(int points, int lines)
 
 void MainWindow::updateLicenseStateUI()
 {
-    // Gate UI by license state (set when admin issues access token) with offline grace TTL
-    const bool hasLocal = AppSettings::hasLicenseFor(AppSettings::discipline());
-    QSettings s;
-    const int graceDays = s.value("license/offlineGraceDays", 5).toInt();
-    const QString ts = s.value("license/lastVerifiedUtc").toString();
-    const QDateTime last = QDateTime::fromString(ts, Qt::ISODate);
-    bool withinGrace = last.isValid() && last.secsTo(QDateTime::currentDateTimeUtc()) <= graceDays * 86400;
-    const bool licensed = hasLocal && withinGrace;
+    // Offline license: presence of a saved key fully unlocks
+    const bool licensed = AppSettings::hasLicenseFor(AppSettings::discipline());
 
     // Switch central page
     if (m_centerStack && m_canvas && m_welcomeWidget) {

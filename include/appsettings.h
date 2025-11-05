@@ -76,6 +76,8 @@ public:
     static bool verifyLicenseFor(const QString& discipline, const QString& key);
     static void clearLicenseFor(const QString& discipline);
     static QString licensePrefixFor(const QString& discipline);
+    // Secure activation (validates key signature and stores hashed+signed state)
+    static bool activateLicense(const QString& discipline, const QString& key, bool bindToMachine = true);
     // Recent/pinned files (Welcome Start page)
     static QStringList recentFiles();
     static void setRecentFiles(const QStringList& files);

@@ -13,7 +13,7 @@ if errorlevel 1 exit /b 1
 cmake --build build --config Release
 if errorlevel 1 exit /b 1
 
-"%QT_DIR%\bin\windeployqt.exe" --release --compiler-runtime build\SiteSurveyor.exe
+"%QT_DIR%\bin\windeployqt.exe" --release --compiler-runtime build\bin\SiteSurveyor.exe
 if errorlevel 1 exit /b 1
 
-echo Done. Output in build\
+echo Done. Output in build\bin\

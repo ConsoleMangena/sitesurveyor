@@ -37,6 +37,7 @@ jobs:
         shell: pwsh
         env:
           VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+          SS_LICENSE_SECRET: ${{ secrets.SS_LICENSE_SECRET }}
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake"
 
       - name: Build
@@ -46,18 +47,24 @@ jobs:
       - name: Deploy Qt runtime
         shell: pwsh
         run: |
+          $exe = Get-ChildItem -Path "build" -Filter "SiteSurveyor.exe" -Recurse | Select-Object -First 1
+          if (-not $exe) { throw "SiteSurveyor.exe not found under build/" }
+          $exePath = $exe.FullName
+
           $qtRoot = $env:QT_ROOT_DIR
           if (-not $qtRoot -and $env:Qt6_DIR) { $qtRoot = (Split-Path $env:Qt6_DIR -Parent) }
           if (-not $qtRoot) { throw "Qt root directory not set (QT_ROOT_DIR/Qt6_DIR)" }
           $qtBin = Join-Path $qtRoot "bin"
-          & "$qtBin\windeployqt.exe" --release --compiler-runtime "build\Release\SiteSurveyor.exe"
+          & "$qtBin\windeployqt.exe" --release --compiler-runtime "$exePath"
 
       - name: Bundle GDAL runtime (DLLs and data)
         shell: pwsh
         env:
           VCPKG_ROOT: ${{ github.workspace }}\vcpkg
         run: |
-          $out = "build\Release"
+          $exe = Get-ChildItem -Path "build" -Filter "SiteSurveyor.exe" -Recurse | Select-Object -First 1
+          if (-not $exe) { throw "SiteSurveyor.exe not found under build/" }
+          $out = Split-Path $exe.FullName -Parent
           New-Item -ItemType Directory -Path "$out" -Force | Out-Null
           # Copy all vcpkg DLLs to ensure GDAL dependencies are present
           Copy-Item "$env:VCPKG_ROOT\installed\x64-windows\bin\*.dll" -Destination "$out" -Force -ErrorAction SilentlyContinue
@@ -69,7 +76,11 @@ jobs:
 
       - name: Package zip
         shell: pwsh
-        run: Compress-Archive -Path "build/Release/*" -DestinationPath "SiteSurveyor-Windows.zip"
+        run: |
+          $exe = Get-ChildItem -Path "build" -Filter "SiteSurveyor.exe" -Recurse | Select-Object -First 1
+          if (-not $exe) { throw "SiteSurveyor.exe not found under build/" }
+          $out = Split-Path $exe.FullName -Parent
+          Compress-Archive -Path "$out\*" -DestinationPath "SiteSurveyor-Windows.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
