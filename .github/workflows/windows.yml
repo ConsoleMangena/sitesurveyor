@@ -52,6 +52,21 @@ jobs:
           $qtBin = Join-Path $qtRoot "bin"
           & "$qtBin\windeployqt.exe" --release --compiler-runtime "build\Release\SiteSurveyor.exe"
 
+      - name: Bundle GDAL runtime (DLLs and data)
+        shell: pwsh
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+        run: |
+          $out = "build\Release"
+          New-Item -ItemType Directory -Path "$out" -Force | Out-Null
+          # Copy all vcpkg DLLs to ensure GDAL dependencies are present
+          Copy-Item "$env:VCPKG_ROOT\installed\x64-windows\bin\*.dll" -Destination "$out" -Force -ErrorAction SilentlyContinue
+          # Copy GDAL and PROJ data
+          New-Item -ItemType Directory -Path "$out\gdal\share\gdal" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$out\gdal\share\proj" -Force | Out-Null
+          Copy-Item "$env:VCPKG_ROOT\installed\x64-windows\share\gdal\*" "$out\gdal\share\gdal" -Recurse -Force -ErrorAction SilentlyContinue
+          Copy-Item "$env:VCPKG_ROOT\installed\x64-windows\share\proj\*" "$out\gdal\share\proj" -Recurse -Force -ErrorAction SilentlyContinue
+
       - name: Package zip
         shell: pwsh
         run: Compress-Archive -Path "build/Release/*" -DestinationPath "SiteSurveyor-Windows.zip"
