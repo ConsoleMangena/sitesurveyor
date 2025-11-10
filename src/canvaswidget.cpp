@@ -19,6 +19,7 @@
 #include <QGuiApplication>
 #include <algorithm>
 #include <QtMath>
+#include <QSizeF>
 #include "layermanager.h"
 #include "surveycalculator.h"
 #include "appsettings.h"
@@ -141,6 +142,17 @@ QVector<int> CanvasWidget::currentLineIndicesForPolyline(int polyIndex) const
     return res;
 }
 
+int CanvasWidget::polylineIndexById(quint64 id) const
+{
+    if (id == 0) return -1;
+    for (int i = 0; i < m_polylines.size(); ++i) {
+        if (m_polylines[i].id == id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 void CanvasWidget::addDimension(const QPointF& a, const QPointF& b, double textHeight, const QString& layer)
 {
     QString lay = !layer.isEmpty() ? layer : (m_layerManager ? m_layerManager->currentLayer() : QStringLiteral("0"));
@@ -193,7 +205,7 @@ void CanvasWidget::drawTexts(QPainter& painter)
         painter.translate(screen);
         painter.rotate(-dt.angleDeg);
         QFont f = painter.font();
-        int px = qMax(1, (int)qRound(dt.height * m_zoom));
+        int px = qBound(1, static_cast<int>(qRound(dt.height * m_zoom)), 512);
         f.setPixelSize(px);
         painter.setFont(f);
         QColor c = dt.color;
@@ -255,7 +267,7 @@ void CanvasWidget::drawDimensions(QPainter& painter)
         QPoint screen = worldToScreen(toDisplay(mid));
         painter.resetTransform();
         QFont f = painter.font();
-        int px = qMax(1, (int)qRound(d.textHeight * m_zoom));
+        int px = qBound(1, static_cast<int>(qRound(d.textHeight * m_zoom)), 512);
         f.setPixelSize(px);
         painter.setFont(f);
         painter.setPen(QPen(c));
@@ -532,7 +544,10 @@ public:
         if (m_w) {
             m_w->applyRestoreSelection(m_points, m_lines);
             // Restore polyline entities
-            for (const auto& pl : m_polylines) m_w->m_polylines.append(pl);
+            for (const auto& pl : m_polylines) {
+                m_w->m_polylines.append(pl);
+                m_w->m_nextPolylineId = qMax(m_w->m_nextPolylineId, pl.id + 1);
+            }
             m_w->update();
         }
     }
@@ -961,7 +976,12 @@ void CanvasWidget::addPolylineEntity(const QVector<QPointF>& pts, bool closed, c
 {
     if (pts.size() < 2) return;
     QString lay = !layer.isEmpty() ? layer : (m_layerManager ? m_layerManager->currentLayer() : QStringLiteral("0"));
-    DrawnPolyline pl; pl.pts = pts; pl.closed = closed; pl.layer = lay; pl.color = m_lineColor;
+    DrawnPolyline pl;
+    pl.pts = pts;
+    pl.closed = closed;
+    pl.layer = lay;
+    pl.color = m_lineColor;
+    pl.id = m_nextPolylineId++;
     // Build segments and record indices
     QVector<DrawnLine> segs;
 for (int i=1;i<pts.size();++i) segs.append(DrawnLine{pts[i-1], pts[i], m_lineColor, lay, m_currentPenWidth, m_currentPenStyle});
@@ -969,41 +989,74 @@ for (int i=1;i<pts.size();++i) segs.append(DrawnLine{pts[i-1], pts[i], m_lineCol
     if (m_undoStack) {
         class AddPolylineEntityCommand : public QUndoCommand {
         public:
-            AddPolylineEntityCommand(CanvasWidget* w, const DrawnPolyline& pl, const QVector<DrawnLine>& segs)
-                : m_w(w), m_pl(pl), m_segs(segs) { setText("Add Polyline"); }
+            AddPolylineEntityCommand(CanvasWidget* w, const DrawnPolyline& polyTemplate, const QVector<DrawnLine>& segments)
+                : m_w(w), m_template(polyTemplate), m_segments(segments) { setText("Add Polyline"); }
             void undo() override {
                 if (!m_w) return;
-                // remove lines we added
-                for (int i=m_w->m_lines.size()-1;i>=0;--i){ if (m_added.contains(i)) m_w->m_lines.remove(i); }
-                // remove the polyline record
-                if (!m_plIndexRemoved) {
-                    for (int i=m_w->m_polylines.size()-1;i>=0;--i){ if (&(m_w->m_polylines[i]) == m_plPtr){ m_w->m_polylines.remove(i); break; } }
+                // Remove polyline entry by id
+                int polyIndex = m_w->polylineIndexById(m_template.id);
+                if (polyIndex >= 0) {
+                    m_w->m_polylines.remove(polyIndex);
+                }
+                // Remove the drawn segments (match from back to maintain stability)
+                for (int segIdx = m_segments.size() - 1; segIdx >= 0; --segIdx) {
+                    const auto& seg = m_segments[segIdx];
+                    for (int lineIdx = m_w->m_lines.size() - 1; lineIdx >= 0; --lineIdx) {
+                        const auto& line = m_w->m_lines[lineIdx];
+                        if (qFuzzyCompare(line.start.x(), seg.start.x()) && qFuzzyCompare(line.start.y(), seg.start.y()) &&
+                            qFuzzyCompare(line.end.x(), seg.end.x()) && qFuzzyCompare(line.end.y(), seg.end.y()) &&
+                            line.layer == seg.layer) {
+                            m_w->m_lines.remove(lineIdx);
+                            break;
+                        }
+                    }
                 }
                 m_w->update();
             }
             void redo() override {
                 if (!m_w) return;
-                // append polyline and remember address to find later on undo
-                m_w->m_polylines.append(m_pl);
-                m_plPtr = &m_w->m_polylines.back();
-                // append segments and record indices
-                m_added.clear(); m_plPtr->lineIndices.clear();
-                int base = m_w->m_lines.size();
-                for (const auto& s : m_segs) { m_w->m_lines.append(s); m_added.insert(base); m_plPtr->lineIndices.append(base); ++base; }
+                // Ensure stale instance is removed before re-appending (possible on repeated redo)
+                int existing = m_w->polylineIndexById(m_template.id);
+                if (existing >= 0) {
+                    // Remove geometry associated with the stale polyline
+                    const auto stale = m_w->m_polylines[existing].lineIndices;
+                    m_w->m_polylines.remove(existing);
+                    QVector<int> sorted = stale;
+                    std::sort(sorted.begin(), sorted.end(), [](int a, int b){ return a > b; });
+                    for (int lineIdx : sorted) {
+                        if (lineIdx >= 0 && lineIdx < m_w->m_lines.size()) {
+                            m_w->m_lines.remove(lineIdx);
+                        }
+                    }
+                }
+
+                DrawnPolyline poly = m_template;
+                poly.lineIndices.clear();
+                for (const auto& seg : m_segments) {
+                    int idx = m_w->m_lines.size();
+                    m_w->m_lines.append(seg);
+                    poly.lineIndices.append(idx);
+                }
+                m_w->m_polylines.append(poly);
+                m_w->m_nextPolylineId = qMax(m_w->m_nextPolylineId, poly.id + 1);
                 m_w->update();
             }
         private:
             CanvasWidget* m_w{nullptr};
-            DrawnPolyline m_pl;
-            QVector<DrawnLine> m_segs;
-            QSet<int> m_added; // indices
-            DrawnPolyline* m_plPtr{nullptr};
-            bool m_plIndexRemoved{false};
+            DrawnPolyline m_template;
+            QVector<DrawnLine> m_segments;
         };
         m_undoStack->push(new AddPolylineEntityCommand(this, pl, segs));
     } else {
         m_polylines.append(pl);
-        for (const auto& s : segs) { m_polylines.back().lineIndices.append(m_lines.size()); m_lines.append(s); }
+        DrawnPolyline& added = m_polylines.back();
+        added.lineIndices.clear();
+        for (const auto& s : segs) {
+            int idx = m_lines.size();
+            added.lineIndices.append(idx);
+            m_lines.append(s);
+        }
+        m_nextPolylineId = qMax(m_nextPolylineId, added.id + 1);
         update();
     }
 }
@@ -1019,6 +1072,32 @@ bool CanvasWidget::polylineData(int index, QVector<QPointF>& ptsOut, bool& close
 void CanvasWidget::linesUsedByPolylines(QSet<int>& out) const
 {
     for (const auto& pl : m_polylines) { for (int idx : pl.lineIndices) out.insert(idx); }
+}
+
+QRectF CanvasWidget::geometryBounds() const
+{
+    QRectF bounds;
+    bool hasGeometry = false;
+    auto includePoint = [&](const QPointF& p){
+        if (!qIsFinite(p.x()) || !qIsFinite(p.y())) return;
+        if (!hasGeometry) {
+            bounds = QRectF(p, QSizeF(0, 0));
+            hasGeometry = true;
+        } else {
+            bounds = bounds.united(QRectF(p, QSizeF(0, 0)));
+        }
+    };
+
+    for (const auto& dp : m_points) includePoint(dp.point.toQPointF());
+    for (const auto& line : m_lines) { includePoint(line.start); includePoint(line.end); }
+    for (const auto& pl : m_polylines) {
+        for (const auto& p : pl.pts) includePoint(p);
+    }
+    for (const auto& dim : m_dims) { includePoint(dim.a); includePoint(dim.b); }
+    for (const auto& txt : m_texts) includePoint(txt.pos);
+
+    if (!hasGeometry) return QRectF();
+    return bounds;
 }
 
 void CanvasWidget::startRegularPolygonByEdge(int sides)
@@ -1077,7 +1156,60 @@ void CanvasWidget::clearAll()
     m_points.clear();
     m_lines.clear();
     m_texts.clear();
+    m_dims.clear();
+    m_polylines.clear();
+    clearSelection();
+    m_lassoActive = false;
+    m_lassoPoints.clear();
+    m_selectRectActive = false;
+    m_selectRect = QRect();
+    m_isPanning = false;
+    m_spacePanActive = false;
+    m_drawZoomRect = false;
+    m_zoomRect = QRect();
+    m_isDrawing = false;
+    m_isPolygon = false;
+    m_drawVertices.clear();
+    m_currentHoverWorld = QPointF(0.0, 0.0);
+    m_regPolyEdgeActive = false;
+    m_regPolyHasFirst = false;
+    m_regPolyFirst = QPointF(0.0, 0.0);
+    m_fromActive = false;
+    m_fromAwaitingBase = false;
+    m_tkActive = false;
+    m_tkAwaitingBase = false;
+    m_dynInputActive = false;
+    m_dynBuffer.clear();
+    m_hasSnapIndicator = false;
+    m_hasTrackOrigin = false;
+    m_trackOriginWorld = QPointF(0.0, 0.0);
+    m_snapGlyphType = SnapGlyph::None;
+    m_offsetActive = false;
+    m_modHasFirst = false;
+    m_modFirstLine = -1;
+    m_offsetDistance = 1.0;
+    m_chamferDistance = 1.0;
+    m_draggingVertex = false;
+    m_draggingSelection = false;
+    m_dragLineIndex = -1;
+    m_dragVertexIndex = -1;
+    m_dragCopy = false;
+    m_dragLastScreen = QPoint();
+    m_dragStartScreen = QPoint();
+    m_shapeDragActive = false;
+    m_selectRectStart = QPoint();
+    m_hoverLineIndex = -1;
+    m_hoverVertexIndex = -1;
+    m_preMovePointPos.clear();
+    m_preMoveLinePos.clear();
+    if (m_zoomAnimation) {
+        m_zoomAnimation->stop();
+        m_zoomAnimation->deleteLater();
+        m_zoomAnimation = nullptr;
+    }
     update();
+    emit selectionChanged(0, 0);
+    emit selectedLineChanged(-1);
 }
 
 void CanvasWidget::setShowGrid(bool show)
@@ -1150,26 +1282,23 @@ void CanvasWidget::resetView()
 
 void CanvasWidget::fitToWindow()
 {
-    if (m_points.isEmpty()) return;
-    
-    QRectF bounds;
-    for (const auto& dp : m_points) {
-        if (bounds.isNull()) {
-            bounds = QRectF(dp.point.toQPointF(), QSizeF(0, 0));
-        } else {
-            bounds = bounds.united(QRectF(dp.point.toQPointF(), QSizeF(0, 0)));
-        }
-    }
-    
-    if (!bounds.isNull() && bounds.width() > 0 && bounds.height() > 0) {
-        double scaleX = width() / (bounds.width() + 100);
-        double scaleY = height() / (bounds.height() + 100);
-        m_zoom = qMin(scaleX, scaleY);
-        m_offset = -bounds.center();
-        updateTransform();
-        update();
-        emit zoomChanged(m_zoom);
-    }
+    if (m_points.isEmpty() && m_lines.isEmpty() && m_polylines.isEmpty() && m_dims.isEmpty() && m_texts.isEmpty()) return;
+
+    QRectF bounds = geometryBounds();
+    const double padding = 100.0;
+    bounds.adjust(-padding, -padding, padding, padding);
+
+    const double w = qMax(bounds.width(), 1.0);
+    const double h = qMax(bounds.height(), 1.0);
+    if (width() <= 0 || height() <= 0) return;
+
+    const double scaleX = width() / w;
+    const double scaleY = height() / h;
+    m_zoom = qBound(1e-6, qMin(scaleX, scaleY), 1e6);
+    m_offset = -bounds.center();
+    updateTransform();
+    update();
+    emit zoomChanged(m_zoom);
 }
 
 void CanvasWidget::animateZoomTo(double targetZoom, const QPointF& targetOffset, int durationMs)
@@ -1218,19 +1347,18 @@ void CanvasWidget::zoomOutAnimated()
 
 void CanvasWidget::fitToWindowAnimated()
 {
-    if (m_points.isEmpty()) return;
-    QRectF bounds;
-    for (const auto& dp : m_points) {
-        bounds = bounds.isNull() ? QRectF(dp.point.toQPointF(), QSizeF(0,0))
-                                 : bounds.united(QRectF(dp.point.toQPointF(), QSizeF(0,0)));
-    }
-    if (!bounds.isNull() && bounds.width() > 0 && bounds.height() > 0) {
-        double scaleX = width() / (bounds.width() + 100);
-        double scaleY = height() / (bounds.height() + 100);
-        double targetZ = qMin(scaleX, scaleY);
-        QPointF targetOff = -bounds.center();
-        animateZoomTo(targetZ, targetOff, 220);
-    }
+    if (m_points.isEmpty() && m_lines.isEmpty() && m_polylines.isEmpty() && m_dims.isEmpty() && m_texts.isEmpty()) return;
+    QRectF bounds = geometryBounds();
+    const double padding = 100.0;
+    bounds.adjust(-padding, -padding, padding, padding);
+    const double w = qMax(bounds.width(), 1.0);
+    const double h = qMax(bounds.height(), 1.0);
+    if (width() <= 0 || height() <= 0) return;
+    const double scaleX = width() / w;
+    const double scaleY = height() / h;
+    const double targetZ = qBound(1e-6, qMin(scaleX, scaleY), 1e6);
+    QPointF targetOff = -bounds.center();
+    animateZoomTo(targetZ, targetOff, 220);
 }
 
 void CanvasWidget::paintEvent(QPaintEvent *event)

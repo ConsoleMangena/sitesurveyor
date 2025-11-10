@@ -8,6 +8,7 @@
 #include <QRect>
 #include <QPair>
 #include <QColor>
+#include <QtGlobal>
 #include "point.h"
 
 class LayerManager;
@@ -209,6 +210,8 @@ private:
     void toggleSelectionLine(int idx);
     void setExclusiveSelectionPoint(int idx);
     void toggleSelectionPoint(int idx);
+    QRectF geometryBounds() const;
+    int polylineIndexById(quint64 id) const;
 
     // Define internal item types before using them in signatures
     struct DrawnPoint {
@@ -249,6 +252,7 @@ private:
         QString layer;
         QColor color;
         QVector<int> lineIndices; // indices into m_lines created for this polyline
+        quint64 id{0};
         mutable bool isCircleLikeCached{false};
         mutable bool isCircleLike{false};
         mutable QPointF cachedCenter;
@@ -373,6 +377,7 @@ private:
     int m_hoverVertexIndex{-1};
     QUndoStack* m_undoStack{nullptr};
     int m_selectedLineIndex{-1};
+    quint64 m_nextPolylineId{1};
     
     // Regular polygon (by edge) state
     bool m_regPolyEdgeActive{false};
