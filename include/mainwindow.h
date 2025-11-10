@@ -173,6 +173,8 @@ private:
     PropertiesPanel* m_propertiesPanel{nullptr};
     ProjectPlanPanel* m_projectPlanPanel{nullptr};
     QComboBox* m_layerCombo{nullptr};
+    QComboBox* m_lineTypeCombo{nullptr};
+    QComboBox* m_lineWidthCombo{nullptr};
     QUndoStack* m_undoStack{nullptr};
     QAction* m_preferencesAction{nullptr};
     QAction* m_intersectResectionAction{nullptr};
@@ -259,6 +261,9 @@ private:
     // Debounce for OSNAP hint
     QTimer* m_osnapHintTimer{nullptr};
     QString m_pendingOsnapHint;
+    // Debounce right panel width persistence (avoid frequent QSettings writes)
+    QTimer* m_rightDockResizeDebounce{nullptr};
+    int m_pendingRightPanelWidth{0};
     // Panel toggle actions
     QAction* m_toggleLeftPanelAction{nullptr};
     QAction* m_toggleRightPanelAction{nullptr};

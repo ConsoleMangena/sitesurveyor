@@ -7,6 +7,7 @@
 #include <QSet>
 #include <QRect>
 #include <QPair>
+#include <QColor>
 #include "point.h"
 
 class LayerManager;
@@ -57,6 +58,11 @@ public:
     void setGridSize(double size);
     void setShowLengthLabels(bool on) { m_showLengthLabels = on; update(); }
     bool showLengthLabels() const { return m_showLengthLabels; }
+    // Current pen (linetype/width) used for newly created entities
+    void setCurrentPenStyle(int penStyle) { m_currentPenStyle = penStyle; }
+    int currentPenStyle() const { return m_currentPenStyle; }
+    void setCurrentPenWidth(double w) { m_currentPenWidth = (w > 0.0 ? w : 1.0); }
+    double currentPenWidth() const { return m_currentPenWidth; }
     void setGaussMode(bool enabled) { m_gaussMode = enabled; update(); }
     bool gaussMode() const { return m_gaussMode; }
     
@@ -106,6 +112,9 @@ public:
     double polarIncrement() const { return m_polarIncrementDeg; }
     void setOtrackMode(bool on) { m_otrackMode = on; update(); }
     bool otrackMode() const { return m_otrackMode; }
+    // Osnap glyph color (cached; avoid QSettings lookup per frame)
+    void setOsnapGlyphColor(const QColor& c) { m_osnapGlyphColor = c; update(); }
+    QColor osnapGlyphColor() const { return m_osnapGlyphColor; }
     
     QPointF screenToWorld(const QPoint& screenPos) const;
     QPoint worldToScreen(const QPointF& worldPos) const;
@@ -146,7 +155,10 @@ public slots:
     void setSelectedLayer(const QString& layer);
     void showAllLayers();
     
-signals:
+    // Simple hatch: generate hatch segments for the selected polyline
+    bool hatchSelectedPolyline(double spacing, double angleDeg);
+    
+    signals:
     void mouseWorldPosition(const QPointF& pos);
     void canvasClicked(const QPointF& worldPos);
     void zoomChanged(double zoom);
@@ -210,6 +222,8 @@ private:
         QPointF end;
         QColor color;
         QString layer;
+        double width{1.0};
+        int style{int(Qt::SolidLine)}; // Qt::PenStyle as int
     };
 
     struct DrawnText {
@@ -264,6 +278,10 @@ private:
     QColor m_lineColor;
     QColor m_gridColor;
     QColor m_backgroundColor;
+    QColor m_osnapGlyphColor;
+    // Pen defaults for new geometry
+    double m_currentPenWidth{1.0};
+    int m_currentPenStyle{int(Qt::SolidLine)};
     
     double m_gridSize;
     QTransform m_worldToScreen;

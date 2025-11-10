@@ -32,6 +32,7 @@
 #include <QDir>
 #include <QDateTime>
 #include <QProcess>
+#include <QInputDialog>
 
 // Helper to open URLs without leaking child-process stdout/stderr to the terminal
 static void openUrlExternalSilent(const QUrl& url)
@@ -311,8 +312,28 @@ void WelcomeWidget::onOpenProject()
 
 void WelcomeWidget::onOpenTemplate()
 {
-    // Placeholder: route to Open for now
-    emit openProjectRequested();
+    // Let user pick a built-in template (QRC)
+    QStringList templates;
+    templates << "Empty" << "A4 Portrait" << "A4 Landscape" << "A3 Portrait" << "A3 Landscape"
+              << "A2 Portrait" << "A2 Landscape" << "A1 Portrait" << "A1 Landscape"
+              << "A0 Portrait" << "A0 Landscape";
+    QMap<QString, QString> map;
+    map["Empty"] = ":/templates/empty.dxf";
+    map["A4 Portrait"] = ":/sheets/A4V.dxf";
+    map["A4 Landscape"] = ":/sheets/A4H.dxf";
+    map["A3 Portrait"] = ":/sheets/A3V.dxf";
+    map["A3 Landscape"] = ":/sheets/A3H.dxf";
+    map["A2 Portrait"] = ":/sheets/A2V.dxf";
+    map["A2 Landscape"] = ":/sheets/A2H.dxf";
+    map["A1 Portrait"] = ":/sheets/A1V.dxf";
+    map["A1 Landscape"] = ":/sheets/A1H.dxf";
+    map["A0 Portrait"] = ":/sheets/A0V.dxf";
+    map["A0 Landscape"] = ":/sheets/A0H.dxf";
+    bool ok=false;
+    const QString choice = QInputDialog::getItem(this, "From Template", "Template:", templates, 0, false, &ok);
+    if (!ok || choice.isEmpty()) return;
+    const QString rp = map.value(choice);
+    if (!rp.isEmpty()) emit openTemplateRequested(rp);
 }
 
 void WelcomeWidget::onSearchTextChanged(const QString&)

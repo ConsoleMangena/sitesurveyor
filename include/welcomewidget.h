@@ -29,6 +29,7 @@ signals:
     void newProjectRequested();
     void openProjectRequested();
     void openPathRequested(const QString& path);
+    void openTemplateRequested(const QString& resourcePath);
 
 private slots:
     void onDisciplineChanged(int index);

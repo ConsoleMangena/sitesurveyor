@@ -34,6 +34,7 @@ CanvasWidget::CanvasWidget(QWidget *parent) : QWidget(parent),
     m_lineColor(Qt::cyan),
     m_gridColor(QColor(60, 60, 60)),
     m_backgroundColor(QColor(33, 33, 33)),
+    m_osnapGlyphColor(AppSettings::osnapGlyphColor()),
     m_gridSize(20.0)
 {
     setMouseTracking(true);
@@ -882,7 +883,7 @@ void CanvasWidget::addPoint(const Point& point)
 void CanvasWidget::addLine(const QPointF& start, const QPointF& end)
 {
     QString layer = m_layerManager ? m_layerManager->currentLayer() : QStringLiteral("0");
-    DrawnLine dl{start, end, m_lineColor, layer};
+    DrawnLine dl{start, end, m_lineColor, layer, m_currentPenWidth, m_currentPenStyle};
     if (m_undoStack) {
         class AddLineCommand : public QUndoCommand {
         public:
@@ -923,8 +924,8 @@ void CanvasWidget::addPolyline(const QVector<QPointF>& pts, bool closed)
     if (pts.size() < 2) return;
     QString layer = m_layerManager ? m_layerManager->currentLayer() : QStringLiteral("0");
     QVector<DrawnLine> segs;
-    for (int i = 1; i < pts.size(); ++i) segs.append(DrawnLine{pts[i-1], pts[i], m_lineColor, layer});
-    if (closed) segs.append(DrawnLine{pts.back(), pts.front(), m_lineColor, layer});
+for (int i = 1; i < pts.size(); ++i) segs.append(DrawnLine{pts[i-1], pts[i], m_lineColor, layer, m_currentPenWidth, m_currentPenStyle});
+    if (closed) segs.append(DrawnLine{pts.back(), pts.front(), m_lineColor, layer, m_currentPenWidth, m_currentPenStyle});
     if (m_undoStack) {
         class AddPolylineCommand : public QUndoCommand {
         public:
@@ -963,8 +964,8 @@ void CanvasWidget::addPolylineEntity(const QVector<QPointF>& pts, bool closed, c
     DrawnPolyline pl; pl.pts = pts; pl.closed = closed; pl.layer = lay; pl.color = m_lineColor;
     // Build segments and record indices
     QVector<DrawnLine> segs;
-    for (int i=1;i<pts.size();++i) segs.append(DrawnLine{pts[i-1], pts[i], m_lineColor, lay});
-    if (closed) segs.append(DrawnLine{pts.back(), pts.front(), m_lineColor, lay});
+for (int i=1;i<pts.size();++i) segs.append(DrawnLine{pts[i-1], pts[i], m_lineColor, lay, m_currentPenWidth, m_currentPenStyle});
+    if (closed) segs.append(DrawnLine{pts.back(), pts.front(), m_lineColor, lay, m_currentPenWidth, m_currentPenStyle});
     if (m_undoStack) {
         class AddPolylineEntityCommand : public QUndoCommand {
         public:
@@ -1414,7 +1415,7 @@ void CanvasWidget::paintEvent(QPaintEvent *event)
     // Object snap indicator
     if (m_hasSnapIndicator) {
         painter.save();
-        QPen sp(AppSettings::osnapGlyphColor());
+        QPen sp(m_osnapGlyphColor);
         sp.setWidth(2);
         painter.setPen(sp);
         painter.setBrush(Qt::NoBrush);
@@ -3071,8 +3072,11 @@ void CanvasWidget::drawLines(QPainter& painter)
         }
         const bool sel = (idx == m_selectedLineIndex) || m_selectedLineIndices.contains(idx);
         // Highlight selected line
-        QPen linePen(sel ? QColor(255, 200, 0) : c);
-        linePen.setWidthF(sel ? qMax(2.0, 2.0 / m_zoom) : 1.0);
+QPen linePen(sel ? QColor(255, 200, 0) : c);
+        double w = dl.width > 0.0 ? dl.width : 1.0;
+        if (sel) w = qMax(w, 2.0);
+        linePen.setWidthF(w);
+        linePen.setStyle(static_cast<Qt::PenStyle>(dl.style));
         painter.setPen(linePen);
         painter.drawLine(toDisplay(dl.start), toDisplay(dl.end));
         // Length label at midpoint (screen space)
@@ -3443,6 +3447,69 @@ bool CanvasWidget::lineEndpoints(int lineIndex, QPointF& startOut, QPointF& endO
     if (lineIndex < 0 || lineIndex >= m_lines.size()) return false;
     startOut = m_lines[lineIndex].start;
     endOut = m_lines[lineIndex].end;
+    return true;
+}
+
+bool CanvasWidget::hatchSelectedPolyline(double spacing, double angleDeg)
+{
+    if (spacing <= 0.0) spacing = 1.0;
+    // Pick a selected line to infer a polyline
+    int seedLine = -1;
+    if (!m_selectedLineIndices.isEmpty()) seedLine = *m_selectedLineIndices.begin();
+    else if (m_selectedLineIndex >= 0) seedLine = m_selectedLineIndex;
+    if (seedLine < 0 || seedLine >= m_lines.size()) return false;
+    int pli = polylineIndexForLine(seedLine);
+    if (pli < 0 || pli >= m_polylines.size()) return false;
+    const auto& pl = m_polylines[pli];
+    // Ensure closed ring of points
+    QVector<QPointF> pts = pl.pts;
+    if (pts.size() < 3) return false;
+    bool closed = pl.closed;
+    if (!closed) pts.append(pts.front());
+    // Direction v and normal n
+    double rad = SurveyCalculator::degreesToRadians(angleDeg);
+    QPointF v(qCos(rad), qSin(rad));
+    QPointF n(-v.y(), v.x());
+    auto dot = [](const QPointF& a, const QPointF& b){ return a.x()*b.x() + a.y()*b.y(); };
+    // Range along n
+    double minC = 1e18, maxC = -1e18;
+    for (const auto& p : pts) {
+        double c = dot(p, n);
+        if (c < minC) minC = c;
+        if (c > maxC) maxC = c;
+    }
+    if (!(maxC > minC)) return false;
+    // Align start
+    double startC = std::floor(minC / spacing) * spacing;
+    QString layer = m_layerManager ? m_layerManager->currentLayer() : QStringLiteral("0");
+    // For each stripe, compute intersections with polygon edges
+    for (double c = startC; c <= maxC; c += spacing) {
+        QVector<QPointF> inters;
+        for (int i = 0; i+1 < pts.size(); ++i) {
+            QPointF a = pts[i]; QPointF b = pts[i+1];
+            double da = dot(a, n) - c;
+            double db = dot(b, n) - c;
+            double denom = db - da;
+            if (qFuzzyIsNull(denom)) continue;
+            double u = -da / denom; // since da + u*(db-da) = 0
+            if (u >= 0.0 && u <= 1.0) {
+                QPointF p(a.x() + (b.x()-a.x())*u, a.y() + (b.y()-a.y())*u);
+                inters.append(p);
+            }
+        }
+        if (inters.size() < 2) continue;
+        // Sort intersections along v
+        std::sort(inters.begin(), inters.end(), [&](const QPointF& p1, const QPointF& p2){ return dot(p1, v) < dot(p2, v); });
+        // Pair up 0-1, 2-3, ...
+        for (int k = 0; k+1 < inters.size(); k += 2) {
+            QPointF p1 = inters[k];
+            QPointF p2 = inters[k+1];
+            // Add hatch segment as line using current pen settings and color
+            DrawnLine dl{p1, p2, m_lineColor, layer, m_currentPenWidth, m_currentPenStyle};
+            m_lines.append(dl);
+        }
+    }
+    update();
     return true;
 }
 

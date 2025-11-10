@@ -42,6 +42,8 @@
 #include <QToolButton>
 #include <QComboBox>
 #include <QPixmap>
+#include <QColorDialog>
+#include <QPainter>
 #include <QApplication>
 #include <QUndoStack>
 #include <QFrame>
@@ -55,6 +57,7 @@
 #include <QTimer>
 #include <QStandardPaths>
 #include <QDir>
+#include <QDirIterator>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -124,6 +127,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     m_moreButton = nullptr;
     m_morePinAction = nullptr;
     m_morePinned = false;
+    // Debounce init
+    m_rightDockResizeDebounce = nullptr;
+    m_pendingRightPanelWidth = 0;
     
     toggleDarkMode(false);
     setupUI();
@@ -361,7 +367,6 @@ void MainWindow::importDXF()
     }
 
     updatePointsTable();
-    updateStatus();
     if (m_commandOutput) m_commandOutput->append(QString("Imported DXF %1").arg(QFileInfo(fileName).fileName()));
 }
 
@@ -468,7 +473,6 @@ void MainWindow::tryRecoverAutosave()
         if (idx >= 0 && !layer.isEmpty()) m_canvas->setLineLayer(idx, layer);
     }
     updatePointsTable();
-    updateStatus();
     if (m_commandOutput) m_commandOutput->append("Recovered project from autosave.");
 }
 
@@ -601,7 +605,6 @@ void MainWindow::resizeEvent(QResizeEvent *event)
 {
     QMainWindow::resizeEvent(event);
     updateToggleButtonPositions();
-    updateMoreDock();
 }
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)
@@ -613,7 +616,19 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
         } else if (event->type() == QEvent::Resize) {
             if (m_layersDock) {
                 int w = m_layersDock->width();
-                if (w > 0) AppSettings::setRightPanelWidth(w);
+                if (w > 0) {
+                    m_pendingRightPanelWidth = w;
+                    if (!m_rightDockResizeDebounce) {
+                        m_rightDockResizeDebounce = new QTimer(this);
+                        m_rightDockResizeDebounce->setSingleShot(true);
+                        connect(m_rightDockResizeDebounce, &QTimer::timeout, this, [this]() {
+                            if (m_pendingRightPanelWidth > 0) {
+                                AppSettings::setRightPanelWidth(m_pendingRightPanelWidth);
+                            }
+                        });
+                    }
+                    m_rightDockResizeDebounce->start(250);
+                }
             }
         }
     }
@@ -632,7 +647,71 @@ void MainWindow::setupUI()
     // Start tab actions
     connect(m_welcomeWidget, &WelcomeWidget::newProjectRequested, this, &MainWindow::newProject);
     connect(m_welcomeWidget, &WelcomeWidget::openProjectRequested, this, &MainWindow::openProject);
-    connect(m_welcomeWidget, &WelcomeWidget::openPathRequested, this, &MainWindow::importCoordinatesFrom);
+connect(m_welcomeWidget, &WelcomeWidget::openPathRequested, this, &MainWindow::importCoordinatesFrom);
+    connect(m_welcomeWidget, &WelcomeWidget::openTemplateRequested, this, [this](const QString& res){
+        // Import DXF directly from resources
+        QFile rf(res);
+        if (!rf.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+        QTextStream in(&rf);
+        QStringList lines; while (!in.atEnd()) lines.append(in.readLine()); rf.close();
+        // reuse importer core by feeding through a temporary file-less path
+        // Inline minimal importer loop (duplicated from importDXF)
+        auto aciToColor = [](int aci)->QColor{
+            switch (aci) {
+            case 1: return Qt::red; case 2: return Qt::yellow; case 3: return Qt::green;
+            case 4: return Qt::cyan; case 5: return Qt::blue; case 6: return Qt::magenta;
+            case 7: default: return QColor(255,255,255);
+            }
+        };
+        QString section; bool inLayerTable=false; QVector<QPointF> curPoly; bool polyClosed=false; QString entityLayer = QStringLiteral("0");
+        int i=0; auto readPair = [&](int& code, QString& val)->bool { if (i+1>=lines.size()) return false; bool ok=false; code = lines[i++].trimmed().toInt(&ok); val = (i<lines.size())? lines[i++].trimmed():QString(); if(!ok) code=-999; return true; };
+        while (i+1 < lines.size()) {
+            int code; QString val; if (!readPair(code, val)) break;
+            if (code == 0) {
+                if (val == QLatin1String("SECTION")) { int c2; QString sname; if (readPair(c2, sname) && c2==2) { section=sname; inLayerTable=false; } continue; }
+                if (val == QLatin1String("ENDSEC")) { section.clear(); inLayerTable=false; continue; }
+                if (section == QLatin1String("TABLES") && val == QLatin1String("TABLE")) { int c2; QString tname; if (readPair(c2, tname) && c2==2) { inLayerTable = (tname == QLatin1String("LAYER")); } continue; }
+                if (section == QLatin1String("TABLES") && val == QLatin1String("ENDTAB")) { inLayerTable=false; continue; }
+                if (section == QLatin1String("TABLES") && inLayerTable && val == QLatin1String("LAYER")) {
+                    QString lname = QStringLiteral("0"); int aci = 7; while (i+1<lines.size()) { int pcode; QString pval; int pos=i; if(!readPair(pcode,pval)) break; if(pcode==0){ i=pos; break; } if(pcode==2) lname=pval; else if (pcode==62) aci=pval.toInt(); }
+                    if (m_layerManager) { if (!m_layerManager->hasLayer(lname)) m_layerManager->addLayer(lname, aciToColor(aci)); else m_layerManager->setLayerColor(lname, aciToColor(aci)); }
+                    continue;
+                }
+                if (section == QLatin1String("ENTITIES")) {
+                    if (val == QLatin1String("LINE")) {
+                        double x1=0,y1=0,x2=0,y2=0; entityLayer = QStringLiteral("0");
+                        while (i+1<lines.size()) { int pcode; QString pval; int pos=i; if(!readPair(pcode,pval)) break; if(pcode==0){ i=pos; break; } if(pcode==8) entityLayer=pval; else if(pcode==10) x1=pval.toDouble(); else if(pcode==20) y1=pval.toDouble(); else if(pcode==11) x2=pval.toDouble(); else if(pcode==21) y2=pval.toDouble(); }
+                        if (m_canvas) { m_canvas->addLine(QPointF(x1,y1), QPointF(x2,y2)); int idx=m_canvas->lineCount()-1; if (idx>=0) m_canvas->setLineLayer(idx, entityLayer); }
+                        continue;
+                    }
+                    if (val == QLatin1String("POINT")) {
+                        double x=0,y=0,z=0; entityLayer = QStringLiteral("0");
+                        while (i+1<lines.size()) { int pcode; QString pval; int pos=i; if(!readPair(pcode,pval)) break; if(pcode==0){ i=pos; break; } if(pcode==8) entityLayer=pval; else if(pcode==10) x=pval.toDouble(); else if(pcode==20) y=pval.toDouble(); else if(pcode==30) z=pval.toDouble(); }
+                        QString name = QString("P%1").arg(m_pointManager ? (m_pointManager->getPointCount()+1) : 1, 3, 10, QChar('0'));
+                        if (m_pointManager) m_pointManager->addPoint(name, x, y, z);
+                        if (m_canvas) { Point p(name, x, y, z); m_canvas->addPoint(p); m_canvas->setPointLayer(name, entityLayer); }
+                        continue;
+                    }
+                    if (val == QLatin1String("TEXT")) {
+                        QString t; double x=0,y=0,h=2.0, ang=0.0; entityLayer = QStringLiteral("0");
+                        while (i+1<lines.size()) { int pcode; QString pval; int pos=i; if(!readPair(pcode,pval)) break; if(pcode==0){ i=pos; break; } if(pcode==8) entityLayer=pval; else if(pcode==10) x=pval.toDouble(); else if(pcode==20) y=pval.toDouble(); else if(pcode==40) h=pval.toDouble(); else if(pcode==50) ang=pval.toDouble(); else if(pcode==1) t=pval; }
+                        if (!t.isEmpty() && m_canvas) m_canvas->addText(t, QPointF(x,y), h, ang, entityLayer);
+                        continue;
+                    }
+                    if (val == QLatin1String("POLYLINE")) {
+                        curPoly.clear(); polyClosed=false; entityLayer = QStringLiteral("0");
+                        while (i+1<lines.size()) { int pcode; QString pval; int pos=i; if(!readPair(pcode,pval)) break; if(pcode==0){ i=pos; break; } if(pcode==8) entityLayer=pval; else if(pcode==70){ int flg=pval.toInt(); polyClosed=(flg & 1); } }
+                        while (i+1 < lines.size()) { int code2; QString val2; int pos2=i; if(!readPair(code2,val2)) break; if(code2==0 && val2==QLatin1String("VERTEX")) { double vx=0,vy=0; while (i+1<lines.size()) { int c; QString v; int posv=i; if(!readPair(c,v)) break; if(c==0){ i=posv; break; } if(c==10) vx=v.toDouble(); else if(c==20) vy=v.toDouble(); } curPoly.append(QPointF(vx,vy)); } else if (code2==0 && val2==QLatin1String("SEQEND")) { break; } else { i=pos2; break; } }
+                        if (!curPoly.isEmpty() && m_canvas) m_canvas->addPolylineEntity(curPoly, polyClosed, entityLayer);
+                        continue;
+                    }
+                }
+            }
+        }
+        updatePointsTable();
+        showToast(QStringLiteral("Loaded template"));
+        if (m_centerStack && m_canvas) m_centerStack->setCurrentWidget(m_canvas);
+    });
     m_centerStack->addWidget(m_welcomeWidget);
     setCentralWidget(m_centerStack);
     
@@ -966,7 +1045,6 @@ void MainWindow::executeCommand()
 
     // Refresh UI to reflect changes made by commands
     updatePointsTable();
-    updateStatus();
 
     m_commandInput->clear();
 }
@@ -1330,6 +1408,15 @@ void MainWindow::setupMenus()
     QAction* transformAct = toolsMenu->addAction("&Transformations...");
     transformAct->setIcon(IconManager::icon("transform"));
     connect(transformAct, &QAction::triggered, this, &MainWindow::showTransformations);
+    // Basic hatch pattern loader (preview)
+    QAction* hatchPreviewAct = toolsMenu->addAction("Hatch Patterns (Preview)...");
+    connect(hatchPreviewAct, &QAction::triggered, this, [this](){
+        QStringList names;
+        QDirIterator it(":/patterns", QDirIterator::NoIteratorFlags);
+        while (it.hasNext()) { it.next(); QFileInfo fi(it.filePath()); if (fi.isFile() && fi.suffix().compare("dxf", Qt::CaseInsensitive) == 0) names << fi.fileName(); }
+        names.sort(Qt::CaseInsensitive);
+        QMessageBox::information(this, "Hatch Patterns", names.isEmpty() ? "No embedded patterns" : names.join("\n"));
+    });
     toolsMenu->addSeparator();
     m_preferencesAction = toolsMenu->addAction("&Preferences...");
     m_preferencesAction->setIcon(IconManager::icon("settings"));
@@ -1405,7 +1492,7 @@ void MainWindow::setupToolbar()
         for (QToolBar* b : bars) {
             if (!b) continue;
             const QString obj = b->objectName();
-            if (obj == QLatin1String("TopBarRow1") || obj == QLatin1String("TopBarRow2")) {
+            if (obj == QLatin1String("TopBarRow1") || obj == QLatin1String("TopBarRow2") || obj == QLatin1String("QuickAccess")) {
                 removeToolBar(b);
                 b->deleteLater();
             }
@@ -1600,7 +1687,7 @@ void MainWindow::setupToolbar()
     QAction* layerPanelAct = topBar->addAction(IconManager::iconUnique("desktop", "layer_panel", "LP"), "Layer Panel");
     layerPanelAct->setToolTip("Show/Hide Layers panel");
     connect(layerPanelAct, &QAction::triggered, this, [this](){ if (m_layersDock) m_layersDock->setVisible(!m_layersDock->isVisible()); });
-    // Inline Layer selector
+    // Inline Layer selector + line type/width pickers
     {
         m_layerCombo = new QComboBox(this);
         m_layerCombo->setMinimumWidth(120);
@@ -1609,10 +1696,60 @@ void MainWindow::setupToolbar()
         topBar->addWidget(m_layerCombo);
         refreshLayerCombo();
         connect(m_layerCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onLayerComboChanged);
+
+        // Linetype picker
+        m_lineTypeCombo = new QComboBox(this);
+        m_lineTypeCombo->setToolTip("Line type");
+        m_lineTypeCombo->setIconSize(QSize(24, 12));
+        auto addLT = [&](const QString& name, int style){ m_lineTypeCombo->addItem(QIcon(":/controls/linetypes/" + name), QString()); m_lineTypeCombo->setItemData(m_lineTypeCombo->count()-1, style, Qt::UserRole); };
+        addLT("linetype00.svg", int(Qt::SolidLine));
+        addLT("linetype01.svg", int(Qt::DashLine));
+        addLT("linetype02.svg", int(Qt::DotLine));
+        addLT("linetype03.svg", int(Qt::DashDotLine));
+        addLT("linetype04.svg", int(Qt::DashDotDotLine));
+        topBar->addWidget(m_lineTypeCombo);
+        connect(m_lineTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx){
+            if (!m_canvas || idx < 0) return;
+            int style = m_lineTypeCombo->itemData(idx, Qt::UserRole).toInt();
+            m_canvas->setCurrentPenStyle(style);
+        });
+
+        // Line width picker
+        m_lineWidthCombo = new QComboBox(this);
+        m_lineWidthCombo->setToolTip("Line width");
+        m_lineWidthCombo->setIconSize(QSize(24, 12));
+        struct W { const char* icon; double w; } widths[] = {
+            {"width01.svg", 0.10}, {"width02.svg", 0.18}, {"width03.svg", 0.25}, {"width04.svg", 0.35}, {"width05.svg", 0.50},
+            {"width06.svg", 0.70}, {"width07.svg", 1.00}, {"width08.svg", 1.40}, {"width09.svg", 2.00}
+        };
+        for (const auto& it : widths) {
+            m_lineWidthCombo->addItem(QIcon(":/controls/widths/" + QString::fromUtf8(it.icon)), QString::number(it.w));
+            m_lineWidthCombo->setItemData(m_lineWidthCombo->count()-1, it.w, Qt::UserRole);
+        }
+        topBar->addWidget(m_lineWidthCombo);
+        connect(m_lineWidthCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int idx){
+            if (!m_canvas || idx < 0) return;
+            double w = m_lineWidthCombo->itemData(idx, Qt::UserRole).toDouble();
+            m_canvas->setCurrentPenWidth(w);
+        });
     }
 
     // View
     addCategoryTo(topBar, "View");
+    // Pen color picker (square icon shows current color)
+    QToolButton* penColorBtn = new QToolButton(this);
+    penColorBtn->setToolTip("Pen Color");
+    auto makeColorIcon = [](const QColor& c){ QPixmap pm(16,16); pm.fill(Qt::transparent); QPainter p(&pm); p.fillRect(QRect(2,2,12,12), c); p.setPen(QPen(Qt::black)); p.drawRect(QRect(2,2,12,12)); p.end(); return QIcon(pm); };
+    penColorBtn->setIcon(makeColorIcon(m_canvas ? m_canvas->gaussMode() ? Qt::cyan : Qt::white : Qt::white));
+    connect(penColorBtn, &QToolButton::clicked, this, [this, penColorBtn, makeColorIcon](){
+        QColor start = Qt::white;
+        if (m_layerManager) start = m_layerManager->getLayer(m_layerManager->currentLayer()).color;
+        QColor c = QColorDialog::getColor(start, this, "Pen Color");
+        if (!c.isValid()) return;
+        if (m_canvas) { m_canvas->setLineColor(c); }
+        penColorBtn->setIcon(makeColorIcon(c));
+    });
+    topBar->addWidget(penColorBtn);
     m_selectToolAction = new QAction(IconManager::iconUnique("select", "view_select", "SL"), "Select", this);
     m_selectToolAction->setShortcut(QKeySequence("ESC"));
     m_selectToolAction->setToolTip("Select (Esc)");
@@ -1637,6 +1774,34 @@ void MainWindow::setupToolbar()
     m_lassoToolAction->setCheckable(true);
     connect(m_lassoToolAction, &QAction::toggled, this, [this](bool on){ if(on) m_canvas->setToolMode(CanvasWidget::ToolMode::LassoSelect); });
     topBar->addAction(m_lassoToolAction);
+
+    // Snaps toolbar (LibreCAD-style)
+    QToolBar* snapsBar = new QToolBar("Snaps", this);
+    snapsBar->setObjectName("SnapsBar");
+    snapsBar->setOrientation(Qt::Vertical);
+    snapsBar->setIconSize(QSize(16, 16));
+    snapsBar->setMovable(true);
+
+    auto addSnapToggle = [&](const QString& name, const QString& tip, bool checked, std::function<void(bool)> onToggle){
+        QAction* a = new QAction(IconManager::icon(name), tip, this);
+        a->setCheckable(true);
+        a->setChecked(checked);
+        connect(a, &QAction::toggled, this, onToggle);
+        snapsBar->addAction(a);
+    };
+
+    if (m_canvas) {
+        addSnapToggle("snap_endpoints", "Snap Endpoints", m_canvas->osnapEnd(), [this](bool on){ if (m_canvas) m_canvas->setOsnapEnd(on); });
+        addSnapToggle("snap_middle", "Snap Midpoints", m_canvas->osnapMid(), [this](bool on){ if (m_canvas) m_canvas->setOsnapMid(on); });
+        addSnapToggle("snap_center", "Snap Center", m_canvas->osnapCenter(), [this](bool on){ if (m_canvas) m_canvas->setOsnapCenter(on); });
+        addSnapToggle("snap_intersection", "Snap Intersections", m_canvas->osnapIntersect(), [this](bool on){ if (m_canvas) m_canvas->setOsnapIntersect(on); });
+        addSnapToggle("snap_entity", "Snap Nearest (Entity)", m_canvas->osnapNearest(), [this](bool on){ if (m_canvas) m_canvas->setOsnapNearest(on); });
+        snapsBar->addSeparator();
+        addSnapToggle("snap_grid", "Grid Snap", m_canvas->snapMode(), [this](bool on){ if (m_canvas) m_canvas->setSnapMode(on); });
+        addSnapToggle("snap_perp", "Perpendicular", m_canvas->osnapPerp(), [this](bool on){ if (m_canvas) m_canvas->setOsnapPerp(on); });
+        addSnapToggle("snap_tangent", "Tangent", m_canvas->osnapTangent(), [this](bool on){ if (m_canvas) m_canvas->setOsnapTangent(on); });
+    }
+    addToolBar(Qt::LeftToolBarArea, snapsBar);
     // Zoom controls
     QAction* zoomInAction = new QAction(IconManager::iconUnique("zoom-in", "view_zoomin", "ZI"), "Zoom In", this);
     zoomInAction->setToolTip("Zoom In");
@@ -2090,7 +2255,6 @@ void MainWindow::newProject()
         m_canvas->clearAll();
         m_commandOutput->clear();
         updatePointsTable();
-        updateStatus();
         if (m_centerStack && m_canvas) m_centerStack->setCurrentWidget(m_canvas);
     }
 }
@@ -2151,7 +2315,7 @@ void MainWindow::openProject()
         const QString layer = o.value("layer").toString();
         if (!t.isEmpty()) m_canvas->addText(t, pos, h, ang, layer);
     }
-    updatePointsTable(); updateStatus();
+    updatePointsTable();
     showToast(QStringLiteral("Project loaded"));
     if (m_centerStack && m_canvas) m_centerStack->setCurrentWidget(m_canvas);
 }
@@ -2224,7 +2388,6 @@ void MainWindow::importCoordinates()
     }
     f.close();
     updatePointsTable();
-    updateStatus();
     AppSettings::addRecentFile(fileName);
     if (m_welcomeWidget) m_welcomeWidget->reload();
     if (m_commandOutput) m_commandOutput->append(QString("Imported %1 points from %2").arg(added).arg(QFileInfo(fileName).fileName()));
@@ -2264,7 +2427,6 @@ void MainWindow::importCoordinatesFrom(const QString& filePath)
     }
     f.close();
     updatePointsTable();
-    updateStatus();
     AppSettings::addRecentFile(filePath);
     if (m_welcomeWidget) m_welcomeWidget->reload();
     if (m_commandOutput) m_commandOutput->append(QString("Imported %1 points from %2").arg(added).arg(QFileInfo(filePath).fileName()));
