@@ -11,7 +11,6 @@ class QTableWidget;
 class QTextEdit;
 class QPushButton;
 class QDoubleSpinBox;
-class QLineEdit;
 class PointManager;
 class CanvasWidget;
 
@@ -33,7 +32,7 @@ private slots:
 private:
     struct Pair { QString src; QString dst; double weight{1.0}; };
     QVector<Pair> collectPairs() const;
-    enum class Mode { Helmert2D, Affine2D, GdalCRS };
+    enum class Mode { Helmert2D, Affine2D };
 
     // Helmert (2D similarity): a = s cos, b = s sin, tx, ty
     bool solveHelmert(const QVector<QPointF>& src, const QVector<QPointF>& dst,
@@ -51,9 +50,6 @@ private:
 
     // Helpers
     void fillPointCombosRow(int row);
-    bool gdalCreateTransform(const QString& srcCrs, const QString& dstCrs) const;
-    bool gdalTransformXY(double& x, double& y, const QString& srcCrs, const QString& dstCrs) const;
-
     PointManager* m_pm{nullptr};
     CanvasWidget* m_canvas{nullptr};
 
@@ -62,14 +58,9 @@ private:
     QTableWidget* m_table{nullptr};
     QTextEdit* m_report{nullptr};
     QDoubleSpinBox* m_eps{nullptr};
-    // GDAL CRS widgets
-    QLineEdit* m_srcCrsEdit{nullptr};
-    QLineEdit* m_dstCrsEdit{nullptr};
 
     // Last solution
     Mode m_lastMode{Mode::Helmert2D};
-    QString m_lastSrcCrs;
-    QString m_lastDstCrs;
     bool m_hasSolution{false};
     // Helmert
     double m_h_a{1.0}, m_h_b{0.0}, m_h_tx{0.0}, m_h_ty{0.0};

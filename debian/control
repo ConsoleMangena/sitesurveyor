@@ -2,7 +2,7 @@ Source: sitesurveyor-desktop
 Section: utils
 Priority: optional
 Maintainer: Consolation Mangena <consolationmangena@gmail.com>
-Build-Depends: debhelper-compat (= 13), cmake, qt6-base-dev, qt6-base-dev-tools, libgdal-dev
+Build-Depends: debhelper-compat (= 13), cmake, qt6-base-dev, qt6-base-dev-tools
 Standards-Version: 4.7.0
 Rules-Requires-Root: no
 

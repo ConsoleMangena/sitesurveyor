@@ -19,7 +19,7 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential debhelper cmake qt6-base-dev qt6-base-dev-tools libgdal-dev
+          sudo apt-get install -y build-essential debhelper cmake qt6-base-dev qt6-base-dev-tools
 
       - name: Build .deb
         run: |

@@ -9,17 +9,13 @@
 #include <QTextEdit>
 #include <QDoubleSpinBox>
 #include <QLabel>
-#include <QLineEdit>
+#include <QAbstractItemView>
+#include <QStringList>
 #include <QtMath>
 #include <cmath>
 #include <algorithm>
 #include "pointmanager.h"
 #include "canvaswidget.h"
-#include "appsettings.h"
-
-// GDAL/OSR for CRS transformations
-#include <ogr_spatialref.h>
-#include <ogr_api.h>
 
 static double sqr(double v){ return v*v; }
 
@@ -27,29 +23,49 @@ TransformDialog::TransformDialog(PointManager* pm, CanvasWidget* canvas, QWidget
     : QDialog(parent), m_pm(pm), m_canvas(canvas)
 {
     setWindowTitle("Transformations");
-    resize(640, 480);
+    resize(720, 520);
+
     QVBoxLayout* root = new QVBoxLayout(this);
 
     QFormLayout* top = new QFormLayout();
     m_mode = new QComboBox(this);
-    m_mode->addItem("CRS Reproject (GDAL)");
+    m_mode->addItem("Helmert 2D (Similarity)");
+    m_mode->addItem("Affine 2D");
     top->addRow("Mode:", m_mode);
+
+    m_weighting = new QComboBox(this);
+    m_weighting->addItem("Equal weights");
+    m_weighting->addItem("Inverse distance");
+    m_weighting->addItem("Inverse distance squared");
+    top->addRow("Weighting:", m_weighting);
+
+    m_eps = new QDoubleSpinBox(this);
+    m_eps->setRange(1e-6, 1e6);
+    m_eps->setDecimals(6);
+    m_eps->setSingleStep(0.1);
+    m_eps->setValue(1.0);
+    top->addRow("Distance epsilon:", m_eps);
+
     root->addLayout(top);
-    // GDAL CRS controls
-    m_srcCrsEdit = new QLineEdit(this);
-    m_dstCrsEdit = new QLineEdit(this);
-    m_srcCrsEdit->setPlaceholderText("e.g., EPSG:4326");
-    m_dstCrsEdit->setPlaceholderText("e.g., EPSG:3857");
-    m_srcCrsEdit->setText(AppSettings::crs());
-    m_dstCrsEdit->setText(AppSettings::crs());
-    top->addRow(new QLabel("Source CRS (GDAL):", this), m_srcCrsEdit);
-    top->addRow(new QLabel("Target CRS (GDAL):", this), m_dstCrsEdit);
 
+    m_table = new QTableWidget(this);
+    m_table->setColumnCount(3);
+    QStringList headers;
+    headers << "Source point" << "Target point" << "Weight";
+    m_table->setHorizontalHeaderLabels(headers);
+    m_table->horizontalHeader()->setStretchLastSection(true);
+    m_table->verticalHeader()->setVisible(false);
+    m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_table->setSelectionMode(QAbstractItemView::SingleSelection);
+    root->addWidget(m_table, 1);
 
-    // GDAL-only mode: no control pairs table
-    m_table = nullptr;
-
-    // GDAL-only mode: remove control pair row management
+    QHBoxLayout* tableActions = new QHBoxLayout();
+    QPushButton* addPairBtn = new QPushButton("Add Pair", this);
+    QPushButton* removePairBtn = new QPushButton("Remove Selected", this);
+    tableActions->addWidget(addPairBtn);
+    tableActions->addWidget(removePairBtn);
+    tableActions->addStretch();
+    root->addLayout(tableActions);
 
     QHBoxLayout* actions = new QHBoxLayout();
     QPushButton* computeBtn = new QPushButton("Compute", this);
@@ -61,57 +77,115 @@ TransformDialog::TransformDialog(PointManager* pm, CanvasWidget* canvas, QWidget
     actions->addWidget(applyDrawBtn);
     root->addLayout(actions);
 
-    m_report = new QTextEdit(this); m_report->setReadOnly(true);
+    m_report = new QTextEdit(this);
+    m_report->setReadOnly(true);
     root->addWidget(m_report);
 
+    connect(addPairBtn, &QPushButton::clicked, this, &TransformDialog::addRow);
+    connect(removePairBtn, &QPushButton::clicked, this, &TransformDialog::removeSelected);
     connect(computeBtn, &QPushButton::clicked, this, &TransformDialog::computeTransform);
     connect(applyPtsBtn, &QPushButton::clicked, this, &TransformDialog::applyToPoints);
     connect(applyDrawBtn, &QPushButton::clicked, this, &TransformDialog::applyToDrawing);
 
-    // Default CRS from settings
-    if (m_srcCrsEdit && m_srcCrsEdit->text().isEmpty()) m_srcCrsEdit->setText(AppSettings::crs());
-    if (m_dstCrsEdit && m_dstCrsEdit->text().isEmpty()) m_dstCrsEdit->setText(AppSettings::crs());
+    addRow();
+    reload();
 }
 
 void TransformDialog::reload()
 {
-    // Nothing to reload for GDAL-only mode beyond ensuring defaults
-    if (m_srcCrsEdit && m_srcCrsEdit->text().isEmpty()) m_srcCrsEdit->setText(AppSettings::crs());
-    if (m_dstCrsEdit && m_dstCrsEdit->text().isEmpty()) m_dstCrsEdit->setText(AppSettings::crs());
+    if (!m_pm || !m_table) {
+        return;
+    }
+    if (m_table->rowCount() == 0) {
+        addRow();
+    }
+    for (int row = 0; row < m_table->rowCount(); ++row) {
+        fillPointCombosRow(row);
+    }
 }
 
 void TransformDialog::fillPointCombosRow(int row)
 {
-    if (!m_pm) return;
+    if (!m_pm || !m_table) {
+        return;
+    }
     const QStringList names = m_pm->getPointNames();
-    if (!m_table->cellWidget(row,0)) { auto* cb = new QComboBox(m_table); cb->addItems(names); m_table->setCellWidget(row,0,cb); }
-    if (!m_table->cellWidget(row,1)) { auto* cb2 = new QComboBox(m_table); cb2->addItems(names); m_table->setCellWidget(row,1,cb2); }
-    if (!m_table->cellWidget(row,2)) { auto* w = new QDoubleSpinBox(m_table); w->setRange(0.0, 1e9); w->setDecimals(6); w->setValue(1.0); m_table->setCellWidget(row,2,w); }
+    auto ensureCombo = [&](int column) {
+        auto* combo = qobject_cast<QComboBox*>(m_table->cellWidget(row, column));
+        QString previous = combo ? combo->currentText() : QString();
+        if (!combo) {
+            combo = new QComboBox(m_table);
+            m_table->setCellWidget(row, column, combo);
+        }
+        combo->blockSignals(true);
+        combo->clear();
+        combo->addItems(names);
+        if (!previous.isEmpty()) {
+            int idx = combo->findText(previous);
+            if (idx >= 0) {
+                combo->setCurrentIndex(idx);
+            }
+        }
+        combo->blockSignals(false);
+    };
+
+    ensureCombo(0);
+    ensureCombo(1);
+
+    auto* weight = qobject_cast<QDoubleSpinBox*>(m_table->cellWidget(row, 2));
+    if (!weight) {
+        weight = new QDoubleSpinBox(m_table);
+        weight->setRange(0.0, 1e9);
+        weight->setDecimals(6);
+        weight->setValue(1.0);
+        m_table->setCellWidget(row, 2, weight);
+    }
 }
 
 void TransformDialog::addRow()
 {
-    int r = m_table->rowCount(); m_table->insertRow(r); fillPointCombosRow(r);
+    if (!m_table) {
+        return;
+    }
+    const int row = m_table->rowCount();
+    m_table->insertRow(row);
+    fillPointCombosRow(row);
 }
 
 void TransformDialog::removeSelected()
 {
-    auto sel = m_table->selectionModel()->selectedRows();
-    for (int i=sel.size()-1;i>=0;--i) m_table->removeRow(sel.at(i).row());
+    if (!m_table) {
+        return;
+    }
+    const auto selected = m_table->selectionModel() ? m_table->selectionModel()->selectedRows() : QModelIndexList();
+    for (int i = selected.size() - 1; i >= 0; --i) {
+        m_table->removeRow(selected.at(i).row());
+    }
 }
 
 QVector<TransformDialog::Pair> TransformDialog::collectPairs() const
 {
     QVector<Pair> pairs;
-    for (int r=0;r<m_table->rowCount();++r) {
-        auto* cbS = qobject_cast<QComboBox*>(m_table->cellWidget(r,0));
-        auto* cbD = qobject_cast<QComboBox*>(m_table->cellWidget(r,1));
-        auto* w = qobject_cast<QDoubleSpinBox*>(m_table->cellWidget(r,2));
-        if (!cbS || !cbD) continue;
+    if (!m_table) {
+        return pairs;
+    }
+    for (int r = 0; r < m_table->rowCount(); ++r) {
+        auto* cbS = qobject_cast<QComboBox*>(m_table->cellWidget(r, 0));
+        auto* cbD = qobject_cast<QComboBox*>(m_table->cellWidget(r, 1));
+        auto* weight = qobject_cast<QDoubleSpinBox*>(m_table->cellWidget(r, 2));
+        if (!cbS || !cbD) {
+            continue;
+        }
         const QString s = cbS->currentText();
         const QString d = cbD->currentText();
-        if (s.isEmpty() || d.isEmpty()) continue;
-        Pair p; p.src = s; p.dst = d; p.weight = w ? w->value() : 1.0; pairs.append(p);
+        if (s.isEmpty() || d.isEmpty()) {
+            continue;
+        }
+        Pair pair;
+        pair.src = s;
+        pair.dst = d;
+        pair.weight = weight ? weight->value() : 1.0;
+        pairs.append(pair);
     }
     return pairs;
 }
@@ -233,91 +307,100 @@ QPointF TransformDialog::applyAffineTo(const QPointF& p, double a1, double a2, d
     return QPointF(a1*p.x() + a2*p.y() + a3, b1*p.x() + b2*p.y() + b3);
 }
 
-bool TransformDialog::gdalCreateTransform(const QString& srcCrs, const QString& dstCrs) const
-{
-    OGRSpatialReference srcSRS;
-    OGRSpatialReference dstSRS;
-    if (srcSRS.SetFromUserInput(srcCrs.toUtf8().constData()) != OGRERR_NONE) return false;
-    if (dstSRS.SetFromUserInput(dstCrs.toUtf8().constData()) != OGRERR_NONE) return false;
-#ifdef OAMS_TRADITIONAL_GIS_ORDER
-    srcSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
-    dstSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
-#endif
-    OGRCoordinateTransformation* ct = OGRCreateCoordinateTransformation(&srcSRS, &dstSRS);
-    if (!ct) return false;
-    OCTDestroyCoordinateTransformation(ct);
-    return true;
-}
-
-bool TransformDialog::gdalTransformXY(double& x, double& y, const QString& srcCrs, const QString& dstCrs) const
-{
-    OGRSpatialReference srcSRS;
-    OGRSpatialReference dstSRS;
-    if (srcSRS.SetFromUserInput(srcCrs.toUtf8().constData()) != OGRERR_NONE) return false;
-    if (dstSRS.SetFromUserInput(dstCrs.toUtf8().constData()) != OGRERR_NONE) return false;
-#ifdef OAMS_TRADITIONAL_GIS_ORDER
-    srcSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
-    dstSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
-#endif
-    OGRCoordinateTransformation* ct = OGRCreateCoordinateTransformation(&srcSRS, &dstSRS);
-    if (!ct) return false;
-    double z = 0.0;
-    int ok = ct->Transform(1, &x, &y, &z);
-    OCTDestroyCoordinateTransformation(ct);
-    return ok != 0;
-}
-
 void TransformDialog::computeTransform()
 {
     m_hasSolution = false;
-    if (!m_pm) { m_report->setText("No points"); return; }
-
-    // GDAL CRS mode only
-    {
-        const QString src = m_srcCrsEdit ? m_srcCrsEdit->text().trimmed() : QString();
-        const QString dst = m_dstCrsEdit ? m_dstCrsEdit->text().trimmed() : QString();
-        if (src.isEmpty() || dst.isEmpty()) { m_report->setText("Enter Source and Target CRS (e.g., EPSG:4326)"); return; }
-        if (!gdalCreateTransform(src, dst)) { m_report->setText("Failed to create GDAL transform. Check CRS codes."); return; }
-        m_lastMode = Mode::GdalCRS;
-        m_lastSrcCrs = src;
-        m_lastDstCrs = dst;
-        m_hasSolution = true;
-        m_report->setText(QString("GDAL transform ready: %1 -> %2").arg(src, dst));
+    if (!m_pm || !m_table) {
+        m_report->setText("No points available");
         return;
     }
-    QVector<Pair> pairs = collectPairs(); if (pairs.size() < 2) { m_report->setText("Add at least two control pairs"); return; }
-    QVector<QPointF> src, dst; src.reserve(pairs.size()); dst.reserve(pairs.size());
-    QVector<double> w; w.reserve(pairs.size());
-    double cx=0.0, cy=0.0; int cnt=0;
-    for (const auto& p : pairs) {
-        if (!m_pm->hasPoint(p.src) || !m_pm->hasPoint(p.dst)) continue;
-        const Point ps = m_pm->getPoint(p.src);
-        const Point pd = m_pm->getPoint(p.dst);
-        src.push_back(QPointF(ps.x, ps.y)); dst.push_back(QPointF(pd.x, pd.y));
-        cx += ps.x; cy += ps.y; cnt++;
-        w.push_back(p.weight);
+
+    const QVector<Pair> pairs = collectPairs();
+    if (pairs.isEmpty()) {
+        m_report->setText("Add control pairs to compute a transform");
+        return;
     }
-    if (src.size() < 2) { m_report->setText("Insufficient valid pairs"); return; }
-    cx /= std::max(1, cnt); cy /= std::max(1, cnt);
-    if (m_weighting->currentIndex() > 0) {
-        for (int i=0;i<src.size();++i) {
-            const double d = std::hypot(src[i].x()-cx, src[i].y()-cy);
-            const double eps = m_eps->value();
+
+    QVector<QPointF> src;
+    QVector<QPointF> dst;
+    QVector<double> weights;
+    src.reserve(pairs.size());
+    dst.reserve(pairs.size());
+    weights.reserve(pairs.size());
+
+    double cx = 0.0;
+    double cy = 0.0;
+    int counted = 0;
+
+    for (const auto& pair : pairs) {
+        if (!m_pm->hasPoint(pair.src) || !m_pm->hasPoint(pair.dst)) {
+            continue;
+        }
+        const Point srcPt = m_pm->getPoint(pair.src);
+        const Point dstPt = m_pm->getPoint(pair.dst);
+        src.append(QPointF(srcPt.x, srcPt.y));
+        dst.append(QPointF(dstPt.x, dstPt.y));
+        weights.append(pair.weight);
+        cx += srcPt.x;
+        cy += srcPt.y;
+        ++counted;
+    }
+
+    const int requiredPairs = (!m_mode || m_mode->currentIndex() == 0) ? 2 : 3;
+    if (src.size() < requiredPairs) {
+        m_report->setText("Not enough valid control pairs for the selected mode");
+        return;
+    }
+
+    cx /= std::max(1, counted);
+    cy /= std::max(1, counted);
+
+    if (m_weighting && m_weighting->currentIndex() > 0) {
+        const double eps = m_eps ? m_eps->value() : 1.0;
+        for (int i = 0; i < src.size(); ++i) {
+            const double d = std::hypot(src[i].x() - cx, src[i].y() - cy);
             double mult = 1.0 / std::max(eps, d);
-            if (m_weighting->currentIndex() == 2) mult = mult*mult;
-            w[i] *= mult;
+            if (m_weighting->currentIndex() == 2) {
+                mult *= mult;
+            }
+            weights[i] *= mult;
         }
     }
-    QString rep;
+
+    QString report;
     double rms = 0.0;
-    if (m_mode->currentIndex() == 0) {
-        double a,b,tx,ty; if (!solveHelmert(src,dst,w,a,b,tx,ty,rms,rep)) { m_report->setText("Solve failed"); return; }
-        m_lastMode = Mode::Helmert2D; m_h_a=a; m_h_b=b; m_h_tx=tx; m_h_ty=ty; m_hasSolution=true;
+    if (!m_mode || m_mode->currentIndex() == 0) {
+        double a = 0.0;
+        double b = 0.0;
+        double tx = 0.0;
+        double ty = 0.0;
+        if (!solveHelmert(src, dst, weights, a, b, tx, ty, rms, report)) {
+            m_report->setText("Failed to compute Helmert transform");
+            return;
+        }
+        m_lastMode = Mode::Helmert2D;
+        m_h_a = a;
+        m_h_b = b;
+        m_h_tx = tx;
+        m_h_ty = ty;
     } else {
-        double a1,a2,a3,b1,b2,b3; if (!solveAffine(src,dst,w,a1,a2,a3,b1,b2,b3,rms,rep)) { m_report->setText("Solve failed"); return; }
-        m_lastMode = Mode::Affine2D; m_af_a1=a1; m_af_a2=a2; m_af_a3=a3; m_af_b1=b1; m_af_b2=b2; m_af_b3=b3; m_hasSolution=true;
+        double a1 = 0.0, a2 = 0.0, a3 = 0.0;
+        double b1 = 0.0, b2 = 0.0, b3 = 0.0;
+        if (!solveAffine(src, dst, weights, a1, a2, a3, b1, b2, b3, rms, report)) {
+            m_report->setText("Failed to compute affine transform");
+            return;
+        }
+        m_lastMode = Mode::Affine2D;
+        m_af_a1 = a1;
+        m_af_a2 = a2;
+        m_af_a3 = a3;
+        m_af_b1 = b1;
+        m_af_b2 = b2;
+        m_af_b3 = b3;
     }
-    m_report->setText(rep);
+
+    m_hasSolution = true;
+    m_report->setText(report);
 }
 
 void TransformDialog::applyToPoints()
@@ -328,14 +411,10 @@ void TransformDialog::applyToPoints()
         QPointF q;
         if (m_lastMode == Mode::Helmert2D) {
             q = applyHelmertTo(QPointF(p.x, p.y), m_h_a, m_h_b, m_h_tx, m_h_ty);
-        } else if (m_lastMode == Mode::Affine2D) {
+        } else {
             q = applyAffineTo(QPointF(p.x, p.y), m_af_a1, m_af_a2, m_af_a3, m_af_b1, m_af_b2, m_af_b3);
-        } else /* GDAL */ {
-            double x = p.x, y = p.y;
-            if (!gdalTransformXY(x, y, m_lastSrcCrs, m_lastDstCrs)) continue;
-            q = QPointF(x, y);
         }
-        const QString prefix = (m_lastMode == Mode::GdalCRS) ? QStringLiteral("R_") : QStringLiteral("T_");
+        const QString prefix = QStringLiteral("T_");
         const QString name = prefix + p.name;
         Point np(name, q.x(), q.y(), p.z);
         m_pm->addPoint(np);
@@ -346,21 +425,16 @@ void TransformDialog::applyToPoints()
 void TransformDialog::applyToDrawing()
 {
     if (!m_hasSolution || !m_canvas) return;
-    const QString layer = (m_lastMode == Mode::GdalCRS) ? QStringLiteral("Reprojected") : QStringLiteral("Transformed");
+    const QString layer = QStringLiteral("Transformed");
     for (int i=0;i<m_canvas->lineCount();++i) {
         QPointF a,b; if (!m_canvas->lineEndpoints(i,a,b)) continue;
         QPointF aa = a, bb = b;
         if (m_lastMode==Mode::Helmert2D) {
             aa = applyHelmertTo(a, m_h_a, m_h_b, m_h_tx, m_h_ty);
             bb = applyHelmertTo(b, m_h_a, m_h_b, m_h_tx, m_h_ty);
-        } else if (m_lastMode==Mode::Affine2D) {
+        } else {
             aa = applyAffineTo(a, m_af_a1, m_af_a2, m_af_a3, m_af_b1, m_af_b2, m_af_b3);
             bb = applyAffineTo(b, m_af_a1, m_af_a2, m_af_a3, m_af_b1, m_af_b2, m_af_b3);
-        } else {
-            double x1=a.x(), y1=a.y(); double x2=b.x(), y2=b.y();
-            if (!gdalTransformXY(x1, y1, m_lastSrcCrs, m_lastDstCrs)) continue;
-            if (!gdalTransformXY(x2, y2, m_lastSrcCrs, m_lastDstCrs)) continue;
-            aa = QPointF(x1, y1); bb = QPointF(x2, y2);
         }
         int before = m_canvas->lineCount();
         m_canvas->addLine(aa, bb);
@@ -372,8 +446,7 @@ void TransformDialog::applyToDrawing()
         QVector<QPointF> out; out.reserve(pts.size());
         for (const auto& p : pts) {
             if (m_lastMode==Mode::Helmert2D) out.append(applyHelmertTo(p, m_h_a, m_h_b, m_h_tx, m_h_ty));
-            else if (m_lastMode==Mode::Affine2D) out.append(applyAffineTo(p, m_af_a1, m_af_a2, m_af_a3, m_af_b1, m_af_b2, m_af_b3));
-            else { double x=p.x(), y=p.y(); if (gdalTransformXY(x,y, m_lastSrcCrs, m_lastDstCrs)) out.append(QPointF(x,y)); }
+            else out.append(applyAffineTo(p, m_af_a1, m_af_a2, m_af_a3, m_af_b1, m_af_b2, m_af_b3));
         }
         if (!out.isEmpty()) m_canvas->addPolylineEntity(out, closed, layer);
     }
@@ -382,17 +455,20 @@ void TransformDialog::applyToDrawing()
         if (!m_canvas->textData(i, t, pos, h, ang, lay)) continue;
         QPointF pp = pos;
         if (m_lastMode==Mode::Helmert2D) pp = applyHelmertTo(pos, m_h_a, m_h_b, m_h_tx, m_h_ty);
-        else if (m_lastMode==Mode::Affine2D) pp = applyAffineTo(pos, m_af_a1, m_af_a2, m_af_a3, m_af_b1, m_af_b2, m_af_b3);
-        else { double x=pos.x(), y=pos.y(); if (gdalTransformXY(x,y, m_lastSrcCrs, m_lastDstCrs)) pp = QPointF(x,y); else continue; }
+        else pp = applyAffineTo(pos, m_af_a1, m_af_a2, m_af_a3, m_af_b1, m_af_b2, m_af_b3);
         m_canvas->addText(t, pp, h, ang, layer);
     }
     for (int i=0;i<m_canvas->dimensionCount();++i) {
         QPointF a,b; double th=0.0; QString lay;
         if (!m_canvas->dimensionData(i, a, b, th, lay)) continue;
         QPointF aa=a, bb=b;
-        if (m_lastMode==Mode::Helmert2D) { aa = applyHelmertTo(a, m_h_a, m_h_b, m_h_tx, m_h_ty); bb = applyHelmertTo(b, m_h_a, m_h_b, m_h_tx, m_h_ty); }
-        else if (m_lastMode==Mode::Affine2D) { aa = applyAffineTo(a, m_af_a1, m_af_a2, m_af_a3, m_af_b1, m_af_b2, m_af_b3); bb = applyAffineTo(b, m_af_a1, m_af_a2, m_af_a3, m_af_b1, m_af_b2, m_af_b3); }
-        else { double x1=a.x(), y1=a.y(); double x2=b.x(), y2=b.y(); if (!gdalTransformXY(x1,y1, m_lastSrcCrs, m_lastDstCrs)) continue; if (!gdalTransformXY(x2,y2, m_lastSrcCrs, m_lastDstCrs)) continue; aa=QPointF(x1,y1); bb=QPointF(x2,y2); }
+        if (m_lastMode==Mode::Helmert2D) {
+            aa = applyHelmertTo(a, m_h_a, m_h_b, m_h_tx, m_h_ty);
+            bb = applyHelmertTo(b, m_h_a, m_h_b, m_h_tx, m_h_ty);
+        } else {
+            aa = applyAffineTo(a, m_af_a1, m_af_a2, m_af_a3, m_af_b1, m_af_b2, m_af_b3);
+            bb = applyAffineTo(b, m_af_a1, m_af_a2, m_af_a3, m_af_b1, m_af_b2, m_af_b3);
+        }
         m_canvas->addDimension(aa, bb, th, layer);
     }
 }
