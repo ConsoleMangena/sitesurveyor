@@ -5,6 +5,7 @@
 
 class QCheckBox;
 class QDoubleSpinBox;
+class QSpinBox;
 class QPushButton;
 class QComboBox;
 class QLineEdit;
@@ -23,7 +24,6 @@ private slots:
 
 signals:
     void settingsApplied();
-    void signOutRequested();
 
 private:
     void loadFromCanvas();
@@ -38,11 +38,9 @@ private:
     QComboBox* m_unitsCombo;   // Metric/Imperial
     QComboBox* m_angleCombo;   // DMS/Decimal
     QLineEdit* m_crsEdit;      // EPSG code or proj string
-    // Profile
-    QLineEdit* m_firstEdit;
-    QLineEdit* m_lastEdit;
-    QLineEdit* m_emailEdit;
-    QPushButton* m_signOutButton;
+    // Autosave
+    QCheckBox* m_autosaveCheck;
+    QSpinBox* m_autosaveIntervalSpin; // minutes
     QPushButton* m_applyButton;
     QPushButton* m_closeButton;
 };

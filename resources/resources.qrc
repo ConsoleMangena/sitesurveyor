@@ -37,7 +37,7 @@
     <file alias="file-export.svg">icons/export.svg</file>
     <file alias="file-menu.svg">icons/create_menu.svg</file>
     <file alias="data-menu.svg">icons/document.svg</file>
-    <file alias="logout-2.svg">icons/quit.svg</file>
+    <file alias="exit.svg">icons/quit.svg</file>
     <file alias="arrow-back-up.svg">icons/undo.svg</file>
     <file alias="arrow-forward-up.svg">icons/redo.svg</file>
     <file alias="edit-menu.svg">icons/properties.svg</file>

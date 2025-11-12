@@ -2,6 +2,7 @@
 #include "appsettings.h"
 #include "iconmanager.h"
 
+#include <QApplication>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -133,21 +134,21 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
         row->setSpacing(6);
         m_newButton = new QToolButton(this);
         m_newButton->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-        m_newButton->setIcon(IconManager::iconUnique("file-plus", "welcome_new", "N"));
+m_newButton->setIcon(IconManager::icon("file-plus"));
         m_newButton->setText("New Drawing");
         connect(m_newButton, &QToolButton::clicked, this, &WelcomeWidget::onCreateNew);
         row->addWidget(m_newButton);
 
         m_templateButton = new QToolButton(this);
         m_templateButton->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-        m_templateButton->setIcon(IconManager::iconUnique("file-plus", "welcome_template", "T"));
+m_templateButton->setIcon(IconManager::icon("file-plus"));
         m_templateButton->setText("From Template...");
         connect(m_templateButton, &QToolButton::clicked, this, &WelcomeWidget::onOpenTemplate);
         row->addWidget(m_templateButton);
 
         m_openButton = new QToolButton(this);
         m_openButton->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-        m_openButton->setIcon(IconManager::iconUnique("folder-open", "welcome_open", "O"));
+m_openButton->setIcon(IconManager::icon("folder-open"));
         m_openButton->setText("Open...");
         connect(m_openButton, &QToolButton::clicked, this, &WelcomeWidget::onOpenProject);
         row->addWidget(m_openButton);
@@ -165,12 +166,12 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
         connect(m_searchEdit, &QLineEdit::textChanged, this, &WelcomeWidget::onSearchTextChanged);
         row->addWidget(m_searchEdit, 1);
         m_pinButton = new QToolButton(this);
-        m_pinButton->setIcon(IconManager::iconUnique("star", "welcome_pin", "P"));
+m_pinButton->setIcon(IconManager::icon("star"));
         m_pinButton->setToolTip("Pin selected");
         connect(m_pinButton, &QToolButton::clicked, this, &WelcomeWidget::onPinSelected);
         row->addWidget(m_pinButton);
         m_unpinButton = new QToolButton(this);
-        m_unpinButton->setIcon(IconManager::iconUnique("clear", "welcome_unpin", "UP"));
+m_unpinButton->setIcon(IconManager::icon("clear"));
         m_unpinButton->setToolTip("Unpin selected");
         connect(m_unpinButton, &QToolButton::clicked, this, &WelcomeWidget::onUnpinSelected);
         row->addWidget(m_unpinButton);
@@ -223,25 +224,19 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
     
 
 
+    // Preferences shortcut on the welcome page
+    QHBoxLayout* prefsRow = new QHBoxLayout();
+    prefsRow->addStretch();
+    QToolButton* prefsBtn = new QToolButton(this);
+    prefsBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    prefsBtn->setIcon(IconManager::icon("settings"));
+    prefsBtn->setText("Settings...");
+    connect(prefsBtn, &QToolButton::clicked, this, [this](){ emit openPreferencesRequested(); });
+    prefsRow->addWidget(prefsBtn, 0, Qt::AlignRight);
+    rightLayout->addLayout(prefsRow);
+
     rightLayout->addLayout(form);
 
-    // Load .env into process environment (optional convenience)
-    {
-        const QString envPath = QDir::current().absoluteFilePath(".env");
-        QFile f(envPath);
-        if (f.exists() && f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QTextStream ts(&f);
-            while (!ts.atEnd()) {
-                const QString line = ts.readLine();
-                if (line.trimmed().isEmpty() || line.trimmed().startsWith('#')) continue;
-                const int eq = line.indexOf('=');
-                if (eq <= 0) continue;
-                const QString key = line.left(eq).trimmed();
-                const QString val = line.mid(eq+1).trimmed();
-                if (!key.isEmpty()) qputenv(key.toUtf8().constData(), val.toUtf8());
-            }
-    }
-    }
 
     // Connections
     connect(m_disciplineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &WelcomeWidget::onDisciplineChanged);
@@ -252,10 +247,7 @@ WelcomeWidget::WelcomeWidget(QWidget* parent)
 
  
 
-void WelcomeWidget::signOut()
-{
-    emit disciplineChanged();
-}
+
 
  
 
@@ -354,8 +346,8 @@ void WelcomeWidget::refreshRecentList()
         QListWidgetItem* it = new QListWidgetItem(QFileInfo(path).fileName(), m_recentList);
         it->setToolTip(path);
         it->setData(Qt::UserRole, path);
-        if (pinned) it->setIcon(IconManager::iconUnique("star", QString("recent_pin_%1").arg(path), "P"));
-        else it->setIcon(IconManager::iconUnique("folder-open", QString("recent_file_%1").arg(path), "R"));
+if (pinned) it->setIcon(IconManager::icon("star"));
+        else it->setIcon(IconManager::icon("folder-open"));
         m_recentList->addItem(it);
     };
     for (const QString& p : pins) addItem(p, true);

@@ -39,3 +39,6 @@ debian/sitesurveyor-desktop/
 
 # Dist artifacts
 dist/
+
+# Local environment
+.env

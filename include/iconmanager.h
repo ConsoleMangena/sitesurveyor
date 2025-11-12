@@ -8,7 +8,6 @@
 class IconManager {
 public:
     static QIcon icon(const QString& name);
-    static QIcon iconUnique(const QString& name, const QString& key, const QString& badgeText = QString());
 
     // Enable/disable monochrome icons (useful for dark mode to force white icons)
     static void setMonochrome(bool enabled);

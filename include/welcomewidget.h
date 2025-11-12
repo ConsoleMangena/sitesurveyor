@@ -21,7 +21,6 @@ class WelcomeWidget : public QWidget
 public:
     explicit WelcomeWidget(QWidget* parent = nullptr);
     void reload();
-    void signOut();
 
 signals:
     void disciplineChanged();
@@ -30,6 +29,7 @@ signals:
     void openProjectRequested();
     void openPathRequested(const QString& path);
     void openTemplateRequested(const QString& resourcePath);
+    void openPreferencesRequested();
 
 private slots:
     void onDisciplineChanged(int index);
@@ -47,7 +47,6 @@ private:
     // Header
     QLabel* m_title{nullptr};
     QLabel* m_description{nullptr};
-    QToolButton* m_accountButton{nullptr};
     // Tabs
     QTabWidget* m_tabs{nullptr};
     // Start tab widgets
