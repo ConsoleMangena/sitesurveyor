@@ -107,8 +107,10 @@ endif()
 include(GNUInstallDirs)
 install(TARGETS SiteSurveyor RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES resources/sitesurveyor.desktop DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
-# Install official logo as the application icon
+# Install official logo into icon theme hierarchy
 install(FILES resources/logo/icons8-land-240.svg DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps RENAME sitesurveyor.svg)
+install(FILES resources/logo/sitesurveyor_256.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/256x256/apps RENAME sitesurveyor.png)
+install(FILES resources/logo/sitesurveyor_128.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/128x128/apps RENAME sitesurveyor.png)
 
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(SiteSurveyor)

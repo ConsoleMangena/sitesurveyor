@@ -121,6 +121,7 @@ private:
     void setupConnections();
     void updateLayerStatusText();
     void updateLicenseStateUI();
+    void applyUiStyling();
     void applyEngineeringPresetIfNeeded();
     void updatePinnedGroupsUI();
     void updateMeasureLabelText();
@@ -213,7 +214,6 @@ private:
     QAction* m_undoAction{nullptr};
     QAction* m_redoAction{nullptr};
     QAction* m_deleteSelectedAction{nullptr};
-    QAction* m_resetLayoutAction{nullptr};
     QAction* m_darkModeAction{nullptr};
     QAction* m_toggleProjectPlanAction{nullptr};
     QAction* m_showStartPageAction{nullptr};

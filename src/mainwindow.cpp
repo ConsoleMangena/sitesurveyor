@@ -24,6 +24,8 @@
 #include <QToolBar>
 #include <QStatusBar>
 #include <QDockWidget>
+#include <QAbstractItemView>
+#include <QFont>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QSplitter>
@@ -73,6 +75,21 @@
 #include <QEasingCurve>
 #include <QToolTip>
 #include <QPointer>
+#include <QStyle>
+#include <algorithm>
+
+namespace {
+void setToggleActive(QToolButton* button, bool active)
+{
+    if (!button) return;
+    button->setProperty("active", active);
+    if (QStyle* style = button->style()) {
+        style->unpolish(button);
+        style->polish(button);
+    }
+    button->update();
+}
+}
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
@@ -138,6 +155,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     // Apply Engineering Surveying preset (layers, units) if needed
     applyEngineeringPresetIfNeeded();
     setupConnections();
+    applyUiStyling();
     // Determine initial UI state based on license
     updateLicenseStateUI();
     // Always show Start page (Welcome) on app launch
@@ -593,8 +611,173 @@ void MainWindow::toggleDarkMode(bool on)
         }
     }
     if (hadBars) setupToolbar();
+    applyUiStyling();
     // Persist preference
     AppSettings::setDarkMode(on);
+}
+
+void MainWindow::applyUiStyling()
+{
+    QFont base = font();
+    if (base.pointSizeF() <= 0.0) base.setPointSize(10);
+    if (base.pointSizeF() < 10.0) base.setPointSizeF(10.0);
+    base.setStyleStrategy(QFont::PreferAntialias);
+    setFont(base);
+
+    if (!m_darkMode) {
+        const QString windowCss = QStringLiteral(R"(
+            QMainWindow {
+                background-color: #f7f8fb;
+            }
+            QMenuBar {
+                background: #ffffff;
+                border-bottom: 1px solid #d9dde5;
+                padding: 2px 6px;
+            }
+            QMenuBar::item {
+                border-radius: 4px;
+                padding: 4px 10px;
+                margin: 1px 4px;
+            }
+            QMenuBar::item:selected {
+                background-color: rgba(74,144,217,0.18);
+            }
+            QMenu {
+                border: 1px solid #d9dde5;
+                padding: 6px 8px;
+            }
+            QMenu::item {
+                padding: 4px 18px 4px 12px;
+            }
+            QMenu::item:selected {
+                background-color: rgba(74,144,217,0.22);
+            }
+            QDockWidget::title {
+                padding: 6px 10px;
+                font-weight: 600;
+                background-color: #eef1f7;
+                border-bottom: 1px solid #d9dde5;
+            }
+        )");
+        setStyleSheet(windowCss);
+    } else {
+        setStyleSheet(QString());
+    }
+
+    if (m_statusBar) {
+        const QString statusCss = m_darkMode
+            ? QStringLiteral(R"(
+                QStatusBar {
+                    background-color: #2d2f31;
+                    border-top: 1px solid #3a3d3f;
+                    padding: 0 8px;
+                }
+                QStatusBar QLabel#StatusCoordinateLabel,
+                QStatusBar QLabel#StatusInfoLabel {
+                    color: #f0f0f0;
+                    padding: 0 4px;
+                }
+                QStatusBar QToolButton#StatusToggle {
+                    border-radius: 6px;
+                    padding: 3px 10px;
+                    background-color: transparent;
+                    color: #f0f0f0;
+                }
+                QStatusBar QToolButton#StatusToggle[active="true"] {
+                    background-color: #4a90d9;
+                    color: #ffffff;
+                }
+                QStatusBar QFrame#StatusSeparator {
+                    background-color: rgba(255,255,255,0.18);
+                }
+            )")
+            : QStringLiteral(R"(
+                QStatusBar {
+                    background-color: #ffffff;
+                    border-top: 1px solid #d9dde5;
+                    padding: 0 8px;
+                }
+                QStatusBar QLabel#StatusCoordinateLabel {
+                    font-weight: 600;
+                    color: #2c3137;
+                }
+                QStatusBar QLabel#StatusInfoLabel {
+                    color: #49505a;
+                    padding: 0 6px;
+                }
+                QStatusBar QToolButton#StatusToggle {
+                    border-radius: 6px;
+                    padding: 3px 12px;
+                    margin-left: 4px;
+                    font-weight: 600;
+                    color: #2c3137;
+                    background-color: transparent;
+                }
+                QStatusBar QToolButton#StatusToggle:hover {
+                    background-color: rgba(74,144,217,0.18);
+                }
+                QStatusBar QToolButton#StatusToggle[active="true"] {
+                    background-color: #4a90d9;
+                    color: #ffffff;
+                }
+                QStatusBar QFrame#StatusSeparator {
+                    background-color: #d9dde5;
+                }
+            )");
+        m_statusBar->setStyleSheet(statusCss);
+    }
+
+    setToggleActive(m_snapButton, m_snapButton && m_snapButton->isChecked());
+    setToggleActive(m_gridButton, m_gridButton && m_gridButton->isChecked());
+    setToggleActive(m_orthoButton, m_orthoButton && m_orthoButton->isChecked());
+    setToggleActive(m_osnapButton, m_osnapButton && m_osnapButton->isChecked());
+    setToggleActive(m_polarButton, m_polarButton && m_polarButton->isChecked());
+    setToggleActive(m_otrackButton, m_otrackButton && m_otrackButton->isChecked());
+    setToggleActive(m_dynButton, m_dynButton && m_dynButton->isChecked());
+
+    if (m_coordLabel) {
+        QFont coordFont = base;
+        coordFont.setStyleHint(QFont::Monospace);
+        coordFont.setFamily(QStringLiteral("Consolas"));
+    if (coordFont.pointSizeF() > 0.0) coordFont.setPointSizeF(std::max(9.0, base.pointSizeF() - 0.5));
+        coordFont.setWeight(QFont::DemiBold);
+        m_coordLabel->setFont(coordFont);
+    }
+
+    if (m_pointsTable) {
+        QFont tableFont = base;
+        tableFont.setPointSizeF(base.pointSizeF());
+        m_pointsTable->setFont(tableFont);
+        if (QHeaderView* header = m_pointsTable->horizontalHeader()) {
+            QFont headerFont = tableFont;
+            headerFont.setWeight(QFont::DemiBold);
+            header->setFont(headerFont);
+            header->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        }
+        if (QHeaderView* vheader = m_pointsTable->verticalHeader()) {
+            vheader->setVisible(false);
+            vheader->setDefaultSectionSize(24);
+        }
+        m_pointsTable->setAlternatingRowColors(true);
+        m_pointsTable->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+        if (!m_darkMode) {
+            m_pointsTable->setStyleSheet(QStringLiteral(
+                "QTableWidget { alternate-background-color: #f6f8fb; selection-background-color: rgba(74,144,217,0.18); selection-color: #1f242b; gridline-color: #d9dde5; }"
+                "QTableWidget::item { padding: 4px 8px; }"
+                "QHeaderView::section { background-color: #eef1f7; border: none; border-bottom: 1px solid #d9dde5; padding: 6px 8px; font-weight: 600; }"
+            ));
+        } else {
+            m_pointsTable->setStyleSheet(QString());
+        }
+    }
+
+    if (m_commandOutput) {
+        if (m_darkMode) {
+            m_commandOutput->setStyleSheet("QTextEdit { color: #ffffff; background-color: #202020; }");
+        } else {
+            m_commandOutput->setStyleSheet("QTextEdit { color: #1f1f1f; background-color: #f6f6f6; border: 1px solid #d9dde5; border-radius: 4px; }");
+        }
+    }
 }
 
 MainWindow::~MainWindow()
@@ -745,178 +928,175 @@ connect(m_welcomeWidget, &WelcomeWidget::openPathRequested, this, &MainWindow::i
     
     // Status bar with coordinate display and mode toggles
     m_statusBar = statusBar();
-    m_statusBar->setStyleSheet("QStatusBar { border-top: 1px solid #999; }");
-    
-    // Left side: Coordinates
-    m_coordLabel = new QLabel(AppSettings::gaussMode() ? "Y: 0.000  X: 0.000" : "X: 0.000  Y: 0.000");
-    m_coordLabel->setStyleSheet("font-family: Consolas, monospace; font-weight: bold;");
-    m_coordLabel->setMinimumWidth(200);
+    m_statusBar->setSizeGripEnabled(true);
+
+    auto makeSeparator = [this]() {
+        QFrame* sep = new QFrame(m_statusBar);
+        sep->setObjectName("StatusSeparator");
+        sep->setFrameShape(QFrame::VLine);
+        sep->setFrameShadow(QFrame::Plain);
+        sep->setFixedWidth(1);
+        sep->setFixedHeight(18);
+        return sep;
+    };
+    auto initStatusToggleButton = [](QToolButton* button){
+        if (!button) return;
+        button->setObjectName("StatusToggle");
+        button->setCheckable(true);
+        button->setAutoRaise(false);
+        button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        button->setMinimumWidth(60);
+        button->setMinimumHeight(22);
+        button->setCursor(Qt::PointingHandCursor);
+    };
+
+    m_coordLabel = new QLabel(AppSettings::gaussMode() ? "Y: 0.000  X: 0.000" : "X: 0.000  Y: 0.000", this);
+    m_coordLabel->setObjectName("StatusCoordinateLabel");
+    m_coordLabel->setMinimumWidth(220);
     m_statusBar->addWidget(m_coordLabel);
-    
-    // Separator
-    QFrame* sep1 = new QFrame();
-    sep1->setFrameStyle(QFrame::VLine | QFrame::Sunken);
-    m_statusBar->addWidget(sep1);
-    
-    // Drawing aids toggles (SNAP, GRID, ORTHO, OSNAP)
+
+    m_statusBar->addWidget(makeSeparator());
+
     m_snapButton = new QToolButton(this);
+    initStatusToggleButton(m_snapButton);
     m_snapButton->setText("SNAP");
-    m_snapButton->setCheckable(true);
-    m_snapButton->setAutoRaise(false);
-    m_snapButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    m_snapButton->setMinimumWidth(45);
     m_snapAction = new QAction("SNAP", this);
-    m_snapAction->setCheckable(true);
     m_snapAction->setShortcut(QKeySequence(Qt::Key_F9));
+    m_snapAction->setCheckable(true);
     m_snapButton->setDefaultAction(m_snapAction);
-    connect(m_snapAction, &QAction::toggled, this, [this](bool on){
-        m_canvas->setSnapMode(on);
-        m_snapButton->setStyleSheet(on ? "QToolButton { background-color: #4a90d9; color: white; }" : "");
-    });
     addAction(m_snapAction);
+    connect(m_snapAction, &QAction::toggled, this, [this](bool on){
+        if (m_canvas) m_canvas->setSnapMode(on);
+        setToggleActive(m_snapButton, on);
+    });
+    m_snapAction->setChecked(m_canvas ? m_canvas->snapMode() : false);
+    setToggleActive(m_snapButton, m_snapAction->isChecked());
     m_statusBar->addWidget(m_snapButton);
-    
-    // GRID toggle (F7)
+
     QToolButton* gridButton = new QToolButton(this);
+    initStatusToggleButton(gridButton);
     gridButton->setText("GRID");
-    gridButton->setCheckable(true);
-    gridButton->setChecked(true);
-    gridButton->setAutoRaise(false);
-    gridButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    gridButton->setMinimumWidth(45);
     QAction* gridAction = new QAction("GRID", this);
-    gridAction->setCheckable(true);
-    gridAction->setChecked(true);
     gridAction->setShortcut(QKeySequence(Qt::Key_F7));
+    gridAction->setCheckable(true);
     gridButton->setDefaultAction(gridAction);
-    // Track for license locking
     m_gridButton = gridButton;
     m_gridAction = gridAction;
-    connect(gridAction, &QAction::toggled, this, [this, gridButton](bool on){
-        m_canvas->setShowGrid(on);
-        gridButton->setStyleSheet(on ? "QToolButton { background-color: #4a90d9; color: white; }" : "");
-    });
     addAction(gridAction);
+    connect(gridAction, &QAction::toggled, this, [this, gridButton](bool on){
+        if (m_canvas) m_canvas->setShowGrid(on);
+        setToggleActive(gridButton, on);
+    });
+    gridAction->setChecked(m_canvas ? m_canvas->showGrid() : true);
+    setToggleActive(gridButton, gridAction->isChecked());
     m_statusBar->addWidget(gridButton);
-    
-    // ORTHO toggle (F8)
-    m_orthoButton = new QToolButton(this);
-    m_orthoButton->setText("ORTHO");
-    m_orthoButton->setCheckable(true);
-    m_orthoButton->setAutoRaise(false);
-    m_orthoButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    m_orthoButton->setMinimumWidth(50);
-    m_orthoAction = new QAction("ORTHO", this);
-    m_orthoAction->setCheckable(true);
-    m_orthoAction->setShortcut(QKeySequence(Qt::Key_F8));
-    m_orthoButton->setDefaultAction(m_orthoAction);
-    connect(m_orthoAction, &QAction::toggled, this, [this](bool on){
-        m_canvas->setOrthoMode(on);
-        m_orthoButton->setStyleSheet(on ? "QToolButton { background-color: #4a90d9; color: white; }" : "");
-    });
-    addAction(m_orthoAction);
-    m_statusBar->addWidget(m_orthoButton);
-    
-    // OSNAP toggle (F3)  
-    m_osnapButton = new QToolButton(this);
-    m_osnapButton->setText("OSNAP");
-    m_osnapButton->setCheckable(true);
-    m_osnapButton->setChecked(true);
-    m_osnapButton->setAutoRaise(false);
-    m_osnapButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    m_osnapButton->setMinimumWidth(50);
-    m_osnapAction = new QAction("OSNAP", this);
-    m_osnapAction->setCheckable(true);
-    m_osnapAction->setChecked(true);
-    m_osnapAction->setShortcut(QKeySequence(Qt::Key_F3));
-    m_osnapButton->setDefaultAction(m_osnapAction);
-    connect(m_osnapAction, &QAction::toggled, this, [this](bool on){
-        m_canvas->setOsnapMode(on);
-        m_osnapButton->setStyleSheet(on ? "QToolButton { background-color: #4a90d9; color: white; }" : "");
-    });
-    addAction(m_osnapAction);
-    m_statusBar->addWidget(m_osnapButton);
-    
-    // Separator
-    QFrame* sep2 = new QFrame();
-    sep2->setFrameStyle(QFrame::VLine | QFrame::Sunken);
-    m_statusBar->addWidget(sep2);
 
-    // POLAR toggle (F10)
-    m_polarButton = new QToolButton(this);
-    m_polarButton->setText("POLAR");
-    m_polarButton->setCheckable(true);
-    m_polarButton->setAutoRaise(false);
-    m_polarButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    m_polarButton->setMinimumWidth(55);
-    m_polarAction = new QAction("POLAR", this);
-    m_polarAction->setCheckable(true);
-    m_polarAction->setShortcut(QKeySequence(Qt::Key_F10));
-    m_polarButton->setDefaultAction(m_polarAction);
-    connect(m_polarAction, &QAction::toggled, this, [this](bool on){
-        m_canvas->setPolarMode(on);
-        m_polarButton->setStyleSheet(on ? "QToolButton { background-color: #4a90d9; color: white; }" : "");
+    m_orthoButton = new QToolButton(this);
+    initStatusToggleButton(m_orthoButton);
+    m_orthoButton->setText("ORTHO");
+    m_orthoAction = new QAction("ORTHO", this);
+    m_orthoAction->setShortcut(QKeySequence(Qt::Key_F8));
+    m_orthoAction->setCheckable(true);
+    m_orthoButton->setDefaultAction(m_orthoAction);
+    addAction(m_orthoAction);
+    connect(m_orthoAction, &QAction::toggled, this, [this](bool on){
+        if (m_canvas) m_canvas->setOrthoMode(on);
+        setToggleActive(m_orthoButton, on);
     });
+    m_orthoAction->setChecked(m_canvas ? m_canvas->orthoMode() : false);
+    setToggleActive(m_orthoButton, m_orthoAction->isChecked());
+    m_statusBar->addWidget(m_orthoButton);
+
+    m_osnapButton = new QToolButton(this);
+    initStatusToggleButton(m_osnapButton);
+    m_osnapButton->setText("OSNAP");
+    m_osnapAction = new QAction("OSNAP", this);
+    m_osnapAction->setShortcut(QKeySequence(Qt::Key_F3));
+    m_osnapAction->setCheckable(true);
+    m_osnapButton->setDefaultAction(m_osnapAction);
+    addAction(m_osnapAction);
+    connect(m_osnapAction, &QAction::toggled, this, [this](bool on){
+        if (m_canvas) m_canvas->setOsnapMode(on);
+        setToggleActive(m_osnapButton, on);
+    });
+    m_osnapAction->setChecked(m_canvas ? m_canvas->osnapMode() : true);
+    setToggleActive(m_osnapButton, m_osnapAction->isChecked());
+    m_statusBar->addWidget(m_osnapButton);
+
+    m_statusBar->addWidget(makeSeparator());
+
+    m_polarButton = new QToolButton(this);
+    initStatusToggleButton(m_polarButton);
+    m_polarButton->setText("POLAR");
+    m_polarAction = new QAction("POLAR", this);
+    m_polarAction->setShortcut(QKeySequence(Qt::Key_F10));
+    m_polarAction->setCheckable(true);
+    m_polarButton->setDefaultAction(m_polarAction);
     addAction(m_polarAction);
+    connect(m_polarAction, &QAction::toggled, this, [this](bool on){
+        if (m_canvas) m_canvas->setPolarMode(on);
+        setToggleActive(m_polarButton, on);
+    });
+    m_polarAction->setChecked(m_canvas ? m_canvas->polarMode() : false);
+    setToggleActive(m_polarButton, m_polarAction->isChecked());
     m_statusBar->addWidget(m_polarButton);
 
-    // OTRACK toggle (F11)
     m_otrackButton = new QToolButton(this);
+    initStatusToggleButton(m_otrackButton);
     m_otrackButton->setText("OTRACK");
-    m_otrackButton->setCheckable(true);
-    m_otrackButton->setAutoRaise(false);
-    m_otrackButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    m_otrackButton->setMinimumWidth(65);
     m_otrackAction = new QAction("OTRACK", this);
-    m_otrackAction->setCheckable(true);
     m_otrackAction->setShortcut(QKeySequence(Qt::Key_F11));
+    m_otrackAction->setCheckable(true);
     m_otrackButton->setDefaultAction(m_otrackAction);
-    connect(m_otrackAction, &QAction::toggled, this, [this](bool on){
-        m_canvas->setOtrackMode(on);
-        m_otrackButton->setStyleSheet(on ? "QToolButton { background-color: #4a90d9; color: white; }" : "");
-    });
     addAction(m_otrackAction);
+    connect(m_otrackAction, &QAction::toggled, this, [this](bool on){
+        if (m_canvas) m_canvas->setOtrackMode(on);
+        setToggleActive(m_otrackButton, on);
+    });
+    m_otrackAction->setChecked(m_canvas ? m_canvas->otrackMode() : false);
+    setToggleActive(m_otrackButton, m_otrackAction->isChecked());
     m_statusBar->addWidget(m_otrackButton);
 
-    // DYN (Dynamic Input) toggle (F12)
     m_dynButton = new QToolButton(this);
+    initStatusToggleButton(m_dynButton);
     m_dynButton->setText("DYN");
-    m_dynButton->setCheckable(true);
-    m_dynButton->setChecked(true);
-    m_dynButton->setAutoRaise(false);
-    m_dynButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    m_dynButton->setMinimumWidth(45);
     m_dynAction = new QAction("DYN", this);
-    m_dynAction->setCheckable(true);
-    m_dynAction->setChecked(true);
     m_dynAction->setShortcut(QKeySequence(Qt::Key_F12));
+    m_dynAction->setCheckable(true);
     m_dynButton->setDefaultAction(m_dynAction);
-    connect(m_dynAction, &QAction::toggled, this, [this](bool on){
-        m_canvas->setDynInputEnabled(on);
-        m_dynButton->setStyleSheet(on ? "QToolButton { background-color: #4a90d9; color: white; }" : "");
-    });
     addAction(m_dynAction);
+    connect(m_dynAction, &QAction::toggled, this, [this](bool on){
+        if (m_canvas) m_canvas->setDynInputEnabled(on);
+        setToggleActive(m_dynButton, on);
+    });
+    m_dynAction->setChecked(m_canvas ? m_canvas->dynInputEnabled() : true);
+    setToggleActive(m_dynButton, m_dynAction->isChecked());
     m_statusBar->addWidget(m_dynButton);
-    
-    // Status information
-    m_layerStatusLabel = new QLabel("Layer: 0");
-    m_statusBar->addWidget(m_layerStatusLabel);
-    
-    m_statusBar->addWidget(new QLabel(" | "));
-    m_pointCountLabel = new QLabel("Points: 0");
-    m_statusBar->addWidget(m_pointCountLabel);
-    
-    m_statusBar->addWidget(new QLabel(" | "));
-    m_zoomLabel = new QLabel("Zoom: 100%");
-    m_statusBar->addWidget(m_zoomLabel);
-    
-    m_statusBar->addWidget(new QLabel(" | "));
-    m_measureLabel = new QLabel("");
-    m_statusBar->addWidget(m_measureLabel);
 
-    m_statusBar->addWidget(new QLabel(" | "));
-    m_selectionLabel = new QLabel("Selected: 0 pts, 0 lines");
-    m_statusBar->addWidget(m_selectionLabel);
+    QWidget* spacer = new QWidget(this);
+    spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    m_statusBar->addWidget(spacer);
+
+    auto addPermanentSeparator = [&, this]() {
+        m_statusBar->addPermanentWidget(makeSeparator());
+    };
+    auto addInfoLabel = [&, this](QLabel*& target, const QString& text, int minimumWidth) {
+        target = new QLabel(text, this);
+        target->setObjectName("StatusInfoLabel");
+        target->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        if (minimumWidth > 0) target->setMinimumWidth(minimumWidth);
+        m_statusBar->addPermanentWidget(target);
+    };
+
+    addInfoLabel(m_layerStatusLabel, "Layer: 0", 110);
+    addPermanentSeparator();
+    addInfoLabel(m_pointCountLabel, "Points: 0", 110);
+    addPermanentSeparator();
+    addInfoLabel(m_zoomLabel, "Zoom: 100%", 100);
+    addPermanentSeparator();
+    addInfoLabel(m_measureLabel, QString(), 160);
+    addPermanentSeparator();
+    addInfoLabel(m_selectionLabel, "Selected: 0 pts, 0 lines", 220);
     
     updateLayerStatusText();
 }
@@ -977,6 +1157,9 @@ void MainWindow::setupPointsDock()
     m_pointsTable->horizontalHeader()->setStretchLastSection(true);
     m_pointsTable->setAlternatingRowColors(true);
     m_pointsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_pointsTable->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    m_pointsTable->verticalHeader()->setVisible(false);
+    m_pointsTable->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     m_pointsTable->setColumnHidden(3, !AppSettings::use3D());
     
     m_pointsDock->setWidget(m_pointsTable);
@@ -1371,19 +1554,19 @@ exportDxf->setIcon(IconManager::icon("file-export"));
     
     // Modify tools (real tools)
     m_toolTrimAction = toolsMenu->addAction("&Trim");
-m_toolTrimAction->setIcon(IconManager::icon("scissors"));
+m_toolTrimAction->setIcon(IconManager::icon("eraser"));
     connect(m_toolTrimAction, &QAction::triggered, this, &MainWindow::toolTrim);
     m_toolExtendAction = toolsMenu->addAction("&Extend");
-m_toolExtendAction->setIcon(IconManager::icon("arrow-right"));
+m_toolExtendAction->setIcon(IconManager::icon("arrow-forward-up"));
     connect(m_toolExtendAction, &QAction::triggered, this, &MainWindow::toolExtend);
     m_toolOffsetAction = toolsMenu->addAction("&Offset...");
-m_toolOffsetAction->setIcon(IconManager::icon("offset"));
+m_toolOffsetAction->setIcon(IconManager::icon("ruler-measure"));
     connect(m_toolOffsetAction, &QAction::triggered, this, &MainWindow::toolOffset);
     m_toolFilletZeroAction = toolsMenu->addAction("&Fillet (Zero Radius)");
-m_toolFilletZeroAction->setIcon(IconManager::icon("corner-round"));
+m_toolFilletZeroAction->setIcon(IconManager::icon("arc"));
     connect(m_toolFilletZeroAction, &QAction::triggered, this, &MainWindow::toolFilletZero);
     m_toolChamferAction = toolsMenu->addAction("C&hamfer...");
-m_toolChamferAction->setIcon(IconManager::icon("corner"));
+m_toolChamferAction->setIcon(IconManager::icon("square"));
     connect(m_toolChamferAction, &QAction::triggered, this, &MainWindow::toolChamfer);
     QAction* polarInputAct = toolsMenu->addAction("&Polar Input...");
     polarInputAct->setIcon(IconManager::icon("polar"));
@@ -1407,7 +1590,7 @@ m_toolChamferAction->setIcon(IconManager::icon("corner"));
     lsnetAct->setIcon(IconManager::icon("square"));
     connect(lsnetAct, &QAction::triggered, this, &MainWindow::showLSNetwork);
     QAction* transformAct = toolsMenu->addAction("&Transformations...");
-    transformAct->setIcon(IconManager::icon("transform"));
+    transformAct->setIcon(IconManager::icon("regular-polygon"));
     connect(transformAct, &QAction::triggered, this, &MainWindow::showTransformations);
     // Basic hatch pattern loader (preview)
     QAction* hatchPreviewAct = toolsMenu->addAction("Hatch Patterns (Preview)...");
@@ -1465,9 +1648,6 @@ m_toolChamferAction->setIcon(IconManager::icon("corner"));
     
     // Add layout/theme controls
     viewMenu->addSeparator();
-    m_resetLayoutAction = viewMenu->addAction("Reset &Layout");
-    connect(m_resetLayoutAction, &QAction::triggered, this, &MainWindow::resetLayout);
-
     // Settings (top-level) Menu: reuse the same Preferences action
     QMenu* settingsMenu = menuBar()->addMenu("&Settings");
     m_settingsMenu = settingsMenu;
@@ -1652,33 +1832,33 @@ QAction* lengthenAct = new QAction(IconManager::icon("ruler-measure"), "Lengthen
     topBar->addAction(lengthenAct);
     m_lengthenToolAction = lengthenAct;
 
-QAction* trimAct = new QAction(IconManager::icon("scissors"), "Trim", this);
+    QAction* trimAct = new QAction(IconManager::icon("eraser"), "Trim", this);
     trimAct->setToolTip("Trim");
     trimAct->setCheckable(true);
     connect(trimAct, &QAction::toggled, this, [this](bool on){ if (!on) return; if (m_canvas) { m_canvas->setToolMode(CanvasWidget::ToolMode::Trim); m_canvas->startTrim(); } });
     topBar->addAction(trimAct);
     m_trimToolbarAction = trimAct;
 
-QAction* extendAct = new QAction(IconManager::icon("arrow-right"), "Extend", this);
+    QAction* extendAct = new QAction(IconManager::icon("arrow-forward-up"), "Extend", this);
     extendAct->setToolTip("Extend");
     extendAct->setCheckable(true);
     connect(extendAct, &QAction::toggled, this, [this](bool on){ if (!on) return; if (m_canvas) { m_canvas->setToolMode(CanvasWidget::ToolMode::Extend); m_canvas->startExtend(); } });
     topBar->addAction(extendAct);
     m_extendToolbarAction = extendAct;
 
-QAction* offsetAct = new QAction(IconManager::icon("ruler"), "Offset", this);
+    QAction* offsetAct = new QAction(IconManager::icon("ruler-measure"), "Offset", this);
     offsetAct->setCheckable(true);
     connect(offsetAct, &QAction::toggled, this, [this](bool on){ if (!on) return; bool ok=false; double d=QInputDialog::getDouble(this, "Offset", "Distance:", 1.0, 0.0, 1e9, 3, &ok); if (!ok) return; if (m_canvas) { m_canvas->setToolMode(CanvasWidget::ToolMode::OffsetLine); m_canvas->startOffset(d); } });
     topBar->addAction(offsetAct);
     m_offsetToolbarAction = offsetAct;
 
-QAction* filletAct = new QAction(IconManager::icon("corner-right-down"), "Fillet0", this);
+    QAction* filletAct = new QAction(IconManager::icon("arc"), "Fillet0", this);
     filletAct->setCheckable(true);
     connect(filletAct, &QAction::toggled, this, [this](bool on){ if (!on) return; if (m_canvas) { m_canvas->setToolMode(CanvasWidget::ToolMode::FilletZero); m_canvas->startFilletZero(); } });
     topBar->addAction(filletAct);
     m_filletToolbarAction = filletAct;
 
-QAction* chamferAct = new QAction(IconManager::icon("crop"), "Chamfer", this);
+    QAction* chamferAct = new QAction(IconManager::icon("rectangle"), "Chamfer", this);
     chamferAct->setCheckable(true);
     connect(chamferAct, &QAction::toggled, this, [this](bool on){ if (!on) return; bool ok=false; double d=QInputDialog::getDouble(this, "Chamfer", "Distance:", 1.0, 0.0, 1e9, 3, &ok); if (!ok) return; if (m_canvas) { m_canvas->setToolMode(CanvasWidget::ToolMode::Chamfer); m_canvas->startChamfer(d); } });
     topBar->addAction(chamferAct);
@@ -1900,8 +2080,7 @@ QMenu* dataMenuTb = addMenuGroup(bottomBar, "Data", IconManager::icon("data-menu
 
 QMenu* prefsMenuTb = addMenuGroup(bottomBar, "Prefs", IconManager::icon("prefs-menu"));
     if (m_preferencesAction) prefsMenuTb->addAction(m_preferencesAction);
-    if (m_resetLayoutAction) prefsMenuTb->addAction(m_resetLayoutAction);
-    if (QToolButton* tb = qobject_cast<QToolButton*>(prefsMenuTb->parentWidget())) tb->setToolTip("Preferences, Reset Layout");
+    if (QToolButton* tb = qobject_cast<QToolButton*>(prefsMenuTb->parentWidget())) tb->setToolTip("Preferences");
     makeGroupDock(prefsMenuTb, "Prefs");
 
 QMenu* planMenuTb = addMenuGroup(bottomBar, "Plan", IconManager::icon("plan-menu"));
