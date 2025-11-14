@@ -3193,7 +3193,7 @@ void MainWindow::appendToCommandOutput(const QString& text)
 void MainWindow::showAbout()
 {
     QMessageBox::about(this, "About SiteSurveyor Desktop",
-        "<p>Version 1.0.0</p>"
+        "<p>Version 1.0.6</p>"
     );
 }
 

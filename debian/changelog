@@ -1,3 +1,10 @@
+sitesurveyor-desktop (1.0.6-1) unstable; urgency=medium
+
+  * Add stakeout workflows and control register tools.
+  * Show the welcome panel first on startup to guide users.
+
+ -- Consolation Mangena <consolationmangena@gmail.com>  Fri, 14 Nov 2025 10:00:00 +0200
+
 sitesurveyor-desktop (1.0.0-1) unstable; urgency=medium
 
   * Initial release.
