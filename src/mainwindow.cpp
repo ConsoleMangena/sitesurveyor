@@ -605,6 +605,7 @@ void MainWindow::tryRecoverAutosave()
     }
     updatePointsTable();
     if (m_commandOutput) m_commandOutput->append("Recovered project from autosave.");
+    if (m_centerStack && m_canvas) m_centerStack->setCurrentWidget(m_canvas);
 }
 
 void MainWindow::applyEngineeringPresetIfNeeded()
@@ -935,16 +936,14 @@ void MainWindow::setupUI()
 {
     // Central widget: stacked between Welcome and Canvas
     m_centerStack = new QStackedWidget(this);
-    // Ensure canvas exists already
-    if (m_canvas) m_centerStack->addWidget(m_canvas);
-    // Welcome page
+    // Welcome page should be first so it's shown on startup
     m_welcomeWidget = new WelcomeWidget(this);
     connect(m_welcomeWidget, &WelcomeWidget::disciplineChanged, this, &MainWindow::onLicenseActivated);
     // Start tab actions
     connect(m_welcomeWidget, &WelcomeWidget::newProjectRequested, this, &MainWindow::newProject);
     connect(m_welcomeWidget, &WelcomeWidget::openProjectRequested, this, &MainWindow::openProject);
     connect(m_welcomeWidget, &WelcomeWidget::openPreferencesRequested, this, &MainWindow::showSettings);
-connect(m_welcomeWidget, &WelcomeWidget::openPathRequested, this, &MainWindow::importCoordinatesFrom);
+    connect(m_welcomeWidget, &WelcomeWidget::openPathRequested, this, &MainWindow::importCoordinatesFrom);
     connect(m_welcomeWidget, &WelcomeWidget::openTemplateRequested, this, [this](const QString& res){
         // Import DXF directly from resources
         QFile rf(res);
@@ -1010,7 +1009,10 @@ connect(m_welcomeWidget, &WelcomeWidget::openPathRequested, this, &MainWindow::i
         if (m_centerStack && m_canvas) m_centerStack->setCurrentWidget(m_canvas);
     });
     m_centerStack->addWidget(m_welcomeWidget);
+    // Ensure canvas exists already
+    if (m_canvas) m_centerStack->addWidget(m_canvas);
     setCentralWidget(m_centerStack);
+    if (m_centerStack && m_welcomeWidget) m_centerStack->setCurrentWidget(m_welcomeWidget);
     
     // Create dock widgets and arrange panels
     setupCommandDock();    // Command line at bottom
@@ -2568,16 +2570,26 @@ void MainWindow::clearAll()
 
 void MainWindow::newProject()
 {
-    int ret = QMessageBox::question(this, "New Project", 
-                                   "Clear current project and start new?",
-                                   QMessageBox::Yes | QMessageBox::No);
-    if (ret == QMessageBox::Yes) {
-        m_pointManager->clearAllPoints();
-        m_canvas->clearAll();
-        m_commandOutput->clear();
-        updatePointsTable();
-        if (m_centerStack && m_canvas) m_centerStack->setCurrentWidget(m_canvas);
+    const bool hasExistingContent = (m_pointManager && m_pointManager->getPointCount() > 0)
+        || (m_canvas && (m_canvas->lineCount() > 0
+                         || m_canvas->polylineCount() > 0
+                         || m_canvas->textCount() > 0
+                         || m_canvas->dimensionCount() > 0));
+
+    if (hasExistingContent) {
+        const int ret = QMessageBox::question(this, "New Project",
+                                             "Clear current project and start new?",
+                                             QMessageBox::Yes | QMessageBox::No);
+        if (ret != QMessageBox::Yes) {
+            return;
+        }
     }
+
+    if (m_pointManager) m_pointManager->clearAllPoints();
+    if (m_canvas) m_canvas->clearAll();
+    if (m_commandOutput) m_commandOutput->clear();
+    updatePointsTable();
+    if (m_centerStack && m_canvas) m_centerStack->setCurrentWidget(m_canvas);
 }
 
 void MainWindow::openProject()
