@@ -510,6 +510,54 @@ void AppSettings::setCrs(const QString& code)
     s.setValue("eng/crs", code);
 }
 
+QString AppSettings::crsName()
+{
+    QSettings s;
+    return s.value("eng/crsName", QStringLiteral("Local Project Grid")).toString();
+}
+
+void AppSettings::setCrsName(const QString& name)
+{
+    QSettings s;
+    s.setValue("eng/crsName", name);
+}
+
+QString AppSettings::crsDatum()
+{
+    QSettings s;
+    return s.value("eng/crsDatum", QStringLiteral("Harare Datum")).toString();
+}
+
+void AppSettings::setCrsDatum(const QString& datum)
+{
+    QSettings s;
+    s.setValue("eng/crsDatum", datum);
+}
+
+QString AppSettings::crsProjection()
+{
+    QSettings s;
+    return s.value("eng/crsProjection", QStringLiteral("Transverse Mercator")).toString();
+}
+
+void AppSettings::setCrsProjection(const QString& projection)
+{
+    QSettings s;
+    s.setValue("eng/crsProjection", projection);
+}
+
+QString AppSettings::crsLinearUnits()
+{
+    QSettings s;
+    return s.value("eng/crsUnits", QStringLiteral("Meters")).toString();
+}
+
+void AppSettings::setCrsLinearUnits(const QString& units)
+{
+    QSettings s;
+    s.setValue("eng/crsUnits", units);
+}
+
 bool AppSettings::engineeringPresetApplied()
 {
     QSettings s;
@@ -520,6 +568,49 @@ void AppSettings::setEngineeringPresetApplied(bool applied)
 {
     QSettings s;
     s.setValue("eng/presetApplied", applied);
+}
+
+double AppSettings::stakeoutHorizontalToleranceMm()
+{
+    QSettings s;
+    return s.value("stakeout/hTolMm", 10.0).toDouble();
+}
+
+void AppSettings::setStakeoutHorizontalToleranceMm(double value)
+{
+    QSettings s;
+    if (value < 0.0) value = 0.0;
+    s.setValue("stakeout/hTolMm", value);
+}
+
+double AppSettings::stakeoutVerticalToleranceMm()
+{
+    QSettings s;
+    return s.value("stakeout/vTolMm", 10.0).toDouble();
+}
+
+void AppSettings::setStakeoutVerticalToleranceMm(double value)
+{
+    QSettings s;
+    if (value < 0.0) value = 0.0;
+    s.setValue("stakeout/vTolMm", value);
+}
+
+QStringList AppSettings::stakeoutStatusOptions()
+{
+    QSettings s;
+    QStringList list = s.value("stakeout/statusOptions").toStringList();
+    if (list.isEmpty()) {
+        list = {
+            QStringLiteral("Planned"),
+            QStringLiteral("Observed"),
+            QStringLiteral("Set Out"),
+            QStringLiteral("Hold"),
+            QStringLiteral("Rejected"),
+            QStringLiteral("Complete")
+        };
+    }
+    return list;
 }
 
 bool AppSettings::osnapEnd()

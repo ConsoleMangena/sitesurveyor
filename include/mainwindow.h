@@ -20,6 +20,10 @@ class LayerManager;
 class LayerPanel;
 class PropertiesPanel;
 class ProjectPlanPanel;
+class StakeoutManager;
+class StakeoutDialog;
+class ControlRegisterDialog;
+class CoordinateSystemDialog;
 class IntersectResectionDialog;
 class LevelingDialog;
 class LSNetworkDialog;
@@ -77,6 +81,9 @@ private slots:
     void showLeveling();
     void showLSNetwork();
     void showTransformations();
+    void showStakeout();
+    void showControlRegister();
+    void showCoordinateSystemManager();
     void toggleProjectPlanPanel();
     void calculateDistance();
     void calculateArea();
@@ -165,6 +172,7 @@ private:
     // Core components
     PointManager* m_pointManager{nullptr};
     CommandProcessor* m_commandProcessor{nullptr};
+    StakeoutManager* m_stakeoutManager{nullptr};
     SettingsDialog* m_settingsDialog{nullptr};
     JoinPolarDialog* m_joinDialog{nullptr};
     PolarInputDialog* m_polarDialog{nullptr};
@@ -181,6 +189,9 @@ private:
     QAction* m_intersectResectionAction{nullptr};
     QAction* m_levelingAction{nullptr};
     QAction* m_lsNetworkAction{nullptr};
+    QAction* m_stakeoutAction{nullptr};
+    QAction* m_controlRegisterAction{nullptr};
+    QAction* m_coordinateSystemAction{nullptr};
     QByteArray m_defaultLayoutState;
     bool m_darkMode{false};
     // Navigation/interaction actions
@@ -286,6 +297,9 @@ private:
     LSNetworkDialog* m_lsNetworkDlg{nullptr};
     TransformDialog* m_transformDlg{nullptr};
     MassPolarDialog* m_massPolarDlg{nullptr};
+    StakeoutDialog* m_stakeoutDlg{nullptr};
+    ControlRegisterDialog* m_controlRegisterDlg{nullptr};
+    CoordinateSystemDialog* m_coordinateSystemDlg{nullptr};
 };
 
 #endif // MAINWINDOW_H

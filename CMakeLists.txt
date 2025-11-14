@@ -35,6 +35,11 @@ set(SOURCES
     src/lsnetworkdialog.cpp
     src/transformdialog.cpp
     src/masspolardialog.cpp
+    src/stakeoutmanager.cpp
+    src/controlregisterdialog.cpp
+    src/stakeoutdialog.cpp
+    src/coordinatesystemdialog.cpp
+    src/stakeoutreportgenerator.cpp
     resources/resources.qrc
     src/layermanager.cpp
     src/layerpanel.cpp
@@ -61,6 +66,12 @@ set(HEADERS
     include/lsnetworkdialog.h
     include/transformdialog.h
     include/masspolardialog.h
+    include/stakeoutmanager.h
+    include/controlregisterdialog.h
+    include/stakeoutdialog.h
+    include/coordinatesystemdialog.h
+    include/stakeoutrecord.h
+    include/stakeoutreportgenerator.h
     include/layermanager.h
     include/layerpanel.h
     include/propertiespanel.h

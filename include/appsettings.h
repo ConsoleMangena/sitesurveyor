@@ -32,8 +32,23 @@ public:
     static void setAngleFormat(const QString& fmt);
     static QString crs();                   // e.g., "EPSG:4326"
     static void setCrs(const QString& code);
+    static QString crsName();
+    static void setCrsName(const QString& name);
+    static QString crsDatum();
+    static void setCrsDatum(const QString& datum);
+    static QString crsProjection();
+    static void setCrsProjection(const QString& projection);
+    static QString crsLinearUnits();
+    static void setCrsLinearUnits(const QString& units);
     static bool engineeringPresetApplied();
     static void setEngineeringPresetApplied(bool applied);
+
+    // Stakeout defaults
+    static double stakeoutHorizontalToleranceMm();
+    static void setStakeoutHorizontalToleranceMm(double value);
+    static double stakeoutVerticalToleranceMm();
+    static void setStakeoutVerticalToleranceMm(double value);
+    static QStringList stakeoutStatusOptions();
 
     // OSNAP/polar persistence
     static bool osnapEnd();

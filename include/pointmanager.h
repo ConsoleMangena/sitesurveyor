@@ -19,6 +19,23 @@ public:
     bool removePoint(const QString& name);
     Point getPoint(const QString& name) const;
     bool hasPoint(const QString& name) const;
+    bool updatePoint(const Point& point);
+    bool setPointDescription(const QString& name, const QString& description);
+    bool setControlMetadata(const QString& name,
+                            bool isControl,
+                            const QString& controlType = QString(),
+                            const QString& controlSource = QString(),
+                            double horizontalTolMm = 0.0,
+                            double verticalTolMm = 0.0,
+                            const QString& notes = QString());
+    bool clearControlMetadata(const QString& name);
+    QVector<Point> getControlPoints() const;
+    bool setStakeoutStatus(const QString& name, const QString& status);
+    bool setStakeoutResiduals(const QString& name,
+                              double deltaE,
+                              double deltaN,
+                              double deltaZ,
+                              const QString& remarks = QString());
     
     QVector<Point> getAllPoints() const;
     QStringList getPointNames() const;
@@ -27,6 +44,7 @@ public:
     
 signals:
     void pointAdded(const Point& point);
+    void pointUpdated(const Point& point);
     void pointRemoved(const QString& name);
     void pointsCleared();
     

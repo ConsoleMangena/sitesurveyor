@@ -19,6 +19,11 @@
 #include "lsnetworkdialog.h"
 #include "transformdialog.h"
 #include "masspolardialog.h"
+#include "stakeoutmanager.h"
+#include "stakeoutdialog.h"
+#include "controlregisterdialog.h"
+#include "coordinatesystemdialog.h"
+#include "stakeoutreportgenerator.h"
 #include <QMenuBar>
 #include <QMenu>
 #include <QToolBar>
@@ -113,11 +118,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     // Initialize components
     m_pointManager = new PointManager(this);
+    m_stakeoutManager = new StakeoutManager(m_pointManager, this);
     m_canvas = new CanvasWidget(this);
     m_canvas->setGaussMode(AppSettings::gaussMode());
     m_layerManager = new LayerManager(this);
     m_canvas->setLayerManager(m_layerManager);
-    m_commandProcessor = new CommandProcessor(m_pointManager, m_canvas, this);
+    m_commandProcessor = new CommandProcessor(m_pointManager, m_canvas, m_stakeoutManager, this);
     m_settingsDialog = nullptr;
     m_joinDialog = nullptr;
     m_polarDialog = nullptr;
@@ -201,6 +207,22 @@ void MainWindow::exportGeoJSON()
         fp["name"] = p.name;
         fp["z"] = p.z;
         fp["layer"] = m_canvas ? m_canvas->pointLayer(p.name) : QStringLiteral("0");
+        if (!p.description.isEmpty()) fp["description"] = p.description;
+        if (!p.notes.isEmpty()) fp["notes"] = p.notes;
+        if (p.isControl) {
+            fp["control"] = true;
+            if (!p.controlType.isEmpty()) fp["controlType"] = p.controlType;
+            if (!p.controlSource.isEmpty()) fp["controlSource"] = p.controlSource;
+            fp["controlHorizontalToleranceMm"] = p.controlHorizontalToleranceMm;
+            fp["controlVerticalToleranceMm"] = p.controlVerticalToleranceMm;
+        }
+        if (!p.stakeoutStatus.isEmpty()) {
+            fp["stakeoutStatus"] = p.stakeoutStatus;
+            fp["stakeoutDeltaE"] = p.stakeoutDeltaE;
+            fp["stakeoutDeltaN"] = p.stakeoutDeltaN;
+            fp["stakeoutDeltaZ"] = p.stakeoutDeltaZ;
+            if (!p.stakeoutRemarks.isEmpty()) fp["stakeoutRemarks"] = p.stakeoutRemarks;
+        }
         f["properties"] = fp;
         features.append(f);
     }
@@ -411,7 +433,26 @@ void MainWindow::autosaveNow()
     QJsonArray points;
     const QVector<Point> pts = m_pointManager->getAllPoints();
     for (const auto& p : pts) {
-        QJsonObject o; o["name"] = p.name; o["x"] = p.x; o["y"] = p.y; o["z"] = p.z; o["layer"] = m_canvas ? m_canvas->pointLayer(p.name) : QStringLiteral("0"); points.append(o);
+        QJsonObject o;
+        o["name"] = p.name;
+        o["x"] = p.x;
+        o["y"] = p.y;
+        o["z"] = p.z;
+        o["layer"] = m_canvas ? m_canvas->pointLayer(p.name) : QStringLiteral("0");
+        if (!p.description.isEmpty()) o["description"] = p.description;
+        if (!p.notes.isEmpty()) o["notes"] = p.notes;
+        o["isControl"] = p.isControl;
+        if (!p.controlType.isEmpty()) o["controlType"] = p.controlType;
+        if (!p.controlSource.isEmpty()) o["controlSource"] = p.controlSource;
+        o["controlHorizontalToleranceMm"] = p.controlHorizontalToleranceMm;
+        o["controlVerticalToleranceMm"] = p.controlVerticalToleranceMm;
+        if (!p.stakeoutGroup.isEmpty()) o["stakeoutGroup"] = p.stakeoutGroup;
+        if (!p.stakeoutStatus.isEmpty()) o["stakeoutStatus"] = p.stakeoutStatus;
+        o["stakeoutDeltaE"] = p.stakeoutDeltaE;
+        o["stakeoutDeltaN"] = p.stakeoutDeltaN;
+        o["stakeoutDeltaZ"] = p.stakeoutDeltaZ;
+        if (!p.stakeoutRemarks.isEmpty()) o["stakeoutRemarks"] = p.stakeoutRemarks;
+        points.append(o);
     }
     root["points"] = points;
     // Lines
@@ -424,6 +465,35 @@ void MainWindow::autosaveNow()
         }
     }
     root["lines"] = lines;
+
+    if (m_stakeoutManager) {
+        QJsonArray stakeout;
+        const QVector<StakeoutRecord> recs = m_stakeoutManager->records();
+        for (const StakeoutRecord& rec : recs) {
+            QJsonObject o;
+            o["id"] = rec.id;
+            o["point"] = rec.designPoint;
+            o["description"] = rec.description;
+            o["designE"] = rec.designE;
+            o["designN"] = rec.designN;
+            o["designZ"] = rec.designZ;
+            if (rec.hasMeasurement()) {
+                o["measuredE"] = rec.measuredE;
+                o["measuredN"] = rec.measuredN;
+                o["measuredZ"] = rec.measuredZ;
+            }
+            if (!rec.instrument.isEmpty()) o["instrument"] = rec.instrument;
+            if (!rec.setupDetails.isEmpty()) o["setup"] = rec.setupDetails;
+            if (!rec.method.isEmpty()) o["method"] = rec.method;
+            if (!rec.crew.isEmpty()) o["crew"] = rec.crew;
+            if (!rec.status.isEmpty()) o["status"] = rec.status;
+            if (!rec.remarks.isEmpty()) o["remarks"] = rec.remarks;
+            if (rec.createdAt.isValid()) o["createdAt"] = rec.createdAt.toUTC().toString(Qt::ISODate);
+            if (rec.observedAt.isValid()) o["observedAt"] = rec.observedAt.toUTC().toString(Qt::ISODate);
+            stakeout.append(o);
+        }
+        root["stakeoutRecords"] = stakeout;
+    }
 
     QJsonDocument doc(root);
     QSaveFile file(autosavePath());
@@ -474,6 +544,19 @@ void MainWindow::tryRecoverAutosave()
         QString layer = o.value("layer").toString();
         if (name.isEmpty()) continue;
         Point p(name, x, y, z);
+        p.description = o.value("description").toString();
+        p.notes = o.value("notes").toString();
+        p.isControl = o.value("isControl").toBool(false);
+        p.controlType = o.value("controlType").toString();
+        p.controlSource = o.value("controlSource").toString();
+        p.controlHorizontalToleranceMm = o.value("controlHorizontalToleranceMm").toDouble();
+        p.controlVerticalToleranceMm = o.value("controlVerticalToleranceMm").toDouble();
+        p.stakeoutGroup = o.value("stakeoutGroup").toString();
+        p.stakeoutStatus = o.value("stakeoutStatus").toString();
+        p.stakeoutDeltaE = o.value("stakeoutDeltaE").toDouble();
+        p.stakeoutDeltaN = o.value("stakeoutDeltaN").toDouble();
+        p.stakeoutDeltaZ = o.value("stakeoutDeltaZ").toDouble();
+        p.stakeoutRemarks = o.value("stakeoutRemarks").toString();
         m_pointManager->addPoint(p);
         m_canvas->addPoint(p);
         if (!layer.isEmpty()) m_canvas->setPointLayer(name, layer);
@@ -489,6 +572,36 @@ void MainWindow::tryRecoverAutosave()
         m_canvas->addLine(a, b);
         int idx = m_canvas->lineCount() - 1;
         if (idx >= 0 && !layer.isEmpty()) m_canvas->setLineLayer(idx, layer);
+    }
+    if (m_stakeoutManager) {
+        QVector<StakeoutRecord> records;
+        const QJsonArray stakeout = root.value("stakeoutRecords").toArray();
+        records.reserve(stakeout.size());
+        for (const QJsonValue& val : stakeout) {
+            const QJsonObject o = val.toObject();
+            StakeoutRecord rec;
+            rec.id = o.value("id").toString();
+            rec.designPoint = o.value("point").toString();
+            rec.description = o.value("description").toString();
+            rec.designE = o.value("designE").toDouble();
+            rec.designN = o.value("designN").toDouble();
+            rec.designZ = o.value("designZ").toDouble();
+            if (o.contains("measuredE")) rec.measuredE = o.value("measuredE").toDouble();
+            if (o.contains("measuredN")) rec.measuredN = o.value("measuredN").toDouble();
+            if (o.contains("measuredZ")) rec.measuredZ = o.value("measuredZ").toDouble();
+            rec.instrument = o.value("instrument").toString();
+            rec.setupDetails = o.value("setup").toString();
+            rec.method = o.value("method").toString();
+            rec.crew = o.value("crew").toString();
+            rec.status = o.value("status").toString();
+            rec.remarks = o.value("remarks").toString();
+            const QString createdAt = o.value("createdAt").toString();
+            const QString observedAt = o.value("observedAt").toString();
+            if (!createdAt.isEmpty()) rec.createdAt = QDateTime::fromString(createdAt, Qt::ISODate);
+            if (!observedAt.isEmpty()) rec.observedAt = QDateTime::fromString(observedAt, Qt::ISODate);
+            records.append(rec);
+        }
+        m_stakeoutManager->loadRecords(records);
     }
     updatePointsTable();
     if (m_commandOutput) m_commandOutput->append("Recovered project from autosave.");
@@ -1592,6 +1705,13 @@ m_toolChamferAction->setIcon(IconManager::icon("square"));
     QAction* transformAct = toolsMenu->addAction("&Transformations...");
     transformAct->setIcon(IconManager::icon("regular-polygon"));
     connect(transformAct, &QAction::triggered, this, &MainWindow::showTransformations);
+    toolsMenu->addSeparator();
+    m_controlRegisterAction = toolsMenu->addAction("Control Register...");
+    m_controlRegisterAction->setIcon(IconManager::icon("pin"));
+    connect(m_controlRegisterAction, &QAction::triggered, this, &MainWindow::showControlRegister);
+    m_stakeoutAction = toolsMenu->addAction("Stakeout Manager...");
+    m_stakeoutAction->setIcon(IconManager::icon("ruler-measure"));
+    connect(m_stakeoutAction, &QAction::triggered, this, &MainWindow::showStakeout);
     // Basic hatch pattern loader (preview)
     QAction* hatchPreviewAct = toolsMenu->addAction("Hatch Patterns (Preview)...");
     connect(hatchPreviewAct, &QAction::triggered, this, [this](){
@@ -1654,6 +1774,9 @@ m_toolChamferAction->setIcon(IconManager::icon("square"));
     if (m_preferencesAction) {
         settingsMenu->addAction(m_preferencesAction);
     }
+    m_coordinateSystemAction = settingsMenu->addAction("Coordinate System...");
+    m_coordinateSystemAction->setIcon(IconManager::icon("settings"));
+    connect(m_coordinateSystemAction, &QAction::triggered, this, &MainWindow::showCoordinateSystemManager);
 
     // Help Menu
     QMenu* helpMenu = menuBar()->addMenu("&Help");
@@ -2494,8 +2617,23 @@ void MainWindow::openProject()
     }
     // Points
     for (const auto& v : root.value("points").toArray()) {
-        QJsonObject o = v.toObject(); Point p(o.value("name").toString(), o.value("x").toDouble(), o.value("y").toDouble(), o.value("z").toDouble());
-        m_pointManager->addPoint(p); m_canvas->addPoint(p);
+        QJsonObject o = v.toObject();
+        Point p(o.value("name").toString(), o.value("x").toDouble(), o.value("y").toDouble(), o.value("z").toDouble());
+        p.description = o.value("description").toString();
+        p.notes = o.value("notes").toString();
+        p.isControl = o.value("isControl").toBool(false);
+        p.controlType = o.value("controlType").toString();
+        p.controlSource = o.value("controlSource").toString();
+        p.controlHorizontalToleranceMm = o.value("controlHorizontalToleranceMm").toDouble();
+        p.controlVerticalToleranceMm = o.value("controlVerticalToleranceMm").toDouble();
+        p.stakeoutGroup = o.value("stakeoutGroup").toString();
+        p.stakeoutStatus = o.value("stakeoutStatus").toString();
+        p.stakeoutDeltaE = o.value("stakeoutDeltaE").toDouble();
+        p.stakeoutDeltaN = o.value("stakeoutDeltaN").toDouble();
+        p.stakeoutDeltaZ = o.value("stakeoutDeltaZ").toDouble();
+        p.stakeoutRemarks = o.value("stakeoutRemarks").toString();
+        m_pointManager->addPoint(p);
+        m_canvas->addPoint(p);
         QString layer = o.value("layer").toString(); if (!layer.isEmpty()) m_canvas->setPointLayer(p.name, layer);
     }
     // Lines
@@ -2512,6 +2650,36 @@ void MainWindow::openProject()
         const double ang = o.value("angle").toDouble(0.0);
         const QString layer = o.value("layer").toString();
         if (!t.isEmpty()) m_canvas->addText(t, pos, h, ang, layer);
+    }
+    if (m_stakeoutManager) {
+        QVector<StakeoutRecord> records;
+        const QJsonArray stakeout = root.value("stakeoutRecords").toArray();
+        records.reserve(stakeout.size());
+        for (const QJsonValue& val : stakeout) {
+            const QJsonObject o = val.toObject();
+            StakeoutRecord rec;
+            rec.id = o.value("id").toString();
+            rec.designPoint = o.value("point").toString();
+            rec.description = o.value("description").toString();
+            rec.designE = o.value("designE").toDouble();
+            rec.designN = o.value("designN").toDouble();
+            rec.designZ = o.value("designZ").toDouble();
+            if (o.contains("measuredE")) rec.measuredE = o.value("measuredE").toDouble();
+            if (o.contains("measuredN")) rec.measuredN = o.value("measuredN").toDouble();
+            if (o.contains("measuredZ")) rec.measuredZ = o.value("measuredZ").toDouble();
+            rec.instrument = o.value("instrument").toString();
+            rec.setupDetails = o.value("setup").toString();
+            rec.method = o.value("method").toString();
+            rec.crew = o.value("crew").toString();
+            rec.status = o.value("status").toString();
+            rec.remarks = o.value("remarks").toString();
+            const QString createdAt = o.value("createdAt").toString();
+            const QString observedAt = o.value("observedAt").toString();
+            if (!createdAt.isEmpty()) rec.createdAt = QDateTime::fromString(createdAt, Qt::ISODate);
+            if (!observedAt.isEmpty()) rec.observedAt = QDateTime::fromString(observedAt, Qt::ISODate);
+            records.append(rec);
+        }
+        m_stakeoutManager->loadRecords(records);
     }
     updatePointsTable();
     showToast(QStringLiteral("Project loaded"));
@@ -2534,7 +2702,30 @@ void MainWindow::saveProject()
     }
     root["layers"] = jlayers;
     // Points
-    QJsonArray points; for (const auto& p : m_pointManager->getAllPoints()) { QJsonObject o; o["name"] = p.name; o["x"] = p.x; o["y"] = p.y; o["z"] = p.z; o["layer"] = m_canvas ? m_canvas->pointLayer(p.name) : QStringLiteral("0"); points.append(o); } root["points"] = points;
+    QJsonArray points;
+    for (const auto& p : m_pointManager->getAllPoints()) {
+        QJsonObject o;
+        o["name"] = p.name;
+        o["x"] = p.x;
+        o["y"] = p.y;
+        o["z"] = p.z;
+        o["layer"] = m_canvas ? m_canvas->pointLayer(p.name) : QStringLiteral("0");
+        if (!p.description.isEmpty()) o["description"] = p.description;
+        if (!p.notes.isEmpty()) o["notes"] = p.notes;
+        o["isControl"] = p.isControl;
+        if (!p.controlType.isEmpty()) o["controlType"] = p.controlType;
+        if (!p.controlSource.isEmpty()) o["controlSource"] = p.controlSource;
+        o["controlHorizontalToleranceMm"] = p.controlHorizontalToleranceMm;
+        o["controlVerticalToleranceMm"] = p.controlVerticalToleranceMm;
+        if (!p.stakeoutGroup.isEmpty()) o["stakeoutGroup"] = p.stakeoutGroup;
+        if (!p.stakeoutStatus.isEmpty()) o["stakeoutStatus"] = p.stakeoutStatus;
+        o["stakeoutDeltaE"] = p.stakeoutDeltaE;
+        o["stakeoutDeltaN"] = p.stakeoutDeltaN;
+        o["stakeoutDeltaZ"] = p.stakeoutDeltaZ;
+        if (!p.stakeoutRemarks.isEmpty()) o["stakeoutRemarks"] = p.stakeoutRemarks;
+        points.append(o);
+    }
+    root["points"] = points;
     // Lines
     QJsonArray lines; if (m_canvas) { for (int i=0;i<m_canvas->lineCount();++i) { QPointF a,b; if (!m_canvas->lineEndpoints(i,a,b)) continue; QJsonObject o; o["ax"] = a.x(); o["ay"] = a.y(); o["bx"] = b.x(); o["by"] = b.y(); o["layer"] = m_canvas->lineLayer(i); lines.append(o);} } root["lines"] = lines;
     // Texts
@@ -2546,6 +2737,34 @@ void MainWindow::saveProject()
             QJsonObject o; o["text"] = t; o["x"] = pos.x(); o["y"] = pos.y(); o["height"] = h; o["angle"] = ang; o["layer"] = layer; texts.append(o);
         }
     } root["texts"] = texts;
+    if (m_stakeoutManager) {
+        QJsonArray stakeout;
+        const QVector<StakeoutRecord> recs = m_stakeoutManager->records();
+        for (const StakeoutRecord& rec : recs) {
+            QJsonObject o;
+            o["id"] = rec.id;
+            o["point"] = rec.designPoint;
+            o["description"] = rec.description;
+            o["designE"] = rec.designE;
+            o["designN"] = rec.designN;
+            o["designZ"] = rec.designZ;
+            if (rec.hasMeasurement()) {
+                o["measuredE"] = rec.measuredE;
+                o["measuredN"] = rec.measuredN;
+                o["measuredZ"] = rec.measuredZ;
+            }
+            if (!rec.instrument.isEmpty()) o["instrument"] = rec.instrument;
+            if (!rec.setupDetails.isEmpty()) o["setup"] = rec.setupDetails;
+            if (!rec.method.isEmpty()) o["method"] = rec.method;
+            if (!rec.crew.isEmpty()) o["crew"] = rec.crew;
+            if (!rec.status.isEmpty()) o["status"] = rec.status;
+            if (!rec.remarks.isEmpty()) o["remarks"] = rec.remarks;
+            if (rec.createdAt.isValid()) o["createdAt"] = rec.createdAt.toUTC().toString(Qt::ISODate);
+            if (rec.observedAt.isValid()) o["observedAt"] = rec.observedAt.toUTC().toString(Qt::ISODate);
+            stakeout.append(o);
+        }
+        root["stakeoutRecords"] = stakeout;
+    }
     QSaveFile f(fileName); if (!f.open(QIODevice::WriteOnly)) { QMessageBox::warning(this, "Save Project", QString("Failed to write %1").arg(fileName)); return; }
     f.write(QJsonDocument(root).toJson(QJsonDocument::Indented)); f.commit();
     showToast(QStringLiteral("Project saved"));
@@ -3111,6 +3330,52 @@ void MainWindow::showTransformations()
         m_transformDlg->raise();
         m_transformDlg->activateWindow();
         fadeInWidget(m_transformDlg);
+    }
+}
+
+void MainWindow::showStakeout()
+{
+    if (!m_stakeoutManager) {
+        QMessageBox::information(this, tr("Stakeout"), tr("Stakeout manager is not available."));
+        return;
+    }
+    if (!m_stakeoutDlg) {
+        m_stakeoutDlg = new StakeoutDialog(m_stakeoutManager, m_pointManager, this);
+    }
+    if (m_stakeoutDlg) {
+        m_stakeoutDlg->refreshRecords();
+        m_stakeoutDlg->show();
+        m_stakeoutDlg->raise();
+        m_stakeoutDlg->activateWindow();
+        fadeInWidget(m_stakeoutDlg);
+    }
+}
+
+void MainWindow::showControlRegister()
+{
+    if (!m_pointManager) return;
+    if (!m_controlRegisterDlg) {
+        m_controlRegisterDlg = new ControlRegisterDialog(m_pointManager, this);
+    }
+    if (m_controlRegisterDlg) {
+        m_controlRegisterDlg->refresh();
+        m_controlRegisterDlg->show();
+        m_controlRegisterDlg->raise();
+        m_controlRegisterDlg->activateWindow();
+        fadeInWidget(m_controlRegisterDlg);
+    }
+}
+
+void MainWindow::showCoordinateSystemManager()
+{
+    if (!m_coordinateSystemDlg) {
+        m_coordinateSystemDlg = new CoordinateSystemDialog(this);
+    }
+    if (m_coordinateSystemDlg) {
+        m_coordinateSystemDlg->show();
+        m_coordinateSystemDlg->raise();
+        m_coordinateSystemDlg->activateWindow();
+        fadeInWidget(m_coordinateSystemDlg);
     }
 }
 

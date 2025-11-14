@@ -4,13 +4,17 @@
 #include "point.h"
 #include "surveycalculator.h"
 #include "appsettings.h"
+#include "stakeoutmanager.h"
 #include <QStringList>
 #include <QRegularExpression>
 #include <QtMath>
 #include <algorithm>
 
-CommandProcessor::CommandProcessor(PointManager* pointManager, CanvasWidget* canvas, QObject *parent)
-    : QObject(parent), m_pointManager(pointManager), m_canvas(canvas)
+CommandProcessor::CommandProcessor(PointManager* pointManager,
+                                   CanvasWidget* canvas,
+                                   StakeoutManager* stakeoutManager,
+                                   QObject *parent)
+    : QObject(parent), m_pointManager(pointManager), m_canvas(canvas), m_stakeoutManager(stakeoutManager)
 {
 }
 
@@ -66,6 +70,10 @@ QString CommandProcessor::processCommand(const QString& command)
         return deletePoint(parts);
     } else if (operation == "line") {
         return drawLine(parts);
+    } else if (operation == "stakeout" || operation == "stake") {
+        return handleStakeoutCommand(parts);
+    } else if (operation == "control") {
+        return handleControlCommand(parts);
     } else if (operation == "help" || operation == "?") {
         return showHelp();
     } else {
@@ -373,7 +381,187 @@ QString CommandProcessor::showHelp()
     help += "  list                             - List all coordinates (alias: ls)\n";
     help += "  delete <name>                    - Delete a coordinate (aliases: del, removecoord)\n";
     help += "  clear                            - Clear all coordinates\n";
+    help += "  stakeout ...                     - Manage stakeout register (design, measure, list, status, remove)\n";
+    help += "  control ...                      - Maintain control metadata (mark, clear, list, info)\n";
     help += "  help                             - Show this help message (alias: ?)\n\n";
     help += notes;
     return help;
+}
+
+QString CommandProcessor::handleStakeoutCommand(const QStringList& parts)
+{
+    if (!m_stakeoutManager) {
+        return "Stakeout module not available in this build.";
+    }
+    if (parts.size() < 2) {
+        return "Usage: stakeout <design|measure|list|status|remove|info>";
+    }
+    const QString action = parts[1].toLower();
+    if (action == "design") {
+        if (parts.size() < 3) return "Usage: stakeout design <point_name> [description...]";
+        const QString pointName = parts[2];
+        if (!m_pointManager || !m_pointManager->hasPoint(pointName)) {
+            return QString("Point %1 not found").arg(pointName);
+        }
+        const Point p = m_pointManager->getPoint(pointName);
+        const QString description = (parts.size() > 3) ? parts.mid(3).join(' ') : p.description;
+        const QString id = m_stakeoutManager->createDesignRecord(p.name,
+                                                                 p.x,
+                                                                 p.y,
+                                                                 p.z,
+                                                                 description);
+        return QString("Stakeout design %1 created for %2").arg(id, pointName);
+    } else if (action == "measure") {
+        if (parts.size() < 6) return "Usage: stakeout measure <id> <easting> <northing> <elevation> [status]";
+        const QString id = parts[2];
+        bool okE = false, okN = false, okZ = false;
+        double e = parts[3].toDouble(&okE);
+        double n = parts[4].toDouble(&okN);
+        double z = parts[5].toDouble(&okZ);
+        if (!okE || !okN || !okZ) return "Invalid measured coordinates.";
+        QString status;
+        if (parts.size() > 6) status = parts.mid(6).join(' ');
+        if (!m_stakeoutManager->recordMeasurement(id, e, n, z, QString(), QString(), status)) {
+            return QString("Stakeout record %1 not found").arg(id);
+        }
+        const StakeoutRecord rec = m_stakeoutManager->record(id);
+        return QString("Stakeout %1 residuals ΔE=%2 ΔN=%3 ΔZ=%4")
+            .arg(id)
+            .arg(QString::number(rec.deltaE(), 'f', 3))
+            .arg(QString::number(rec.deltaN(), 'f', 3))
+            .arg(QString::number(rec.deltaZ(), 'f', 3));
+    } else if (action == "list") {
+        const QVector<StakeoutRecord> records = m_stakeoutManager->records();
+        if (records.isEmpty()) return "No stakeout designs on file";
+        QString out = QString("Stakeout records (%1):\n").arg(records.size());
+        for (const StakeoutRecord& rec : records) {
+            const QString status = rec.status.isEmpty() ? QStringLiteral("Planned") : rec.status;
+            if (rec.hasMeasurement()) {
+                out += QString("  %1: %2 [%3] ΔE=%4 ΔN=%5 ΔZ=%6\n")
+                    .arg(rec.id)
+                    .arg(rec.designPoint)
+                    .arg(status)
+                    .arg(QString::number(rec.deltaE(), 'f', 3))
+                    .arg(QString::number(rec.deltaN(), 'f', 3))
+                    .arg(QString::number(rec.deltaZ(), 'f', 3));
+            } else {
+                out += QString("  %1: %2 [%3] pending\n").arg(rec.id, rec.designPoint, status);
+            }
+        }
+        return out.trimmed();
+    } else if (action == "status") {
+        if (parts.size() < 4) return "Usage: stakeout status <id> <status>";
+        const QString id = parts[2];
+        const QString status = parts.mid(3).join(' ');
+        if (!m_stakeoutManager->setRecordStatus(id, status)) {
+            return QString("Stakeout record %1 not found").arg(id);
+        }
+        return QString("Stakeout %1 status set to %2").arg(id, status);
+    } else if (action == "remove") {
+        if (parts.size() < 3) return "Usage: stakeout remove <id>";
+        const QString id = parts[2];
+        if (!m_stakeoutManager->removeRecord(id)) {
+            return QString("Stakeout record %1 not found").arg(id);
+        }
+        return QString("Stakeout %1 removed").arg(id);
+    } else if (action == "info") {
+        if (parts.size() < 3) return "Usage: stakeout info <id>";
+        const QString id = parts[2];
+        const StakeoutRecord rec = m_stakeoutManager->record(id);
+        if (rec.id.isEmpty()) return QString("Stakeout record %1 not found").arg(id);
+        QString out;
+        out += QString("Stakeout %1\n").arg(rec.id);
+        out += QString("  Point: %1 (%2)\n").arg(rec.designPoint, rec.description);
+        out += QString("  Design: E=%1 N=%2 Z=%3\n")
+            .arg(QString::number(rec.designE, 'f', 3))
+            .arg(QString::number(rec.designN, 'f', 3))
+            .arg(QString::number(rec.designZ, 'f', 3));
+        if (rec.hasMeasurement()) {
+            out += QString("  Measured: E=%1 N=%2 Z=%3\n")
+                .arg(QString::number(rec.measuredE, 'f', 3))
+                .arg(QString::number(rec.measuredN, 'f', 3))
+                .arg(QString::number(rec.measuredZ, 'f', 3));
+            out += QString("  Residuals: ΔE=%1 ΔN=%2 ΔZ=%3 H=%4 V=%5\n")
+                .arg(QString::number(rec.deltaE(), 'f', 3))
+                .arg(QString::number(rec.deltaN(), 'f', 3))
+                .arg(QString::number(rec.deltaZ(), 'f', 3))
+                .arg(QString::number(rec.horizontalResidual(), 'f', 3))
+                .arg(QString::number(rec.verticalResidual(), 'f', 3));
+        } else {
+            out += "  Measurement: pending\n";
+        }
+        out += QString("  Status: %1\n").arg(rec.status.isEmpty() ? QStringLiteral("Planned") : rec.status);
+        if (!rec.remarks.isEmpty()) out += QString("  Remarks: %1\n").arg(rec.remarks);
+        return out.trimmed();
+    }
+    return QString("Unknown stakeout command: %1").arg(action);
+}
+
+QString CommandProcessor::handleControlCommand(const QStringList& parts)
+{
+    if (!m_pointManager) return "Point manager not available.";
+    if (parts.size() < 2) return "Usage: control <list|mark|clear|info>";
+    const QString action = parts[1].toLower();
+    if (action == "list") {
+        const QVector<Point> controls = m_pointManager->getControlPoints();
+        if (controls.isEmpty()) return "No control points flagged";
+        QString out = QString("Control points (%1):\n").arg(controls.size());
+        for (const Point& p : controls) {
+            out += QString("  %1: %2 (class %3, H %4 mm, V %5 mm)\n")
+                .arg(p.name)
+                .arg(p.controlSource.isEmpty() ? QStringLiteral("unspecified source") : p.controlSource)
+                .arg(p.controlType.isEmpty() ? QStringLiteral("?") : p.controlType)
+                .arg(QString::number(p.controlHorizontalToleranceMm, 'f', 1))
+                .arg(QString::number(p.controlVerticalToleranceMm, 'f', 1));
+        }
+        return out.trimmed();
+    } else if (action == "mark") {
+        if (parts.size() < 3) return "Usage: control mark <point> [class] [source] [hTolMm] [vTolMm]";
+        const QString name = parts[2];
+        if (!m_pointManager->hasPoint(name)) return QString("Point %1 not found").arg(name);
+        QString controlClass = parts.size() > 3 ? parts[3] : QStringLiteral("Control");
+        QString source = parts.size() > 4 ? parts[4] : QStringLiteral("Field");
+        double hTol = (parts.size() > 5) ? parts[5].toDouble() : AppSettings::stakeoutHorizontalToleranceMm();
+        double vTol = (parts.size() > 6) ? parts[6].toDouble() : AppSettings::stakeoutVerticalToleranceMm();
+        if (!m_pointManager->setControlMetadata(name, true, controlClass, source, hTol, vTol)) {
+            return QString("Failed to update control metadata for %1").arg(name);
+        }
+        return QString("Point %1 marked as control (%2)").arg(name, controlClass);
+    } else if (action == "clear") {
+        if (parts.size() < 3) return "Usage: control clear <point>";
+        const QString name = parts[2];
+        if (!m_pointManager->clearControlMetadata(name)) {
+            return QString("Point %1 not found or not control").arg(name);
+        }
+        return QString("Control metadata cleared for %1").arg(name);
+    } else if (action == "info") {
+        if (parts.size() < 3) return "Usage: control info <point>";
+        const QString name = parts[2];
+        if (!m_pointManager->hasPoint(name)) return QString("Point %1 not found").arg(name);
+        const Point p = m_pointManager->getPoint(name);
+        QString out;
+        out += QString("Point %1\n").arg(p.name);
+        out += QString("  Coordinates: %1, %2, %3\n")
+            .arg(QString::number(p.x, 'f', 3))
+            .arg(QString::number(p.y, 'f', 3))
+            .arg(QString::number(p.z, 'f', 3));
+        out += QString("  Control: %1\n").arg(p.isControl ? QStringLiteral("Yes") : QStringLiteral("No"));
+        if (p.isControl) {
+            out += QString("  Class: %1\n").arg(p.controlType);
+            out += QString("  Source: %1\n").arg(p.controlSource);
+            out += QString("  H Tol: %1 mm  V Tol: %2 mm\n")
+                .arg(QString::number(p.controlHorizontalToleranceMm, 'f', 1))
+                .arg(QString::number(p.controlVerticalToleranceMm, 'f', 1));
+            if (!p.notes.isEmpty()) out += QString("  Notes: %1\n").arg(p.notes);
+            if (!p.stakeoutStatus.isEmpty()) {
+                out += QString("  Stakeout status: %1\n").arg(p.stakeoutStatus);
+                out += QString("  Stakeout residuals ΔE=%1 ΔN=%2 ΔZ=%3\n")
+                    .arg(QString::number(p.stakeoutDeltaE, 'f', 3))
+                    .arg(QString::number(p.stakeoutDeltaN, 'f', 3))
+                    .arg(QString::number(p.stakeoutDeltaZ, 'f', 3));
+            }
+        }
+        return out.trimmed();
+    }
+    return QString("Unknown control command: %1").arg(action);
 }

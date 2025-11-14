@@ -7,13 +7,17 @@
 
 class PointManager;
 class CanvasWidget;
+class StakeoutManager;
 
 class CommandProcessor : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit CommandProcessor(PointManager* pointManager, CanvasWidget* canvas, QObject *parent = nullptr);
+    explicit CommandProcessor(PointManager* pointManager,
+                              CanvasWidget* canvas,
+                              StakeoutManager* stakeoutManager,
+                              QObject *parent = nullptr);
     
     QString processCommand(const QString& command);
 
@@ -34,9 +38,12 @@ private:
     QString deletePoint(const QStringList& parts);
     QString drawLine(const QStringList& parts);
     QString showHelp();
+    QString handleStakeoutCommand(const QStringList& parts);
+    QString handleControlCommand(const QStringList& parts);
     
     PointManager* m_pointManager;
     CanvasWidget* m_canvas;
+    StakeoutManager* m_stakeoutManager;
 };
 
 #endif // COMMANDPROCESSOR_H
