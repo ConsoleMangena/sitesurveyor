@@ -1,0 +1,143 @@
+With @code{gama-local} come several companion command line tools, most
+of them being conversion programs for various data formats.
+
+
+@menu
+* gama-local-deformation::
+* gama-local-gkf2yaml::
+* gama-local-yaml2gkf::
+* gama-local-xml2sql::
+* gama-local-xml2txt::
+* krumm2gama-local::
+@end menu
+
+
+@node    gama-local-deformation
+@section gama-local-deformation
+
+Program @code{gama-local-deformation} reads XML adjustment results files from
+two dates (epochs), compute differences for adjusted points common in
+both epochs, calculate the covariance matrix of the differences and
+optionally renders the deformation diagram in SVG output file.
+
+@smallexample
+
+Usage: gama-local-deformation epoch1.xml epoch2.xml [--text file] [--svg file]
+       gama-local-deformation --version
+       gama-local-deformation --help
+
+Options:
+
+epoch1 and epoch2 are adjustment results in XML format of the surveying network.
+           The program computes the shift vectors of common adjusted points
+           and their corresponding covariance matrix.
+
+--text     deformation analyses in textual format. If missing, standard
+           output device is used (i.e. screen).
+--svg      if defined, the program writes SVG image of the second epoch
+           adjustment with standard deviation ellipses and points' shits.
+           The network schema is available only in 2D (xy coordinates only).
+--version
+--help
+
+Report bugs to: <bug-gama@@gnu.org>
+GNU gama home page: <https://www.gnu.org/software/gama/>
+General help using GNU software: <https://www.gnu.org/gethelp/>
+@end smallexample
+
+@image{fig/data_1-2,10.5cm}
+
+
+@node    gama-local-gkf2yaml
+@section gama-local-gkf2yaml
+
+Program @code{gama-local-gkf2yaml} converts input XML format of
+@code{gama-local} (in Gama project usually denoted with
+extension @code{gkf}) to yaml format.
+
+@smallexample
+
+gama-local-gkf2yaml input.gkf [output.yaml]
+@end smallexample
+
+
+
+@node    gama-local-yaml2gkf
+@section gama-local-yaml2gkf
+
+Program @code{gama-local-yaml2gkf} converts YAML input to XML imput format.
+
+@smallexample
+
+gama-local-yaml2gkf input.yaml  [ output.gkf ]
+@end smallexample
+
+
+
+@node    gama-local-xml2sql
+@section gama-local-xml2sql
+
+Program @code{gama-local-xml2sql} converts @code{gama-local} XML input format (aka gkf) to SQL script.
+
+@smallexample
+Usage: gama-local-xml2sql configuration (xml_input|-) [sql_output|-]
+
+Convert XML adjustment input of gama-local to SQL
+@end smallexample
+
+
+
+@node    gama-local-xml2txt
+@section gama-local-xml2txt
+
+Conversion from adjustment XML output to text format.
+
+@smallexample
+
+Usage: gama-local-xml2txt [options] < std_input > std_output
+
+Convert XML adjustment output of gama-local to text format
+
+Options:
+
+--angles     400 | 360
+--language   en | ca | cz | du | fi | fr | hu | ru | ua 
+--encoding   utf-8 | iso-8859-2 | iso-8859-2-flat | cp-1250 | cp-1251
+--help
+@end smallexample
+
+
+
+@node    krumm2gama-local
+@section krumm2gama-local
+
+GNU Gama sources come with an extensive set of testing data examples
+in the directory @code{tests} where subdirectory @code{tests/krumm}
+contains examples from the book by Friedhelm Krumm, Geodetic Network
+Adjustment Examples, Geodätisches Institut Universität Stuttgart,
+https://www.gis.uni-stuttgart.de, Rev. 3.5 January 20, 2020. All these
+examples are distributed with GNU Gama with permission from the author.
+
+Conversion program @code{krumm2gama-local} converts the examples data
+format defined in the book to the @code{gama-local} XML input
+format. For more details read the file
+@code{tests/krumm/input.README.md}.
+
+@smallexample
+
+Conversion from data format used in Geodetic Network Adjustment Examples
+by Friedhelm Krumm to XML input format of gama-local (GNU Gama)
+https://www.gis.uni-stuttgart.de/lehre/campus-docs/adjustment_examples.pdf
+
+     krumm2gama-local  input_file  [ output_file  ]
+     krumm2gama-local < std_input  [ > std_output ]
+
+Options:
+-h, --help      this text
+-v, --version   print program version
+-e, --examples  add the following comment to the generated XML file
+
+     This example is based on published material Geodetic Network Adjustment
+     Examples by Friedhelm Krumm, Geodätisches Institut Universität Stuttgart,
+     Rev. 3.5, January 20, 2020
+@end smallexample

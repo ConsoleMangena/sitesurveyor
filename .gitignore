@@ -1,44 +1,166 @@
-# Build directories
+# =========================
+# Build Directories
+# =========================
 build/
 cmake-build-*/
+out/
 obj-*/
+bin/
+lib/
 
-# Compiled Object files
+# =========================
+# Compiled Object Files
+# =========================
 *.o
 *.obj
+*.lo
+*.slo
+*.la
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
 
+# =========================
 # Executables
+# =========================
 *.exe
 *.out
 *.app
+SiteSurveyor
 
-# CMake generated files
+# =========================
+# CMake Generated Files
+# =========================
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 Makefile
-# Qt/CMake local cache
-*.qmldir
+*.cmake
+!CMakeLists.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
 
-# IDE files
+# =========================
+# Qt Generated Files
+# =========================
+*.moc
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.qmlc
+*.jsc
+*.qmldir
+*_autogen/
+.qmake.cache
+.qmake.stash
+
+# =========================
+# IDE and Editor Files
+# =========================
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 *.user
+*.user.*
 *.pro.user
+*.pro.user.*
+.project
+.cproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+*.kate-swp
+.kate-swp
 
-# OS generated files
+# =========================
+# OS Generated Files
+# =========================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
-# Debian packaging outputs (keep debian/ metadata tracked)
+# =========================
+# Debian Packaging
+# =========================
 debian/.debhelper/
 debian/debhelper-build-stamp
 debian/files
 debian/*.substvars
+debian/sitesurveyor/
 debian/sitesurveyor-desktop/
+*.deb
+*.buildinfo
+*.changes
 
-# Dist artifacts
+# =========================
+# Distribution Artifacts
+# =========================
 dist/
+release/
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.zip
+*.AppImage
+*.flatpak
 
-# Local environment
+# =========================
+# Local Environment
+# =========================
 .env
+.env.local
+.env.*.local
+
+# =========================
+# Logs and Debugging
+# =========================
+*.log
+*.stackdump
+core
+core.*
+
+# =========================
+# Coverage and Testing
+# =========================
+*.gcov
+*.gcda
+*.gcno
+coverage/
+.coverage
+htmlcov/
+
+# =========================
+# Documentation Build
+# =========================
+docs/_build/
+docs/html/
+docs/latex/
+doxygen/
+
+# =========================
+# Temporary Files
+# =========================
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+
+# =========================
+# Project Specific
+# =========================
+*.ssp.backup
+crash_reports/
+

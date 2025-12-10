@@ -1,0 +1,368 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<xs:schema version="1.01"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns="http://www.gnu.org/software/gama/gama-local"
+  targetNamespace="http://www.gnu.org/software/gama/gama-local"
+  elementFormDefault="qualified">
+
+  <xs:annotation>
+    <xs:documentation xml:lang="en">
+      GNU Gama local schema
+      http://git.savannah.gnu.org/cgit/gama.git/tree/xml/gama-local.xsd
+
+      1.02 new attribute 'angular' in the element 'parameters' deprecated
+           previous attribute 'angles', which is kept for backward
+           compatibility, but may be removed in future versions.
+
+      1.01 removed parameter update-constrained coordinates parameters
+
+      1.00 fixed a formal error in the definition of obs attribute
+           from_dh type=xs:double
+
+           points id are defined as xs:token
+
+      0.91 element dh removed from obs. Elements dh can newly be
+           defined only inside the height-differences.
+    </xs:documentation>
+  </xs:annotation>
+
+
+  <xs:element name="gama-local">
+    <xs:complexType>
+      <xs:complexContent>
+        <xs:extension base="network">
+        </xs:extension>
+      </xs:complexContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="network">
+    <xs:sequence>
+      <xs:element ref="network"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="network">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="description"/>
+        <xs:element ref="parameters"/>
+        <xs:element ref="points-observations"/>
+      </xs:choice>
+      <xs:attribute name="axes-xy" default="ne">
+        <xs:simpleType>
+          <xs:restriction base="xs:token">
+            <xs:enumeration value="ne"/>
+            <xs:enumeration value="sw"/>
+            <xs:enumeration value="es"/>
+            <xs:enumeration value="wn"/>
+            <xs:enumeration value="en"/>
+            <xs:enumeration value="nw"/>
+            <xs:enumeration value="se"/>
+            <xs:enumeration value="ws"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="angles" default="left-handed">
+        <xs:simpleType>
+          <xs:restriction base="xs:token">
+            <xs:enumeration value="left-handed"/>
+            <xs:enumeration value="right-handed"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="epoch" default="0.0" type="xs:double"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="description" type="xs:string"/>
+
+  <xs:element name="parameters">
+    <xs:complexType>
+      <xs:attribute name="sigma-apr" default="10.0" type="xs:double"/>
+      <xs:attribute name="conf-pr" default="0.95" type="xs:double"/>
+      <xs:attribute name="tol-abs" default="1000.0" type="xs:double"/>
+      <xs:attribute name="sigma-act" default="aposteriori">
+        <xs:simpleType>
+          <xs:restriction base="xs:token">
+            <xs:enumeration value="aposteriori"/>
+            <xs:enumeration value="apriori"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="algorithm" default="gso">
+        <xs:simpleType>
+          <xs:restriction base="xs:token">
+            <xs:enumeration value="gso"/>
+            <xs:enumeration value="svd"/>
+            <xs:enumeration value="cholesky"/>
+            <xs:enumeration value="envelope"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="language" default="en">
+        <xs:simpleType>
+          <xs:restriction base="xs:token">
+            <xs:enumeration value="en"/>
+            <xs:enumeration value="ca"/>
+            <xs:enumeration value="cz"/>
+            <xs:enumeration value="du"/>
+            <xs:enumeration value="es"/>
+            <xs:enumeration value="fi"/>
+            <xs:enumeration value="fr"/>
+            <xs:enumeration value="hu"/>
+            <xs:enumeration value="ru"/>
+            <xs:enumeration value="ua"/>
+            <xs:enumeration value="zh"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="encoding" default="utf-8">
+        <xs:simpleType>
+          <xs:restriction base="xs:token">
+            <xs:enumeration value="utf-8"/>
+            <xs:enumeration value="iso-8859-2"/>
+            <xs:enumeration value="iso-8859-2-flat"/>
+            <xs:enumeration value="cp-1250"/>
+            <xs:enumeration value="cp-1251"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="angular" default="400">  <!-- supersedes angles -->
+        <xs:simpleType>
+          <xs:restriction base="xs:token">
+            <xs:enumeration value="400"/>
+            <xs:enumeration value="360"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="angles" default="400">   <!-- deprecated -->
+        <xs:simpleType>
+          <xs:restriction base="xs:token">
+            <xs:enumeration value="400"/>
+            <xs:enumeration value="360"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="latitude" default="50" type="xs:double"/>
+      <xs:attribute name="ellipsoid" type="xs:string"/>
+      <xs:attribute name="cov-band" default="-1">
+        <xs:simpleType>
+          <xs:restriction base="xs:integer">
+            <xs:minInclusive value="-1"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="points-observations">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="point"/>
+        <xs:element ref="obs"/>
+        <xs:element ref="coordinates"/>
+        <xs:element ref="height-differences"/>
+        <xs:element ref="vectors"/>
+      </xs:choice>
+      <!-- distance-stdev can be defined as a string of 3 values a [b [c]] -->
+      <xs:attribute name="distance-stdev"  type="xs:NMTOKENS"/>
+      <xs:attribute name="direction-stdev" type="xs:double"/>
+      <xs:attribute name="angle-stdev" type="xs:double"/>
+      <xs:attribute name="zenith-angle-stdev" type="xs:double"/>
+      <xs:attribute name="azimuth-stdev" type="xs:double"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="point">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:token" use="required"/>
+      <xs:attribute name="x" type="xs:double"/>
+      <xs:attribute name="y" type="xs:double"/>
+      <xs:attribute name="z" type="xs:double"/>
+      <xs:attribute name="fix">
+        <xs:simpleType>
+          <xs:restriction base="xs:token">
+            <xs:enumeration value="xy"/>
+            <xs:enumeration value="XY"/>
+            <xs:enumeration value="z"/>
+            <xs:enumeration value="Z"/>
+            <xs:enumeration value="xyz"/>
+            <xs:enumeration value="XYZ"/>
+            <xs:enumeration value="XYz"/>
+            <xs:enumeration value="xyZ"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="adj">
+        <xs:simpleType>
+          <xs:restriction base="xs:token">
+            <xs:enumeration value="xy"/>
+            <xs:enumeration value="XY"/>
+            <xs:enumeration value="z"/>
+            <xs:enumeration value="Z"/>
+            <xs:enumeration value="xyz"/>
+            <xs:enumeration value="XYZ"/>
+            <xs:enumeration value="XYz"/>
+            <xs:enumeration value="xyZ"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="obs">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+          <xs:element ref="direction"/>
+          <xs:element ref="distance"/>
+          <xs:element ref="angle"/>
+          <xs:element ref="s-distance"/>
+          <xs:element ref="z-angle"/>
+          <xs:element ref="azimuth"/>
+          <!-- xs:element ref="dh"/ removed in version 0.91 -->
+        </xs:choice>
+        <xs:element minOccurs="0" ref="cov-mat"/>
+      </xs:sequence>
+      <xs:attribute name="from" type="xs:token"/>
+      <xs:attribute name="orientation" type="xs:double"/>
+      <xs:attribute name="from_dh" type="xs:double"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="cov-mat">
+    <xs:complexType mixed="true">
+      <xs:attribute name="dim" use="required" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="band" use="required" type="xs:nonNegativeInteger"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="direction">
+    <xs:complexType>
+      <xs:attribute name="to" use="required" type="xs:token"/>
+      <xs:attribute name="val" use="required" type="xs:NMTOKEN"/>
+      <xs:attribute name="stdev" type="xs:double"/>
+      <xs:attribute name="from_dh" type="xs:double"/>
+      <xs:attribute name="to_dh" type="xs:double"/>
+      <xs:attribute name="extern" type="xs:token"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="distance">
+    <xs:complexType>
+      <xs:attribute name="from" type="xs:token"/>
+      <xs:attribute name="to" use="required" type="xs:token"/>
+      <xs:attribute name="val" use="required" type="xs:double"/>
+      <xs:attribute name="stdev" type="xs:double"/>
+      <xs:attribute name="from_dh" type="xs:double"/>
+      <xs:attribute name="to_dh" type="xs:double"/>
+      <xs:attribute name="extern" type="xs:token"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="angle">
+    <xs:complexType>
+      <xs:attribute name="from" type="xs:token"/>
+      <xs:attribute name="bs" use="required" type="xs:token"/>
+      <xs:attribute name="fs" use="required" type="xs:token"/>
+      <xs:attribute name="val" use="required" type="xs:NMTOKEN"/>
+      <xs:attribute name="stdev" type="xs:double"/>
+      <xs:attribute name="from_dh" type="xs:double"/>
+      <xs:attribute name="bs_dh" type="xs:double"/>
+      <xs:attribute name="fs_dh" type="xs:double"/>
+      <xs:attribute name="extern" type="xs:token"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="s-distance">
+    <xs:complexType>
+      <xs:attribute name="from" type="xs:token"/>
+      <xs:attribute name="to" use="required" type="xs:token"/>
+      <xs:attribute name="val" use="required" type="xs:double"/>
+      <xs:attribute name="stdev" type="xs:double"/>
+      <xs:attribute name="from_dh" type="xs:double"/>
+      <xs:attribute name="to_dh" type="xs:double"/>
+      <xs:attribute name="extern" type="xs:token"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="z-angle">
+    <xs:complexType>
+      <xs:attribute name="from" type="xs:token"/>
+      <xs:attribute name="to" use="required" type="xs:token"/>
+      <xs:attribute name="val" use="required" type="xs:NMTOKEN"/>
+      <xs:attribute name="stdev" type="xs:double"/>
+      <xs:attribute name="from_dh" type="xs:double"/>
+      <xs:attribute name="to_dh" type="xs:double"/>
+      <xs:attribute name="extern" type="xs:token"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="azimuth">
+    <xs:complexType>
+      <xs:attribute name="from" type="xs:token"/>
+      <xs:attribute name="to" use="required" type="xs:token"/>
+      <xs:attribute name="val" use="required" type="xs:NMTOKEN"/>
+      <xs:attribute name="stdev" type="xs:double"/>
+      <xs:attribute name="from_dh" type="xs:double"/>
+      <xs:attribute name="to_dh" type="xs:double"/>
+      <xs:attribute name="extern" type="xs:token"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="height-differences">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element maxOccurs="unbounded" ref="dh"/>
+        <xs:element minOccurs="0" ref="cov-mat"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="dh">
+    <xs:complexType>
+      <xs:attribute name="from" type="xs:token"/>
+      <xs:attribute name="to" use="required" type="xs:token"/>
+      <xs:attribute name="val" use="required" type="xs:double"/>
+      <xs:attribute name="stdev" type="xs:double"/>
+      <xs:attribute name="dist" type="xs:double"/>
+      <xs:attribute name="extern" type="xs:token"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- observed coordinates -->
+  <xs:element name="coordinates">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element maxOccurs="unbounded" ref="point"/>
+        <xs:element ref="cov-mat"/>
+      </xs:sequence>
+      <xs:attribute name="extern" type="xs:token"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- observed coordinate differences -->
+  <xs:element name="vectors">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element maxOccurs="unbounded" ref="vec"/>
+        <xs:element ref="cov-mat"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="vec">
+    <xs:complexType>
+      <xs:attribute name="from" type="xs:token"/>
+      <xs:attribute name="to" use="required" type="xs:token"/>
+      <xs:attribute name="dx" use="required" type="xs:double"/>
+      <xs:attribute name="dy" use="required" type="xs:double"/>
+      <xs:attribute name="dz" use="required" type="xs:double"/>
+      <xs:attribute name="from_dh" type="xs:double"/>
+      <xs:attribute name="to_dh" type="xs:double"/>
+      <xs:attribute name="extern" type="xs:token"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

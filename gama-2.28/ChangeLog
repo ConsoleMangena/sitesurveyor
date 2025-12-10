@@ -1,0 +1,262 @@
+2024-01-10   Ales Cepek <cepek@gnu.org>
+
+	* Maintenance release gama-2.28, no user-visible changes.
+
+	- The helper program gama-local-deformation was split to
+	Deformation.h/.cpp class with minimal remaining program
+	gama-local-deformation.cpp.
+
+	- Added a simple autotools tests for deformation results
+	(equivalent test was already available in cmake build).
+
+2023-11-04   Ales Cepek <cepek@gnu.org>
+
+	* Maintenance release gama-2.27, no user-visible changes.
+
+	- Fixed the bug in two test suite functions in the Krumm examples
+	collection.
+
+	- Updated version of krumm/2D/Wolf_DistanceDirectionAngle_free.xml
+
+	The bug in the function mgon2cc(), conversion from milligons to
+	centigrades, was reported by Greg Troxer. The scope of the bug was
+	limited to Krumm's test suite, collection of
+	examples. Unfortunatelly the bug was shadowed by another bug in
+	Input::spatial_distances(string), where mgon2cc() was erroneously
+	used instead of m2mm() conversion. To elliminate the bug in
+	Krumm's examples collection the file
+	Wolf_DistanceDirectionAngle_free.xml had to be updated, replaced
+	with the new correct version.
+
+	See also https://en.wikipedia.org/wiki/Gradian
+
+2023-09-26   Ales Cepek <cepek@gnu.org>
+
+	* Maintenance release gama-2.26
+
+	* Fix the buggy SVG class (in the program gamma-local, version
+	2.25, an error was introduced in the generation of graphic output
+	in SVG format, resulting in wrong orientation of x,y axis).
+
+2023-08-15   Ales Cepek <cepek@gnu.org>
+
+	* New program gama-local-deformation (processing two adjustment
+	epochs to compute point shifts and thei covariance matrix)
+
+	* Updated version of SVG class with rendering ellipses
+	and shift vectiors
+
+	* C++14 standard
+
+
+2023-02-16   Ales Cepek <cepek@gnu.org>
+
+	Maintenance release gama-2.24
+
+	* new testing data to gama-g3 test suite
+
+	* Fixed a bug in gama-g3 adjustment xml output of vectors
+
+	* Fixed the definition of reference standard deviation in the
+	gama-g3 input XML
+
+	* xml/gnu-gama-data.xsd version 1.01 new tags
+	<reference-variance-apriory/> and
+	<reference-variance-aposteriori/>
+
+	* Added a test on conversion of coordinates XYZ to ellipsoidal BLH
+	and back Add an implicit constructor to the Ellipsoid class
+	(implicit ellipsoid is SWG 84) and enable the next iteration in
+	xyz2blh(), which improves the transformation XYZ to BLS from 1e-7
+	to 1e-9 meters. Added a test on conversion from BLH to XYZ to the
+	CMake build
+
+	* Added test on positive definite covariance matrix in input XML
+	and test on covariance matrix dimension and bandwidth in
+	DataParser_g3
+
+
+2022-06-30   Ales Cepek <cepek@gnu.org>
+
+	New release 2.20
+
+	* New algorithm ICGS in the class AdjGSO replaced the former
+	algorithm MGS.
+
+	* Deleted file .var/deprecated/gama-local-pro.cpp (a helper
+	program for generating gama-local.pro; the qmake based project is
+	not supported anymore)
+
+
+2022-04-26   Ales Cepek <cepek@gnu.org>
+
+	New release 2.19
+
+	* New glossary of basic terms used in gama-local text output and
+	in documentation.
+
+	* Fixed tests/gama-local/tests/gama-local.sh to work with GNSS
+	vectors (bug in HTML output for inconsistent systems).
+
+	* Fixed a bug in tests/gama-local-xml-results.sh (program
+	check_xml_results). For inconsistent coordinate systems Ydiff part
+	of the vector has its sign changed on output.
+
+
+2022-04-09   Ales Cepek <cepek@gnu.org>
+
+	New release 2.18
+
+	* Conversion program krumm2gama-local and the testing suite for
+	input data format used in the text book "Geodetic Network
+	Adjustment Examples" by Friedhelm Krumm, Geodätisches Institut
+	Universität Stuttgart, 2020.
+
+
+2022-01-07   Ales Cepek <cepek@gnu.org>
+
+	New release 2.17
+
+	* library libgama changed from OBJECTS to static in CMakeLists.txt
+
+	* minor changes needed by qgama to implement xml input format export
+
+	* new function Observation::raw_value()
+
+	Observation function value() returns observed value with all
+	corrections added (if they are defined).  New function raw_value()
+	returns raw observed value without the corrections. This function
+	is needed in qgama GUI observation editor.
+
+	* HACKING: Describe release process (by Greg Troxel)
+
+	Describe the release process, including some checks.  This is
+	partially capturing existing practice, and is not meant to be a
+	significant change.
+	Reorder to put the long build tools discussion last, fix typos.
+
+
+2021-11-25   Ales Cepek <cepek@gnu.org>
+
+	New release 2.16 (maintenance release)
+
+	* Top level directory 'bin' was renamed to 'src'. Originally 'lib'
+	contained only gama-local.cpp, gama-g3 was added later and some
+	more helper application like gama-local-yaml2gkf also. The
+	directory was named 'bin' because autools build system puts Gama
+	application binaries there when 'make' is run. But the final
+	destination for Gama executables is defined by the command 'make
+	install' where option --prefix can change the implicit
+	destination. Thus the directory is more important because of the
+	source codes it contains than because of the compiled binaries
+	stored there.
+
+	* Prepared gama-local for more observational correction to be
+	added in future releases. Currently only benchmark corrections for
+	height of instrument and hoieght of sight are implemented.
+
+	* Gama-local option '--updated-xml' was renamed to '--export'
+	and similarly was renamed the corresponging test
+	tests/gama-local/gama-local-export.sh
+
+	* More input examples have been added to the gama-local test suite
+
+2021-09-20   Ales Cepek <cepek@gnu.org>
+
+	New release 2.15 (maintenance release)
+
+	* observation reductions are separated from observed values in
+	GNU_gama::local::Observation objects (now is possible to
+	repeatedly calculate reductions in linearization adjustment cykle
+	if needed; observed raw data are not changed during the adjustment).
+
+	* Conditional debug build #add_definitions(-DDEBUG_REDUCED_OBS) to
+	display reductions of observations
+
+	* Cleaning up code in gnu_gama/local/acord/reduce_observations.h|.cpp
+
+	* A minor fix in gnu_gama/local/language.cpp. The english
+	abbreviation for zenith angle was '_zenit_' which looked more like
+	a typo than as an abbrevitaion and was changed to '_zen.__'.
+
+	* Added four methods to the class GNU_gama::local::Point,
+	reduction(), set_reduction(), unset_xyz() and test_xyz()
+
+	* Undocumented extension to enable previous XML syntax
+	'<gama-xml>' in lib/gnu_gama/xml/gkfparser.cpp
+
+	if (!strcmp(c, "gama-xml")) return tag_gama_xml;
+
+
+2021-02-28   Ales Cepek <cepek@gnu.org>
+
+	* new release 2.14
+
+	* fixed html output format. In qgama widget QtTextEdit rendered
+	wrong tables with colspan attributes an all <td> tags had to be
+	written explicitly. Occured in table of adjusted coordinates.
+
+	* changed spelling homogenised to homogenized
+
+	* Explicit initialization of pointer members in g3::Model constructor
+	The bug reported by Greg Troxel: SparseMatrix <>*  A; in g3/g3_model.h
+
+	* removed 'final' specifier for local observations destructor in
+	lib/gnu_gama/local/observation.h
+
+
+2021-01-15   Ales Cepek <cepek@gnu.org>
+
+	* new release 2.13
+
+	* Conversions between yaml and input xml (gkf) tested for all
+	available data files in the tests suite (subdirectory gama-local).
+
+	* Command line programs gama-local, gama-local-yaml2gkf and
+	gama-local-gkf2yaml can now read input data from standard input.
+
+
+2020-11-20   Ales Cepek <cepek@gnu.org>
+
+	* new release 2.12
+
+	* Alternative support of input data based on YAML format. YAML
+	support was added for gama-local as an alternative to the existing
+	XML input format. The YAML support is currently limited only to a
+	conversion program gama-local-yaml2gkf but it may be fully
+	integrated in gama-local program later.
+
+
+2020-10-27   Ales Cepek <cepek@gnu.org>
+
+	* new release 2.11
+
+	* In test suites all template input files *.in (used to generate
+	test shell scripts *.sh) were renamed to *.sh_ . Tests suit
+	subdirectory scripts were renamed to src.
+
+	It was slightly confusing to have input files named as *.in
+	because this extension is used in Makefile.in files which are
+	generated from Makefile.am.
+
+	* Added a new option --enable-extra-tests (default is no) to the
+	configure.ac script. Extra gama-local test may be running
+	substantially longer (for example see railway-control.gkf).
+
+	* Removed obscure adjustment parameter
+	'update-constraiend-parameters'. The update effected SqliteReader
+	lib/gnu_gama/local/sqlitereader.cpp, classes LocalNetwork and
+	GKFparser and file gnu-gama-data.xsd.
+
+	* Removed gnu-gama-data.dtd and all its references (superseded by
+	.xsd), several XML files were updated in tests/gama-g3 to use
+	gnu-gama-data xsd definition.
+
+
+2020-09-25   Petra Millarova <millapet@gnu.org>
+
+	* new release 2.10
+
+	#######################################
+	#  See ChangeLog.3 for older changes  #
+	#######################################

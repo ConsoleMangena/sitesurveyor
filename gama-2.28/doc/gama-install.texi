@@ -1,0 +1,131 @@
+GNU Gama is developed and tested under GNU/Linux.  A static library
+@code{libgama.lib} and executables are build in folders @code{lib} and
+@code{src}.  You can compile Gama easily yourself if you download the
+sources from a FTP server.  The preferred way is to have @code{expat}
+XML parser installed on your system, if not, GNU Gama will be build
+with internally stored @code{expat} older source codes version 1.1.
+
+Change to the directory of Gama project and issue the
+following commands at the shell prompt (with some optional parameters)
+
+@example
+$ ./configure [--enable-extra-tests --bindir=DIR --infodir=DIR]
+$ make
+@end example
+
+@noindent
+For GNU Gama test suite run
+
+@example
+$ make check
+@end example
+
+@noindent If the script @code{configure} is not available (which is the
+case when you download source codes from the
+@url{https://git.savannah.gnu.org/cgit/gama.git, git server}), you have to
+generate it using auxiliary script @code{autogen.sh}.  To compile and
+build all binaries. Run
+
+@example
+$ ./autogen.sh
+$ ./configure
+@end example
+
+and
+
+@example
+$ make install [--prefix=/your/prefered/install/directory]
+@end example
+
+@noindent if you also want to install executables
+and info documentation.
+
+Typically, if you want to download (@pxref{Download}) and compile sources,
+you will run following commands:
+@example
+$ git clone git://git.sv.gnu.org/gama.git gama
+$ cd gama
+$ ./autogen.sh
+$ ./configure
+$ make
+@end example
+You should have @code{expat} XML parser and SQLite library already installed
+on your system.
+For example to be able to compile Gama on Ubuntu 10.04 you have to install
+following packages:
+@example
+make doxygen git automake autoconf libexpat1-dev libsqlite3-dev
+@end example
+
+To compile user documentation in various formats (PDF, HTML, @dots{}) run
+the following commands
+
+@example
+$ cd doc/
+$ make download-gendocs.sh
+$ make run-gendocs.sh
+@end example
+
+@noindent
+The documentation should be in @code{doc/manual} directory.
+To compile API documentation run
+
+@example
+$ doxygen
+@end example
+
+@noindent
+in your @code{gama} directory.
+Doxygen output will be in the @code{doxygen} directory.
+
+
+@menu
+* CMake::
+* pkgsrc::
+* Precompiled executables for Windows::
+@end menu
+
+@node       CMake
+@subsection CMake
+@cindex     CMake
+
+Alternatively you can use CMake to generate makefiles for Unix,
+Windows, Mac OS X, OS/2, MSVC, Cygwin, MinGW or Xcode. Configuration
+file @code{CMakeLists.txt} is available from the root distribution
+directory. For example to build @code{gama-local} binary for Linux run
+
+@example
+$ mkdir build
+$ cd build
+$ cmake ..
+$ make
+@end example
+
+@noindent
+where @code{build} is an arbitrary directory name for
+@emph{out-of-place build}.
+
+
+@node       pkgsrc
+@subsection pkgsrc
+@cindex     pkgsrc
+
+Gama is available for multiple operating systems, including NetBSD, via
+pkgsrc as geography/gama, a multi-OS multi-CPU portable packaging
+system.  See @uref{https://www.pkgsrc.org/} for more information.
+
+
+
+
+
+@node       Precompiled executables for Windows
+@subsection Precompiled executables for Windows
+@cindex     Windows, precompiled executables
+
+Native builds of the command-line interface (CLI)
+@code{gama-local.exe} for Windows are distributed from
+@uref{https://sourceforge.net/projects/gnu-gama-local}.
+
+Executebles of Qt based GUI @code{qgama} and command line programs
+@code{gama-local} and @code{gama-g3} are available from
+@uref{https://sourceforge.net/projects/qgama}.

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<entries>
+
+<e id="T_LN_rm_removed_points"
+   EN="Removed points and coordinates"
+   fr="Points et coordonnÃ©es Ã©liminÃ©s" />
+
+<e id="T_LN_rm_missing_xyz"
+   EN="missing coordiantes xyz"
+   fr="coordonnÃ©es xyz manquantes" />
+
+<e id="T_LN_rm_missing_xy"
+   EN="missing coordiantes xy"
+   fr="coordonnÃ©es xy manquantes" />
+
+<e id="T_LN_rm_missing_z"
+   EN="missing coordiantes z"
+   fr="coordonnÃ©e z manquante" />
+
+<e id="T_LN_rm_singular_xy"
+   EN="singular coordiantes xy"
+   fr="coordonnÃ©es xy singuliÃ¨res" />
+
+<e id="T_LN_rm_huge_cov_xyz"
+   EN="indeterminable coordinates xyz"
+   fr="coordonnÃ©es xyz indÃ©terminables" />
+
+<e id="T_LN_rm_huge_cov_xy"
+   EN="indeterminable coordinates xy"
+   fr="coordonnÃ©es xy indÃ©terminables" />
+
+<e id="T_LN_rm_huge_cov_z"
+   EN="indeterminable coordinate z"
+   fr="coordonnÃ©e z indÃ©terminable" />
+
+</entries>

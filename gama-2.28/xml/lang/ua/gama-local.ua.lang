@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="cp-1251" standalone="yes" ?>
+
+<entries>
+
+<e id="T_GaMa_Adjustment_of_geodetic_network"   
+   EN="Adjustment of local geodetic network"
+   ua="Зрівнювання локальної геодезичної мережі"  /> 
+
+<e id="T_GaMa_version"
+   EN="version: "
+   ua="версія :  " />
+
+<e id="T_GaMa_exception_1"
+   EN="Error during creation of InfoSit object"
+   ua="Помилка при створенні об'екта InfoSit"  />
+
+<e id="T_GaMa_exception_2a"
+   EN="GNU Gama - error on reading XML input configuration file!"
+   ua="GNU Gama - помилка читання вхідного конфігураційного файла XML!" />
+
+<e id="T_GaMa_exception_2b"
+   EN="On line number "
+   ua="На лінії номер " />
+
+<e id="T_GaMa_No_points_available"
+   EN="No points available"
+   ua="Немає доступних точок" />
+
+<e id="T_GaMa_No_observations_available"
+   EN="No observations available"
+   ua="Немає доступних спостережень" />
+
+<e id="T_GaMa_No_network_points_defined"
+   EN="No network points defined"
+   ua="Не вказані точки мережі" />
+
+<e id="T_GaMa_No_unknowns_defined"
+   EN="No unknowns have been defined"
+   ua="Не вказані невідомі" />
+
+<e id="T_GaMa_Observatios_with_outlying_absolute_terms_removed"
+   EN="Observations with outlying absolute terms removed"
+   ua="Спостереження з абсолютними помилками, що перевищують граничні помилки, виключені" />
+
+<e id="T_GaMa_adjustment_iteration"
+   EN=" - adjustment iteration"
+   ua=" - ітерація зрівнювання" />
+
+<e id="T_GaMa_Approximate_coordinates_replaced"
+   EN="Approximate coordinates of computed points replaced by adjusted"
+   ua="Наближені координати обчислених точок заміщені зрівненеми" />
+
+<e id="T_GaMa_solution_ended_with_error"
+   EN="GNU Gama - solution ended with error!"
+   ua="GNU Gama - розв'язок закінчився з помилкою!" />
+
+<e id="T_GaMa_internal_program_error"
+   EN="GNU Gama - internal program error!"
+   ua="GNU Gama - внутрішня помилка!" />
+  
+</entries>   
+
+
+
+
+

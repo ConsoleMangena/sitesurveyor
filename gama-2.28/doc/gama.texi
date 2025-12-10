@@ -1,0 +1,249 @@
+\input texinfo   @c -*-texinfo-*-
+@c ./gendocs.sh --email cepek@gnu.org gama "GNU Gama manual"
+
+@paragraphindent 0
+
+@comment Part 1 : Header
+
+@c %**start of header
+@documentencoding UTF-8
+@setfilename gama.info
+@include     version.texi
+@settitle    GNU Gama @value{VERSION}
+@setchapternewpage odd
+@syncodeindex vr cp
+@syncodeindex fn cp
+@syncodeindex ky cp
+@c %**end of header
+
+@include gama-local-macros.texi
+
+@iftex
+@comment exampleindent 0
+@end iftex
+
+@comment Part 2: Summary Description and Copyright
+
+@macro gamacopyright
+Copyright @copyright{} 2003, 2013, 2021 Aleš Čepek.
+@end macro
+
+@ifinfo
+This is a documentation version of GNU Gama @value{VERSION}.
+
+@gamacopyright{}
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.1 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, with no Front-Cover Texts, and with no Back-Cover
+Texts. A copy of the license is included in the section entitled ``GNU
+Free Documentation License''.
+@end ifinfo
+
+
+
+@comment Part 3: Titlepage and Copyright
+
+@titlepage
+@title GNU Gama @value{VERSION}
+@subtitle Adjustment of geodetic networks
+@subtitle Edition @value{EDITION} (@value{UPDATED})
+@author   Aleš Čepek
+
+@c The following two commands start the copyright page.
+@page
+@vskip 0pt plus 1filll
+@gamacopyright{}
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.1 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, with no Front-Cover Texts, and with no Back-Cover
+Texts. A copy of the license is included in the section entitled ``GNU
+Free Documentation License''.
+@end titlepage
+@contents
+
+
+
+@comment Part 4: `Top' Node and Master Menu
+
+@ifnottex
+@node Top
+@top GNU Gama @value{VERSION}
+@end ifnottex
+
+@menu
+* Introduction::
+* XML input data format for gama-local::
+* YAML input data format for gama-local::
+* SQL schema SQLite and gama-local::
+* Network adjustment with gama-local::
+* Data structures and algorithms::
+* Gama-local companion tools::
+* Gama-local test suite::
+
+* Copying This Manual::
+* Concept Index::
+@end menu
+
+
+
+@comment Part 5:  The Body of the Document
+
+@node    Introduction
+@chapter Introduction
+@include gama-introduction.texi
+
+@c Program gama-g3::
+
+@menu
+* Download::
+* Install::
+* Program gama-local::
+* Reporting bugs::
+* Contributors::
+@end menu
+
+
+@node    Download
+@section Download
+@cindex  download
+@include gama-download.texi
+
+
+@node    Install
+@section Install
+@cindex  install
+@include gama-install.texi
+
+
+@node    Program gama-local
+@section Program @code{gama-local}
+@cindex  @code{gama-local}
+@include gama-local.texi
+
+
+@c @node    Program gama-g3
+@c @section Program @code{gama-g3}
+@c @cindex  @code{gama-g3}
+@c @include gama-g3.texi
+
+
+@node     Reporting bugs
+@section  Reporting bugs
+@cindex   Reporting bugs
+
+
+Undoubtedly there are numerous bugs remaining, both in the C++
+source code and in the documentation.  If you find a bug in either,
+please send a bug report to
+
+@center @uref{mailto:bug-gama@@gnu.org, bug-gama@@gnu.org}
+
+@noindent
+We will try to be as quick as possible in fixing the bugs and
+redistributing the fixes. If you prefere, you can always write
+directly to @uref{mailto:cepek@@gnu.org, Aleš Čepek}.
+
+@node     Contributors
+@section  Contributors
+@cindex   contributors
+
+
+The following persons (in chronological order) have made contributions
+to GNU Gama project:
+@c
+Aleš Čepek, Jiří Veselý, Petr Doubrava, Jan Pytel, Chuck Ghilani, Dan
+Haggman, Mauri Väisänen, John Dedrum, Jim Sutherland, Zoltan Faludi,
+Diego Berge, Boris Pihtin, Stéphane Kaloustian, Siki Zoltan, Anton
+Horpynich, Claudio Fontana, Bronislav Koska, Martin Beckett, Jiří
+Novák, Václav Petráš, Jokin Zurutuza, 项维 (Vim Xiang), Tomáš Kubín,
+Greg Troxel, Kristian Evers, Oleg Goussev, Petra Millarová, Jan
+Holešovský and Friedhelm Krumm.
+
+Jiří Veselý is the author of calculation of approximate coordinates by
+intersections and transformations (class Acord).
+@c
+Václav Petráš is the author of @ref{SQL schema SQLite and gama-local}.
+@c
+Petra Millarová is the main author of class Acord2 and other helper
+classes for combinatorial solution of medians of approximate
+coordinates.
+
+Friedhelm Krumm, Geodätisches Institut Universität Stuttgart,
+contributed numerical examples for the adjustment of geodetic networks
+(1D, 2D and 3D) published in his Geodetic Network Adjustment Examples,
+Rev. 3.5, January 20, 2020.  https://www.gis.uni-stuttgart.de/
+@c
+In version 2.18 the format of input data used in his @emph{Examples}
+was implemented in GNU Gama and is used in command line conversion
+program @code{gama-local-krumm2xml} and also directly in @code{qgama}
+GUI.
+
+
+@c ----------------------------------------------------------------------
+
+
+@node    XML input data format for gama-local
+@chapter XML input data format for @code{gama-local}
+@include gama-local-input.texi
+
+
+@node    YAML input data format for gama-local
+@chapter YAML input data format for @code{gama-local}
+@include gama-local-yaml.texi
+
+
+
+
+@c Unfortunately, you cannot use periods, commas, colons or
+@c parentheses within a node name; these confuse the Texinfo
+@c processors.
+@node    SQL schema SQLite and gama-local
+@chapter SQL schema, SQLite and @code{gama-local}
+@include gama-local-sql.texi
+
+@node    Network adjustment with gama-local
+@chapter Network adjustment with @code{gama-local}
+@include gama-local-adj.texi
+
+@node    Data structures and algorithms
+@chapter Data structures and algorithms
+@include algorithms.texi
+
+
+@c ----------------------------------------------------------------------
+
+
+@node    Gama-local companion tools
+@chapter Gama-local companion tools
+@include companion-tools.texi
+
+@c ----------------------------------------------------------------------
+
+
+@node    Gama-local test suite
+@chapter Gama-local test suite
+@include gama-local-test-suite.texi
+
+
+@c ----------------------------------------------------------------------
+
+
+@node     Copying This Manual
+@appendix Copying This Manual
+
+@menu
+* GNU Free Documentation License:: License for copying this manual.
+@end menu
+
+@include fdl.texi
+
+@node       Concept Index
+@unnumbered Concept Index
+
+@printindex cp
+
+@bye

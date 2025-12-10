@@ -1,0 +1,22 @@
+@menu
+* Observation data and points::            
+* Supported ellipsoids::        
+* Transformation from spatial to geographical coordinates::  
+* Class g3 Model::               Class @code{g3::Model}
+@end menu
+
+@node    Observation data and points
+@section Observation data and points
+@include obsdata.texi
+
+@node    Supported ellipsoids
+@section Supported ellipsoids
+@include ellipsoids-1.texi
+
+@node    Transformation from spatial to geographical coordinates
+@section Transformation from spatial to geographical coordinates
+@include xyz2blh.texi
+
+@node    Class g3 Model
+@section Class @code{g3::Model}
+@include class-g3-model.texi

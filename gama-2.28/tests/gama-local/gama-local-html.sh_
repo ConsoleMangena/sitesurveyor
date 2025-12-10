@@ -1,0 +1,19 @@
+#!/bin/sh
+
+set -e
+
+# depends on gama-local-adjustment.in
+
+for g in @INPUT_FILES@
+do
+    src/check_html $g \
+        @GAMA_RESULTS@/gama-local-adjustment/$g-gso.html \
+        @GAMA_INPUT@/$g.xml
+done
+
+for g in @INPUT_FILES@
+do
+    src/check_html $g-360 \
+        @GAMA_RESULTS@/gama-local-adjustment/$g-gso-360.html \
+        @GAMA_INPUT@/$g.xml
+done

@@ -1,0 +1,8 @@
+#!/bin/sh
+
+set -e
+
+for g in @INPUT_FILES@
+do
+    xmllint --schema @GAMA_XML@/gama-local.xsd @GAMA_INPUT@/$g.gkf --noout
+done

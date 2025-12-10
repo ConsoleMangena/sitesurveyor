@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+
+<entries>
+
+<e id="T_IE_internal_error"
+   EN="internal error"
+   ru="внутренняя ошбика" />
+
+<e id="T_GaMa_from_equals_to"
+   EN="station and target are identical"
+   ru="точка стояния и точка визирования одна и та же" />
+
+</entries>
