@@ -23,19 +23,33 @@ if(GDAL_FOUND)
     message(STATUS "GDAL libraries: ${GDAL_LIBRARIES}")
 endif()
 
-# Find GEOS C library (stable C API)
+# Find GEOS C library (stable C API) - cross-platform
 find_library(GEOS_C_LIBRARY NAMES geos_c
-    HINTS /usr/lib /usr/lib/x86_64-linux-gnu /usr/local/lib
+    HINTS 
+        /usr/lib 
+        /usr/lib/x86_64-linux-gnu 
+        /usr/local/lib
+        $ENV{GEOS_DIR}/lib
+        $ENV{GEOS_DIR}/bin
+        "C:/OSGeo4W/lib"
+        "C:/OSGeo4W64/lib"
 )
 find_path(GEOS_INCLUDE_DIR geos_c.h
-    HINTS /usr/include /usr/local/include
+    HINTS 
+        /usr/include 
+        /usr/local/include
+        $ENV{GEOS_DIR}/include
+        "C:/OSGeo4W/include"
+        "C:/OSGeo4W64/include"
 )
 
 if(GEOS_C_LIBRARY AND GEOS_INCLUDE_DIR)
     message(STATUS "GEOS C library found: ${GEOS_C_LIBRARY}")
     message(STATUS "GEOS include dir: ${GEOS_INCLUDE_DIR}")
+    set(HAVE_GEOS TRUE)
 else()
-    message(FATAL_ERROR "GEOS C library not found!")
+    message(WARNING "GEOS C library not found - some geometry features will be disabled")
+    set(HAVE_GEOS FALSE)
 endif()
 
 # Qt Advanced Docking System
@@ -97,17 +111,24 @@ endif()
 target_include_directories(SiteSurveyor PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${GDAL_INCLUDE_DIRS}
-    ${GEOS_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/external/ads/src
 )
+
+if(HAVE_GEOS)
+    target_include_directories(SiteSurveyor PRIVATE ${GEOS_INCLUDE_DIR})
+    target_compile_definitions(SiteSurveyor PRIVATE HAVE_GEOS=1)
+endif()
 
 target_link_libraries(SiteSurveyor PRIVATE 
     Qt${QT_VERSION_MAJOR}::Core 
     Qt${QT_VERSION_MAJOR}::Widgets
     ${GDAL_LIBRARIES}
-    ${GEOS_C_LIBRARY}
     qtadvanceddocking
 )
+
+if(HAVE_GEOS)
+    target_link_libraries(SiteSurveyor PRIVATE ${GEOS_C_LIBRARY})
+endif()
 
 # Windows: embed application icon in the executable (optional if ICO present)
 if(WIN32)

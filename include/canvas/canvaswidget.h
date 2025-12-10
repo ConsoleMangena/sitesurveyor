@@ -25,13 +25,26 @@ enum class ToolState {
     SetStation,         // Click to set station/instrument point
     SetBacksight,       // Click to set backsight point
     StakeoutMode,       // Live stakeout sighting from station
-    SplitMode           // Click to split polyline at point
+    SplitMode,          // Click to split polyline at point
+    CopyMode,           // Click to place copied polyline
+    MoveMode,           // Click to place moved polyline
+    MirrorMode,         // First click: start of mirror axis
+    MirrorMode2,        // Second click: end of mirror axis
+    TrimMode,           // Click to trim polyline
+    ExtendMode,         // Click to extend polyline
+    FilletMode,         // Click corner to fillet
+    MeasureMode,        // First click: start point for measurement
+    MeasureMode2        // Second click: end point for measurement
 };
 
 // Undo command types
 enum class UndoType {
-    AddPolyline,
-    DeletePolyline
+    AddPolyline,        // Single polyline added
+    DeletePolyline,     // Single polyline deleted
+    ModifyPolyline,     // Polyline modified (points changed)
+    AddMultiple,        // Multiple polylines added (explode, copy)
+    DeleteMultiple,     // Multiple polylines deleted (join)
+    DeleteLayer         // Layer and all its contents deleted
 };
 
 // Simple geometry structures for rendering
@@ -84,8 +97,12 @@ struct CanvasPolyline {
 // Undo command data (must be after CanvasPolyline)
 struct UndoCommand {
     UndoType type;
-    CanvasPolyline polyline;  // The polyline that was added/deleted
-    int index{-1};            // Index in the polylines vector
+    CanvasPolyline polyline;              // For single add/delete/modify
+    CanvasPolyline oldPolyline;           // Previous state for modify
+    QVector<CanvasPolyline> polylines;    // For batch add/delete
+    QVector<int> indices;                 // Indices for batch operations
+    int index{-1};                        // Index for single operations
+    QString layerName;                    // For layer operations
 };
 
 struct CanvasPolygon {
@@ -271,6 +288,19 @@ public:
     void reverseSelectedPolyline();                   // Reverse point order
     void deleteSelectedPolyline();                    // Remove selected
     void startSplitMode();                            // Enter split tool mode
+    
+    // Additional modify tools (AutoCAD-style)
+    void copySelectedPolyline();                      // COPY - duplicate selected objects
+    void startMoveMode();                             // MOVE - start moving selected objects
+    void startMirrorMode();                           // MIRROR - start mirror operation
+    void mirrorSelectedPolyline(const QPointF& p1, const QPointF& p2);  // Execute mirror
+    void startTrimMode();                             // TRIM - start trim tool
+    void startExtendMode();                           // EXTEND - start extend tool  
+    void startFilletMode(double radius);              // FILLET - start fillet tool
+    
+    // Measurement tools
+    void startMeasureMode();                          // MEASURE - start distance/angle measurement
+
 
 signals:
     void mouseWorldPosition(const QPointF& pos);
@@ -314,6 +344,7 @@ private:
     
     // Hit testing
     int hitTestPolyline(const QPointF& worldPos, double tolerance);
+    int hitTestText(const QPointF& worldPos, double tolerance);
     
     // Offset execution
     void executeOffset(const QPointF& sideClickPos);
@@ -346,12 +377,23 @@ private:
     
     // Selection (single and multi)
     int m_selectedPolylineIndex{-1};
+    int m_selectedVertexIndex{-1};  // Selected vertex for editing (AutoCAD-style)
     QSet<int> m_selectedPolylines;  // For multi-selection (Shift+click)
+    QSet<int> m_selectedTexts;      // For text multi-selection
+    
+    // Selection box (AutoCAD-style drag selection)
+    bool m_isSelectingBox{false};
+    QPointF m_selectionBoxStart;
+    QPointF m_selectionBoxEnd;
     
     // Tool state
     ToolState m_toolState{ToolState::Idle};
     double m_pendingOffsetDistance{0.0};
     QPointF m_stakeoutCursorPos;  // Current cursor position for stakeout mode
+    QPointF m_mirrorAxisStart;    // First point of mirror axis
+    QPointF m_moveStartPos;       // Start position for move operation
+    double m_pendingFilletRadius{0.0};  // Fillet radius
+    QPointF m_measureStartPoint;  // Start point for distance measurement
     
     // Entities
     QVector<CanvasPoint> m_points;

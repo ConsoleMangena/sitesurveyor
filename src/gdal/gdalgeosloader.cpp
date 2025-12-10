@@ -97,17 +97,10 @@ bool GdalGeosLoader::loadDxf(const QString& filepath, DxfData& targetData)
         QString layerName = QString::fromUtf8(layer->GetName());
         
         // Assign a color to this layer if not already assigned
+        // Assign a color to this layer if not already assigned
         if (!layerColors.contains(layerName)) {
             layerColors[layerName] = getLayerColor(layerIndex++);
         }
-        
-        // Add layer info
-        DxfLayer dxfLayer;
-        dxfLayer.name = layerName;
-        dxfLayer.color = layerColors[layerName];
-        dxfLayer.visible = true;
-        dxfLayer.locked = false;
-        targetData.layers.append(dxfLayer);
         
         // Process all features in this layer
         layer->ResetReading();
@@ -139,7 +132,7 @@ void GdalGeosLoader::processFeature(void* featurePtr, const QString& layerName, 
     int colorIndex = feature->GetFieldIndex("Color");
     if (colorIndex >= 0 && feature->IsFieldSet(colorIndex)) {
         int aci = feature->GetFieldAsInteger(colorIndex);
-        if (aci > 0) {
+        if (aci > 0 && aci != 256) { // 256 is ByLayer
             color = aciToColor(aci);
         }
     }
@@ -149,6 +142,27 @@ void GdalGeosLoader::processFeature(void* featurePtr, const QString& layerName, 
     int layerFieldIndex = feature->GetFieldIndex("Layer");
     if (layerFieldIndex >= 0 && feature->IsFieldSet(layerFieldIndex)) {
         featureLayer = QString::fromUtf8(feature->GetFieldAsString(layerFieldIndex));
+    }
+    
+    // Ensure layer exists in targetData
+    bool layerFound = false;
+    for (const auto& layer : targetData.layers) {
+        if (layer.name == featureLayer) {
+            layerFound = true;
+            break;
+        }
+    }
+    
+    if (!layerFound) {
+        DxfLayer newLayer;
+        newLayer.name = featureLayer;
+        // If color is ByLayer (256), we should use a default or random color for the layer
+        // If color is explicit, we might still want a distinct color for the layer
+        // For now, let's generate a color based on layer name hash or just cycle
+        newLayer.color = getLayerColor(qHash(featureLayer)); 
+        newLayer.visible = true;
+        newLayer.locked = false;
+        targetData.layers.append(newLayer);
     }
     
     // Get text properties if this is a text entity

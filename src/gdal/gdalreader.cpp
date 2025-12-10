@@ -344,11 +344,17 @@ bool GdalReader::readRasterData(GDALDataset* dataset)
         QVector<uint8_t> blueData(width * height);
         QVector<uint8_t> alphaData(width * height, 255);
         
-        redBand->RasterIO(GF_Read, 0, 0, width, height, redData.data(), width, height, GDT_Byte, 0, 0);
-        greenBand->RasterIO(GF_Read, 0, 0, width, height, greenData.data(), width, height, GDT_Byte, 0, 0);
-        blueBand->RasterIO(GF_Read, 0, 0, width, height, blueData.data(), width, height, GDT_Byte, 0, 0);
+        CPLErr err1 = redBand->RasterIO(GF_Read, 0, 0, width, height, redData.data(), width, height, GDT_Byte, 0, 0);
+        CPLErr err2 = greenBand->RasterIO(GF_Read, 0, 0, width, height, greenData.data(), width, height, GDT_Byte, 0, 0);
+        CPLErr err3 = blueBand->RasterIO(GF_Read, 0, 0, width, height, blueData.data(), width, height, GDT_Byte, 0, 0);
+        CPLErr err4 = CE_None;
         if (alphaBand) {
-            alphaBand->RasterIO(GF_Read, 0, 0, width, height, alphaData.data(), width, height, GDT_Byte, 0, 0);
+            err4 = alphaBand->RasterIO(GF_Read, 0, 0, width, height, alphaData.data(), width, height, GDT_Byte, 0, 0);
+        }
+        
+        if (err1 != CE_None || err2 != CE_None || err3 != CE_None || err4 != CE_None) {
+            m_lastError = "Failed to read raster band data";
+            return false;
         }
         
         for (int y = 0; y < height; ++y) {
@@ -367,7 +373,12 @@ bool GdalReader::readRasterData(GDALDataset* dataset)
         
         GDALRasterBand* band = dataset->GetRasterBand(1);
         QVector<uint8_t> data(width * height);
-        band->RasterIO(GF_Read, 0, 0, width, height, data.data(), width, height, GDT_Byte, 0, 0);
+        CPLErr err = band->RasterIO(GF_Read, 0, 0, width, height, data.data(), width, height, GDT_Byte, 0, 0);
+        
+        if (err != CE_None) {
+            m_lastError = "Failed to read grayscale raster band data";
+            return false;
+        }
         
         for (int y = 0; y < height; ++y) {
             uchar* line = image.scanLine(y);

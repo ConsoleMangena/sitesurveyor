@@ -49,8 +49,15 @@ void CanvasWidget::loadDxfData(const DxfData& data)
     }
     
     // Load lines
+    // Load lines as 2-point polylines to allow editing/merging
     for (const auto& line : data.lines) {
-        m_lines.append({line.start, line.end, line.layer, line.color});
+        CanvasPolyline poly;
+        poly.points.append(line.start);
+        poly.points.append(line.end);
+        poly.closed = false;
+        poly.layer = line.layer;
+        poly.color = line.color;
+        m_polylines.append(poly);
     }
     
     // Load circles
@@ -130,7 +137,13 @@ void CanvasWidget::loadDxfData(const DxfData& data)
         
         // Transform and add block entities
         for (const auto& line : block.lines) {
-            m_lines.append({transformPoint(line.start), transformPoint(line.end), insert.layer, line.color});
+            CanvasPolyline poly;
+            poly.points.append(transformPoint(line.start));
+            poly.points.append(transformPoint(line.end));
+            poly.closed = false;
+            poly.layer = insert.layer;
+            poly.color = line.color;
+            m_polylines.append(poly);
         }
         for (const auto& circle : block.circles) {
             double avgScale = (qAbs(insert.scaleX) + qAbs(insert.scaleY)) / 2.0;
@@ -193,6 +206,21 @@ void CanvasWidget::clearAll()
     m_rasters.clear();
     m_layers.clear();
     m_hiddenLayers.clear();
+    
+    // Clear pegs and station
+    m_pegs.clear();
+    m_station = CanvasStation();  // Reset to default
+    
+    // Clear selection state
+    m_selectedPolylineIndex = -1;
+    m_selectedVertexIndex = -1;
+    m_selectedPolylines.clear();
+    
+    // Clear undo/redo stacks
+    m_undoStack.clear();
+    m_redoStack.clear();
+    emit undoRedoChanged();
+    
     update();
 }
 
@@ -242,6 +270,38 @@ void CanvasWidget::removeLayer(const QString& name)
         if (m_layers[i].name == name) {
             m_layers.removeAt(i);
             m_hiddenLayers.remove(name);
+            
+            // Remove all entities belonging to this layer
+            m_points.erase(std::remove_if(m_points.begin(), m_points.end(),
+                [&name](const CanvasPoint& p) { return p.layer == name; }), m_points.end());
+            m_lines.erase(std::remove_if(m_lines.begin(), m_lines.end(),
+                [&name](const CanvasLine& l) { return l.layer == name; }), m_lines.end());
+            m_circles.erase(std::remove_if(m_circles.begin(), m_circles.end(),
+                [&name](const CanvasCircle& c) { return c.layer == name; }), m_circles.end());
+            m_arcs.erase(std::remove_if(m_arcs.begin(), m_arcs.end(),
+                [&name](const CanvasArc& a) { return a.layer == name; }), m_arcs.end());
+            m_ellipses.erase(std::remove_if(m_ellipses.begin(), m_ellipses.end(),
+                [&name](const CanvasEllipse& e) { return e.layer == name; }), m_ellipses.end());
+            m_splines.erase(std::remove_if(m_splines.begin(), m_splines.end(),
+                [&name](const CanvasSpline& s) { return s.layer == name; }), m_splines.end());
+            m_polylines.erase(std::remove_if(m_polylines.begin(), m_polylines.end(),
+                [&name](const CanvasPolyline& p) { return p.layer == name; }), m_polylines.end());
+            m_polygons.erase(std::remove_if(m_polygons.begin(), m_polygons.end(),
+                [&name](const CanvasPolygon& p) { return p.layer == name; }), m_polygons.end());
+            m_hatches.erase(std::remove_if(m_hatches.begin(), m_hatches.end(),
+                [&name](const CanvasHatch& h) { return h.layer == name; }), m_hatches.end());
+            m_texts.erase(std::remove_if(m_texts.begin(), m_texts.end(),
+                [&name](const CanvasText& t) { return t.layer == name; }), m_texts.end());
+            m_rasters.erase(std::remove_if(m_rasters.begin(), m_rasters.end(),
+                [&name](const CanvasRaster& r) { return r.layer == name; }), m_rasters.end());
+            m_pegs.erase(std::remove_if(m_pegs.begin(), m_pegs.end(),
+                [&name](const CanvasPeg& p) { return p.layer == name; }), m_pegs.end());
+            
+            // Clear selection if deleted polyline was selected
+            m_selectedPolylineIndex = -1;
+            m_selectedPolylines.clear();
+            emit selectionChanged(-1);
+            
             emit layersChanged();
             update();
             return;
@@ -258,7 +318,47 @@ void CanvasWidget::renameLayer(const QString& oldName, const QString& newName)
                 m_hiddenLayers.remove(oldName);
                 m_hiddenLayers.insert(newName);
             }
+            
+            // Update all entities that reference this layer
+            for (auto& point : m_points) {
+                if (point.layer == oldName) point.layer = newName;
+            }
+            for (auto& line : m_lines) {
+                if (line.layer == oldName) line.layer = newName;
+            }
+            for (auto& circle : m_circles) {
+                if (circle.layer == oldName) circle.layer = newName;
+            }
+            for (auto& arc : m_arcs) {
+                if (arc.layer == oldName) arc.layer = newName;
+            }
+            for (auto& ellipse : m_ellipses) {
+                if (ellipse.layer == oldName) ellipse.layer = newName;
+            }
+            for (auto& spline : m_splines) {
+                if (spline.layer == oldName) spline.layer = newName;
+            }
+            for (auto& poly : m_polylines) {
+                if (poly.layer == oldName) poly.layer = newName;
+            }
+            for (auto& polygon : m_polygons) {
+                if (polygon.layer == oldName) polygon.layer = newName;
+            }
+            for (auto& hatch : m_hatches) {
+                if (hatch.layer == oldName) hatch.layer = newName;
+            }
+            for (auto& text : m_texts) {
+                if (text.layer == oldName) text.layer = newName;
+            }
+            for (auto& raster : m_rasters) {
+                if (raster.layer == oldName) raster.layer = newName;
+            }
+            for (auto& peg : m_pegs) {
+                if (peg.layer == oldName) peg.layer = newName;
+            }
+            
             emit layersChanged();
+            update();
             return;
         }
     }
@@ -444,6 +544,29 @@ void CanvasWidget::paintEvent(QPaintEvent *event)
     // Snap marker (on top of everything)
     drawSnapMarker(painter);
     
+    // Selection box (if dragging)
+    if (m_isSelectingBox) {
+        QPoint startScreen = worldToScreen(m_selectionBoxStart);
+        QPoint endScreen = worldToScreen(m_selectionBoxEnd);
+        QRect boxRect = QRect(startScreen, endScreen).normalized();
+        
+        // Left-to-right: solid blue (window select)
+        // Right-to-left: dashed green (crossing select)
+        bool isCrossing = m_selectionBoxEnd.x() < m_selectionBoxStart.x();
+        
+        QColor boxColor = isCrossing ? QColor(0, 180, 0, 80) : QColor(0, 120, 255, 80);
+        QColor borderColor = isCrossing ? QColor(0, 200, 0) : QColor(0, 150, 255);
+        
+        painter.fillRect(boxRect, boxColor);
+        
+        QPen boxPen(borderColor, 1);
+        if (isCrossing) {
+            boxPen.setStyle(Qt::DashLine);
+        }
+        painter.setPen(boxPen);
+        painter.drawRect(boxRect);
+    }
+    
     // Origin crosshair
     painter.setPen(QPen(Qt::gray, 1));
     QPoint origin = worldToScreen(QPointF(0, 0));
@@ -576,18 +699,38 @@ void CanvasWidget::drawEntities(QPainter& painter)
     }
     
     // Draw text
-    for (const auto& text : m_texts) {
+    for (int i = 0; i < m_texts.size(); ++i) {
+        const auto& text = m_texts[i];
         if (m_hiddenLayers.contains(text.layer)) continue;
-        painter.setPen(text.color);
+        
         QPoint pos = worldToScreen(text.position);
         double fontSize = qMax(8.0, text.height * m_zoom);
         QFont font = painter.font();
         font.setPointSizeF(fontSize);
         painter.setFont(font);
+        
+        // Check if selected
+        bool isTextSelected = m_selectedTexts.contains(i);
+        
         painter.save();
         painter.translate(pos);
-        painter.rotate(text.angle);  // Positive rotation in screen coords
-        // Draw text at baseline (no Y flip needed - just offset up by font height)
+        painter.rotate(text.angle);
+        
+        if (isTextSelected) {
+            // Draw selection highlight
+            QFontMetricsF fm(font);
+            QRectF textRect = fm.boundingRect(text.text);
+            textRect.adjust(-4, -4, 4, 4);
+            
+            QPen selPen(Qt::cyan, 2);
+            selPen.setStyle(Qt::DashLine);
+            selPen.setCosmetic(true);
+            painter.setPen(selPen);
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRect(textRect);
+        }
+        
+        painter.setPen(text.color);
         painter.drawText(0, 0, text.text);
         painter.restore();
     }
@@ -728,6 +871,46 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
 {
     QPointF worldPos = screenToWorld(event->pos());
     
+    // Check if clicking on a vertex grip of selected polyline (AutoCAD-style)
+    // Skip this check in measure mode so measure clicks work
+    if (m_selectedPolylineIndex >= 0 && m_selectedPolylineIndex < m_polylines.size() &&
+        m_toolState != ToolState::MeasureMode && m_toolState != ToolState::MeasureMode2) {
+        const CanvasPolyline& poly = m_polylines[m_selectedPolylineIndex];
+        double tolerance = m_snapTolerance / m_zoom;
+        
+        // Find closest vertex
+        int closestVertex = -1;
+        double minDist = tolerance;
+        
+        for (int i = 0; i < poly.points.size(); ++i) {
+            double dist = QLineF(worldPos, poly.points[i]).length();
+            if (dist < minDist) {
+                minDist = dist;
+                closestVertex = i;
+            }
+        }
+        
+        // Left-click on vertex: select it
+        if (event->button() == Qt::LeftButton && closestVertex >= 0) {
+            if (m_selectedVertexIndex == closestVertex) {
+                // Click same vertex again: deselect
+                m_selectedVertexIndex = -1;
+                emit statusMessage("Vertex deselected");
+            } else {
+                m_selectedVertexIndex = closestVertex;
+                emit statusMessage(QString("Vertex %1 selected - Press Delete to remove").arg(closestVertex + 1));
+            }
+            update();
+            return;
+        }
+    }
+    
+    // Click elsewhere: deselect vertex
+    if (event->button() == Qt::LeftButton && m_selectedVertexIndex >= 0) {
+        m_selectedVertexIndex = -1;
+        update();
+    }
+    
     // Handle offset tool state: waiting for side click
     if (m_toolState == ToolState::OffsetWaitForSide && event->button() == Qt::LeftButton) {
         executeOffset(worldPos);
@@ -737,6 +920,47 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
     // Handle split mode: click to split polyline at point
     if (m_toolState == ToolState::SplitMode && event->button() == Qt::LeftButton) {
         splitPolylineAtPoint(worldPos);
+        return;
+    }
+    
+    // Handle measure mode: click two points to measure distance
+    if (m_toolState == ToolState::MeasureMode && event->button() == Qt::LeftButton) {
+        m_measureStartPoint = worldPos;
+        m_toolState = ToolState::MeasureMode2;
+        emit statusMessage("MEASURE: Click second point");
+        update();
+        return;
+    }
+    
+    if (m_toolState == ToolState::MeasureMode2 && event->button() == Qt::LeftButton) {
+        // Calculate distance and angle
+        double dx = worldPos.x() - m_measureStartPoint.x();
+        double dy = worldPos.y() - m_measureStartPoint.y();
+        double distance = std::sqrt(dx * dx + dy * dy);
+        
+        // Calculate bearing (azimuth from north, clockwise)
+        double bearing = std::atan2(dx, dy) * 180.0 / M_PI;
+        if (bearing < 0) bearing += 360.0;
+        
+        // Format bearing as DMS
+        int degrees = static_cast<int>(bearing);
+        double minFloat = (bearing - degrees) * 60.0;
+        int minutes = static_cast<int>(minFloat);
+        double seconds = (minFloat - minutes) * 60.0;
+        
+        QString bearingStr = QString("%1°%2'%3\"")
+            .arg(degrees)
+            .arg(minutes, 2, 10, QChar('0'))
+            .arg(seconds, 5, 'f', 2, QChar('0'));
+        
+        emit statusMessage(QString("Distance: %1 | Bearing: %2 | ΔX: %3 | ΔY: %4")
+            .arg(distance, 0, 'f', 3)
+            .arg(bearingStr)
+            .arg(dx, 0, 'f', 3)
+            .arg(dy, 0, 'f', 3));
+        
+        // Stay in measure mode for more measurements
+        m_toolState = ToolState::MeasureMode;
         return;
     }
     
@@ -790,32 +1014,65 @@ void CanvasWidget::mousePressEvent(QMouseEvent *event)
         return;
     }
     
-    // Left click: select polyline (only in Idle/None mode)
+    // Left click: select polyline or start selection box (in Idle/None mode)
     if (event->button() == Qt::LeftButton && 
         (m_toolState == ToolState::Idle || m_toolState == ToolState::None)) {
         double tolerance = m_snapTolerance / m_zoom;
         int hitIndex = hitTestPolyline(worldPos, tolerance);
+        int hitTextIndex = hitTestText(worldPos, tolerance);
         
-        if (event->modifiers() & Qt::ShiftModifier) {
-            // Shift+click: add to / toggle in selection
-            if (hitIndex >= 0) {
+        if (hitIndex >= 0) {
+            // Hit a polyline - single or multi-select
+            m_selectedTexts.clear();  // Clear text selection when selecting polylines
+            if (event->modifiers() & Qt::ShiftModifier) {
+                // Shift+click: add to / toggle in selection
                 if (isSelected(hitIndex)) {
                     removeFromSelection(hitIndex);
                 } else {
                     addToSelection(hitIndex);
                 }
-            }
-        } else {
-            // Regular click: replace selection
-            if (hitIndex != m_selectedPolylineIndex) {
+            } else {
+                // Regular click: replace selection with this polyline
                 m_selectedPolylines.clear();
                 m_selectedPolylineIndex = hitIndex;
-                if (hitIndex >= 0) {
-                    m_selectedPolylines.insert(hitIndex);
-                }
+                m_selectedPolylines.insert(hitIndex);
                 emit selectionChanged(m_selectedPolylineIndex);
                 update();
             }
+        } else if (hitTextIndex >= 0) {
+            // Hit a text object
+            m_selectedPolylines.clear();
+            m_selectedPolylineIndex = -1;
+            
+            if (event->modifiers() & Qt::ShiftModifier) {
+                // Shift+click: toggle text in selection
+                if (m_selectedTexts.contains(hitTextIndex)) {
+                    m_selectedTexts.remove(hitTextIndex);
+                } else {
+                    m_selectedTexts.insert(hitTextIndex);
+                }
+            } else {
+                // Regular click: replace selection with this text
+                m_selectedTexts.clear();
+                m_selectedTexts.insert(hitTextIndex);
+            }
+            emit statusMessage(QString("Selected text: %1").arg(m_texts[hitTextIndex].text));
+            update();
+        } else {
+            // No hit - start selection box drag
+            m_isSelectingBox = true;
+            m_selectionBoxStart = worldPos;
+            m_selectionBoxEnd = worldPos;
+            
+            // If not holding shift, clear current selection
+            if (!(event->modifiers() & Qt::ShiftModifier)) {
+                m_selectedPolylines.clear();
+                m_selectedPolylineIndex = -1;
+                emit selectionChanged(m_selectedPolylineIndex);
+            }
+            
+            setCursor(Qt::CrossCursor);
+            update();
         }
     }
 }
@@ -845,6 +1102,13 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
         update();  // Redraw stakeout line
     }
     
+    // Update selection box while dragging
+    if (m_isSelectingBox) {
+        m_selectionBoxEnd = worldPos;
+        update();  // Redraw selection rectangle
+        return;
+    }
+    
     if (m_isPanning) {
         QPointF delta = screenToWorld(event->pos()) - screenToWorld(m_lastMousePos);
         m_offset += delta;
@@ -856,6 +1120,50 @@ void CanvasWidget::mouseMoveEvent(QMouseEvent *event)
 
 void CanvasWidget::mouseReleaseEvent(QMouseEvent *event)
 {
+    // Complete selection box
+    if (m_isSelectingBox && event->button() == Qt::LeftButton) {
+        m_isSelectingBox = false;
+        setCursor(Qt::ArrowCursor);
+        
+        // Create selection rectangle (normalized)
+        QRectF selectionRect = QRectF(m_selectionBoxStart, m_selectionBoxEnd).normalized();
+        
+        // Determine selection mode: left-to-right = window (fully inside), right-to-left = crossing (intersects)
+        bool isCrossingSelect = m_selectionBoxEnd.x() < m_selectionBoxStart.x();
+        
+        // Select polylines based on box
+        for (int i = 0; i < m_polylines.size(); ++i) {
+            const auto& poly = m_polylines[i];
+            if (poly.points.isEmpty()) continue;
+            
+            // Get polyline bounding box
+            QRectF polyBounds;
+            for (const QPointF& pt : poly.points) {
+                if (polyBounds.isNull()) {
+                    polyBounds = QRectF(pt, QSizeF(0.001, 0.001));
+                } else {
+                    polyBounds = polyBounds.united(QRectF(pt, QSizeF(0.001, 0.001)));
+                }
+            }
+            
+            bool selected = false;
+            if (isCrossingSelect) {
+                // Crossing select: any intersection with box
+                selected = selectionRect.intersects(polyBounds);
+            } else {
+                // Window select: fully contained in box
+                selected = selectionRect.contains(polyBounds);
+            }
+            
+            if (selected && !isSelected(i)) {
+                addToSelection(i);
+            }
+        }
+        
+        update();
+        return;
+    }
+    
     if (event->button() == Qt::MiddleButton || event->button() == Qt::LeftButton) {
         if (m_isPanning) {
             m_isPanning = false;
@@ -1219,31 +1527,74 @@ void CanvasWidget::undo()
     if (m_undoStack.isEmpty()) return;
     
     UndoCommand cmd = m_undoStack.takeLast();
+    UndoCommand redoCmd;
+    redoCmd.type = cmd.type;
+    redoCmd.index = cmd.index;
+    redoCmd.indices = cmd.indices;
+    redoCmd.layerName = cmd.layerName;
     
     switch (cmd.type) {
         case UndoType::AddPolyline:
             // Remove the added polyline
             if (cmd.index >= 0 && cmd.index < m_polylines.size()) {
+                redoCmd.polyline = m_polylines[cmd.index];
                 m_polylines.remove(cmd.index);
-                // Adjust selection if needed
                 if (m_selectedPolylineIndex >= cmd.index) {
                     m_selectedPolylineIndex = qMax(-1, m_selectedPolylineIndex - 1);
                     emit selectionChanged(m_selectedPolylineIndex);
                 }
             }
             break;
+            
         case UndoType::DeletePolyline:
             // Re-insert the deleted polyline
             if (cmd.index >= 0 && cmd.index <= m_polylines.size()) {
                 m_polylines.insert(cmd.index, cmd.polyline);
+                redoCmd.polyline = cmd.polyline;
             }
+            break;
+            
+        case UndoType::ModifyPolyline:
+            // Restore old polyline state
+            if (cmd.index >= 0 && cmd.index < m_polylines.size()) {
+                redoCmd.polyline = m_polylines[cmd.index];
+                redoCmd.oldPolyline = cmd.oldPolyline;
+                m_polylines[cmd.index] = cmd.oldPolyline;
+            }
+            break;
+            
+        case UndoType::AddMultiple:
+            // Remove all added polylines (in reverse order)
+            for (int i = cmd.indices.size() - 1; i >= 0; --i) {
+                int idx = cmd.indices[i];
+                if (idx >= 0 && idx < m_polylines.size()) {
+                    redoCmd.polylines.prepend(m_polylines[idx]);
+                    m_polylines.remove(idx);
+                }
+            }
+            redoCmd.indices = cmd.indices;
+            m_selectedPolylineIndex = -1;
+            m_selectedPolylines.clear();
+            emit selectionChanged(-1);
+            break;
+            
+        case UndoType::DeleteMultiple:
+            // Re-insert all deleted polylines
+            for (int i = 0; i < cmd.polylines.size(); ++i) {
+                int idx = (i < cmd.indices.size()) ? cmd.indices[i] : m_polylines.size();
+                m_polylines.insert(idx, cmd.polylines[i]);
+            }
+            redoCmd.polylines = cmd.polylines;
+            redoCmd.indices = cmd.indices;
+            break;
+            
+        case UndoType::DeleteLayer:
+            // Layer undo is complex - for now just message
+            emit statusMessage("Layer deletion cannot be undone");
             break;
     }
     
-    // Push to redo stack (inverted)
-    cmd.type = (cmd.type == UndoType::AddPolyline) ? UndoType::DeletePolyline : UndoType::AddPolyline;
-    m_redoStack.append(cmd);
-    
+    m_redoStack.append(redoCmd);
     emit undoRedoChanged();
     emit statusMessage("Undo");
     update();
@@ -1254,17 +1605,25 @@ void CanvasWidget::redo()
     if (m_redoStack.isEmpty()) return;
     
     UndoCommand cmd = m_redoStack.takeLast();
+    UndoCommand undoCmd;
+    undoCmd.type = cmd.type;
+    undoCmd.index = cmd.index;
+    undoCmd.indices = cmd.indices;
+    undoCmd.layerName = cmd.layerName;
     
     switch (cmd.type) {
         case UndoType::AddPolyline:
-            // Re-add the polyline (was deleted in undo)
+            // Re-add the polyline
             if (cmd.index >= 0 && cmd.index <= m_polylines.size()) {
                 m_polylines.insert(cmd.index, cmd.polyline);
+                undoCmd.polyline = cmd.polyline;
             }
             break;
+            
         case UndoType::DeletePolyline:
             // Remove the polyline again
             if (cmd.index >= 0 && cmd.index < m_polylines.size()) {
+                undoCmd.polyline = m_polylines[cmd.index];
                 m_polylines.remove(cmd.index);
                 if (m_selectedPolylineIndex >= cmd.index) {
                     m_selectedPolylineIndex = qMax(-1, m_selectedPolylineIndex - 1);
@@ -1272,12 +1631,47 @@ void CanvasWidget::redo()
                 }
             }
             break;
+            
+        case UndoType::ModifyPolyline:
+            // Apply the modification again
+            if (cmd.index >= 0 && cmd.index < m_polylines.size()) {
+                undoCmd.oldPolyline = m_polylines[cmd.index];
+                undoCmd.polyline = cmd.polyline;
+                m_polylines[cmd.index] = cmd.polyline;
+            }
+            break;
+            
+        case UndoType::AddMultiple:
+            // Re-add all the polylines
+            for (int i = 0; i < cmd.polylines.size(); ++i) {
+                int idx = (i < cmd.indices.size()) ? cmd.indices[i] : m_polylines.size();
+                m_polylines.insert(idx, cmd.polylines[i]);
+            }
+            undoCmd.polylines = cmd.polylines;
+            undoCmd.indices = cmd.indices;
+            break;
+            
+        case UndoType::DeleteMultiple:
+            // Remove all polylines again (in reverse order)
+            for (int i = cmd.indices.size() - 1; i >= 0; --i) {
+                int idx = cmd.indices[i];
+                if (idx >= 0 && idx < m_polylines.size()) {
+                    undoCmd.polylines.prepend(m_polylines[idx]);
+                    m_polylines.remove(idx);
+                }
+            }
+            undoCmd.indices = cmd.indices;
+            m_selectedPolylineIndex = -1;
+            m_selectedPolylines.clear();
+            emit selectionChanged(-1);
+            break;
+            
+        case UndoType::DeleteLayer:
+            emit statusMessage("Layer redo not supported");
+            break;
     }
     
-    // Push back to undo stack (inverted again)
-    cmd.type = (cmd.type == UndoType::AddPolyline) ? UndoType::DeletePolyline : UndoType::AddPolyline;
-    m_undoStack.append(cmd);
-    
+    m_undoStack.append(undoCmd);
     emit undoRedoChanged();
     emit statusMessage("Redo");
     update();
@@ -1376,6 +1770,32 @@ int CanvasWidget::hitTestPolyline(const QPointF& worldPos, double tolerance)
             if (dist <= tolerance) {
                 return i;  // Hit!
             }
+        }
+    }
+    return -1;  // No hit
+}
+
+int CanvasWidget::hitTestText(const QPointF& worldPos, double tolerance)
+{
+    // Check each text for proximity to click point
+    for (int i = 0; i < m_texts.size(); ++i) {
+        const auto& text = m_texts[i];
+        
+        // Check if layer is visible
+        if (m_hiddenLayers.contains(text.layer)) continue;
+        
+        // Create a rough bounding box for the text
+        double textWidth = text.text.length() * text.height * 0.6;  // Approximate
+        double textHeight = text.height;
+        
+        QRectF textBounds(text.position.x(), text.position.y() - textHeight, 
+                          textWidth, textHeight * 1.5);
+        
+        // Expand by tolerance
+        textBounds.adjust(-tolerance, -tolerance, tolerance, tolerance);
+        
+        if (textBounds.contains(worldPos)) {
+            return i;  // Hit!
         }
     }
     return -1;  // No hit
@@ -1483,51 +1903,156 @@ void CanvasWidget::keyPressEvent(QKeyEvent *event)
     if (event->key() == Qt::Key_Escape) {
         if (m_toolState != ToolState::Idle) {
             cancelOffsetTool();
+        } else if (m_selectedVertexIndex >= 0) {
+            m_selectedVertexIndex = -1;
+            emit statusMessage("Vertex deselected");
+            update();
         } else if (hasSelection()) {
             clearSelection();
         }
         return;
     }
+    
+    // Delete key: remove selected vertex
+    if (event->key() == Qt::Key_Delete && m_selectedVertexIndex >= 0 &&
+        m_selectedPolylineIndex >= 0 && m_selectedPolylineIndex < m_polylines.size()) {
+        
+        CanvasPolyline& poly = m_polylines[m_selectedPolylineIndex];
+        if (poly.points.size() > 2) {
+            int vertexToRemove = m_selectedVertexIndex;
+            poly.points.remove(vertexToRemove);
+            m_selectedVertexIndex = -1;
+            emit statusMessage(QString("Removed vertex %1 (%2 points remaining)")
+                .arg(vertexToRemove + 1).arg(poly.points.size()));
+            update();
+        } else {
+            emit statusMessage("Cannot remove: polyline needs at least 2 points");
+        }
+        return;
+    }
+    
+    // Delete key: delete selected polylines (no vertex selected)
+    if (event->key() == Qt::Key_Delete && m_selectedVertexIndex < 0) {
+        QVector<int> selectedIndices = getSelectedIndices();
+        
+        if (!selectedIndices.isEmpty()) {
+            // Sort indices in descending order to delete from back to front
+            std::sort(selectedIndices.begin(), selectedIndices.end(), std::greater<int>());
+            
+            // Store for undo
+            UndoCommand cmd;
+            cmd.type = UndoType::DeleteMultiple;
+            for (int idx : selectedIndices) {
+                if (idx >= 0 && idx < m_polylines.size()) {
+                    cmd.polylines.prepend(m_polylines[idx]);
+                    cmd.indices.prepend(idx);
+                }
+            }
+            m_undoStack.append(cmd);
+            m_redoStack.clear();
+            emit undoRedoChanged();
+            
+            // Remove polylines
+            for (int idx : selectedIndices) {
+                if (idx >= 0 && idx < m_polylines.size()) {
+                    m_polylines.remove(idx);
+                }
+            }
+            
+            int deletedCount = selectedIndices.size();
+            m_selectedPolylineIndex = -1;
+            m_selectedPolylines.clear();
+            emit selectionChanged(-1);
+            emit statusMessage(QString("Deleted %1 polyline(s) (Ctrl+Z to undo)").arg(deletedCount));
+            update();
+            return;
+        }
+        
+        // Delete selected text objects
+        if (!m_selectedTexts.isEmpty()) {
+            QVector<int> textIndices = m_selectedTexts.values().toVector();
+            std::sort(textIndices.begin(), textIndices.end(), std::greater<int>());
+            
+            for (int idx : textIndices) {
+                if (idx >= 0 && idx < m_texts.size()) {
+                    m_texts.remove(idx);
+                }
+            }
+            
+            int deletedCount = textIndices.size();
+            m_selectedTexts.clear();
+            emit statusMessage(QString("Deleted %1 text(s)").arg(deletedCount));
+            update();
+            return;
+        }
+    }
+    
     QWidget::keyPressEvent(event);
 }
 
 void CanvasWidget::drawSelection(QPainter& painter)
 {
-    if (m_selectedPolylineIndex < 0 || m_selectedPolylineIndex >= m_polylines.size()) {
+    // Draw all selected polylines
+    if (m_selectedPolylines.isEmpty() && m_selectedPolylineIndex < 0) {
         return;
     }
     
-    const auto& poly = m_polylines[m_selectedPolylineIndex];
-    if (poly.points.size() < 2) return;
+    // Build set of indices to draw
+    QSet<int> indicesToDraw = m_selectedPolylines;
+    if (m_selectedPolylineIndex >= 0 && m_selectedPolylineIndex < m_polylines.size()) {
+        indicesToDraw.insert(m_selectedPolylineIndex);
+    }
     
     // Draw selected polyline with dashed cyan line
     QPen selectionPen(Qt::cyan, 2);
     selectionPen.setCosmetic(true);
     selectionPen.setStyle(Qt::DashLine);
-    painter.setPen(selectionPen);
-    painter.setBrush(Qt::NoBrush);
     
-    QPolygonF screenPoly;
-    for (const auto& pt : poly.points) {
-        screenPoly << QPointF(worldToScreen(pt));
-    }
-    
-    if (poly.closed && !screenPoly.isEmpty()) {
-        screenPoly << screenPoly.first();
-    }
-    
-    painter.drawPolyline(screenPoly);
-    
-    // Draw vertex handles
     QPen handlePen(Qt::cyan, 1);
     handlePen.setCosmetic(true);
-    painter.setPen(handlePen);
-    painter.setBrush(QBrush(QColor(0, 255, 255, 100)));
     
     const int handleSize = 6;
-    for (const auto& pt : poly.points) {
-        QPoint sp = worldToScreen(pt);
-        painter.drawRect(sp.x() - handleSize/2, sp.y() - handleSize/2, handleSize, handleSize);
+    
+    for (int idx : indicesToDraw) {
+        if (idx < 0 || idx >= m_polylines.size()) continue;
+        
+        const auto& poly = m_polylines[idx];
+        if (poly.points.size() < 2) continue;
+        
+        // Draw polyline highlight
+        painter.setPen(selectionPen);
+        painter.setBrush(Qt::NoBrush);
+        
+        QPolygonF screenPoly;
+        for (const auto& pt : poly.points) {
+            screenPoly << QPointF(worldToScreen(pt));
+        }
+        
+        if (poly.closed && !screenPoly.isEmpty()) {
+            screenPoly << screenPoly.first();
+        }
+        
+        painter.drawPolyline(screenPoly);
+        
+        // Draw vertex handles
+        painter.setPen(handlePen);
+        painter.setBrush(QBrush(QColor(0, 255, 255, 100)));
+        
+        for (int i = 0; i < poly.points.size(); ++i) {
+            const auto& pt = poly.points[i];
+            QPoint sp = worldToScreen(pt);
+            
+            // Highlight selected vertex in red
+            if (idx == m_selectedPolylineIndex && i == m_selectedVertexIndex) {
+                painter.setPen(QPen(Qt::red, 2));
+                painter.setBrush(QBrush(QColor(255, 0, 0, 150)));
+                painter.drawRect(sp.x() - handleSize/2 - 1, sp.y() - handleSize/2 - 1, handleSize + 2, handleSize + 2);
+                painter.setPen(handlePen);
+                painter.setBrush(QBrush(QColor(0, 255, 255, 100)));
+            } else {
+                painter.drawRect(sp.x() - handleSize/2, sp.y() - handleSize/2, handleSize, handleSize);
+            }
+        }
     }
 }
 
@@ -2161,49 +2686,67 @@ void CanvasWidget::startSplitMode()
 
 void CanvasWidget::explodeSelectedPolyline()
 {
-    if (m_selectedPolylineIndex < 0 || m_selectedPolylineIndex >= m_polylines.size()) {
-        emit statusMessage("No polyline selected");
+    QVector<int> selectedIndices = getSelectedIndices();
+    
+    if (selectedIndices.isEmpty()) {
+        emit statusMessage("Select polylines to explode");
         return;
     }
     
-    const CanvasPolyline& poly = m_polylines[m_selectedPolylineIndex];
-    if (poly.points.size() < 2) {
-        emit statusMessage("Polyline too short to explode");
-        return;
+    int explodedCount = 0;
+    QVector<CanvasPolyline> newSegments;
+    
+    // Process each selected polyline
+    for (int idx : selectedIndices) {
+        const CanvasPolyline& poly = m_polylines[idx];
+        if (poly.points.size() < 2) continue;
+        
+        // Create individual line segments
+        for (int i = 0; i < poly.points.size() - 1; ++i) {
+            CanvasPolyline segment;
+            segment.points.append(poly.points[i]);
+            segment.points.append(poly.points[i + 1]);
+            segment.closed = false;
+            segment.layer = poly.layer;
+            segment.color = poly.color;
+            newSegments.append(segment);
+        }
+        
+        // If closed, add segment from last to first
+        if (poly.closed && poly.points.size() > 2) {
+            CanvasPolyline segment;
+            segment.points.append(poly.points.last());
+            segment.points.append(poly.points.first());
+            segment.closed = false;
+            segment.layer = poly.layer;
+            segment.color = poly.color;
+            newSegments.append(segment);
+        }
+        explodedCount++;
     }
     
-    // Create individual line segments
-    QVector<CanvasPolyline> segments;
-    for (int i = 0; i < poly.points.size() - 1; ++i) {
-        CanvasPolyline segment;
-        segment.points.append(poly.points[i]);
-        segment.points.append(poly.points[i + 1]);
-        segment.closed = false;
-        segment.layer = poly.layer;
-        segment.color = poly.color;
-        segments.append(segment);
+    // Remove original polylines (in reverse order)
+    std::sort(selectedIndices.begin(), selectedIndices.end(), std::greater<int>());
+    for (int idx : selectedIndices) {
+        m_polylines.remove(idx);
     }
     
-    // If closed, add segment from last to first
-    if (poly.closed && poly.points.size() > 2) {
-        CanvasPolyline segment;
-        segment.points.append(poly.points.last());
-        segment.points.append(poly.points.first());
-        segment.closed = false;
-        segment.layer = poly.layer;
-        segment.color = poly.color;
-        segments.append(segment);
+    // Add new segments
+    m_polylines.append(newSegments);
+    
+    // Select the new segments
+    m_selectedPolylines.clear();
+    int startIdx = m_polylines.size() - newSegments.size();
+    for (int i = 0; i < newSegments.size(); ++i) {
+        m_selectedPolylines.insert(startIdx + i);
+    }
+    m_selectedPolylineIndex = -1; // No single primary selection
+    if (!m_selectedPolylines.isEmpty()) {
+        m_selectedPolylineIndex = *m_selectedPolylines.begin();
     }
     
-    // Remove original and add segments
-    m_polylines.remove(m_selectedPolylineIndex);
-    for (const auto& seg : segments) {
-        m_polylines.append(seg);
-    }
-    
-    m_selectedPolylineIndex = -1;
-    emit selectionChanged(-1);
-    emit statusMessage(QString("Exploded into %1 segments").arg(segments.size()));
+    emit selectionChanged(m_selectedPolylineIndex);
+    emit statusMessage(QString("Exploded %1 polylines into %2 segments").arg(explodedCount).arg(newSegments.size()));
     update();
 }
 
@@ -2293,52 +2836,207 @@ void CanvasWidget::splitPolylineAtPoint(const QPointF& point)
 
 void CanvasWidget::joinPolylines()
 {
-    QVector<int> selected = getSelectedIndices();
+    QVector<int> selectedIndices = getSelectedIndices();
     
-    if (selected.size() < 2) {
-        emit statusMessage("Select at least 2 polylines to join (Shift+click)");
+    if (selectedIndices.size() < 2) {
+        emit statusMessage("Select at least 2 polylines to merge (Shift+click or drag box)");
         return;
     }
     
-    // Sort indices by first point X then Y to get consistent order
-    std::sort(selected.begin(), selected.end(), [this](int a, int b) {
-        const auto& pa = m_polylines[a].points;
-        const auto& pb = m_polylines[b].points;
-        if (pa.isEmpty()) return false;
-        if (pb.isEmpty()) return true;
-        if (qAbs(pa.first().x() - pb.first().x()) > 0.001) {
-            return pa.first().x() < pb.first().x();
-        }
-        return pa.first().y() < pb.first().y();
-    });
-    
-    // Create joined polyline from all selected
-    CanvasPolyline joined;
-    joined.layer = m_polylines[selected.first()].layer;
-    joined.color = m_polylines[selected.first()].color;
-    joined.closed = false;
-    
-    for (int idx : selected) {
-        const CanvasPolyline& poly = m_polylines[idx];
-        for (const auto& pt : poly.points) {
-            joined.points.append(pt);
-        }
+    // Get copies of selected polylines
+    QList<CanvasPolyline> workList;
+    for (int idx : selectedIndices) {
+        workList.append(m_polylines[idx]);
     }
     
-    // Remove selected polylines (in reverse index order to preserve indices)
-    std::sort(selected.begin(), selected.end(), std::greater<int>());
-    for (int idx : selected) {
+    // Remove original polylines from canvas (in reverse order)
+    std::sort(selectedIndices.begin(), selectedIndices.end(), std::greater<int>());
+    for (int idx : selectedIndices) {
         m_polylines.remove(idx);
     }
     
-    // Add joined polyline
-    m_polylines.append(joined);
+    // Iteratively merge
+    bool mergedSomething = true;
+    while (mergedSomething && workList.size() > 1) {
+        mergedSomething = false;
+        
+        for (int i = 0; i < workList.size(); ++i) {
+            for (int j = i + 1; j < workList.size(); ++j) {
+                CanvasPolyline& p1 = workList[i];
+                CanvasPolyline& p2 = workList[j];
+                
+                // Try to merge p2 into p1
+                bool didMerge = false;
+                double tol = m_snapTolerance / m_zoom; // Tolerance in world units
+                
+                // 1. Check for Collinear Overlap (for straight lines)
+                if (p1.points.size() == 2 && p2.points.size() == 2) {
+                    QLineF l1(p1.points[0], p1.points[1]);
+                    QLineF l2(p2.points[0], p2.points[1]);
+                    
+                    // Check angle
+                    double angle = qAbs(l1.angle() - l2.angle());
+                    while (angle > 180) angle -= 360;
+                    angle = qAbs(angle);
+                    if (angle < 1.0 || qAbs(angle - 180.0) < 1.0) {
+                        // Parallel/Collinear direction. Check if they actually overlap/touch.
+                        // Project all points onto l1
+                        // If distance of p2 points to infinite line l1 is small
+                        // AND intervals overlap
+                        
+                        // Simple check: distance of p2 endpoints to line p1
+                        /*
+                        double d1 = l1.isInArea(p2.points[0], tol) ? 0 : 1000; // Qt doesn't have distToLine easily for QLineF
+                        */
+                        // Custom distance check
+                        // ... (omitted for brevity, relying on endpoint check for now or simple overlap)
+                        
+                        // Let's rely on a robust endpoint check + simplification for now.
+                        // If they overlap significantly, standard endpoint chaining won't work.
+                        // We need to handle the "Overlap" case the user mentioned.
+                        
+                        // Project p2 points onto line defined by p1
+                        QPointF v = p1.points[1] - p1.points[0];
+                        double len2 = v.x()*v.x() + v.y()*v.y();
+                        
+                        auto getT = [&](QPointF p) {
+                            QPointF vp = p - p1.points[0];
+                            return (vp.x()*v.x() + vp.y()*v.y()) / len2;
+                        };
+                        
+                        // Check distance to line
+                        auto distToLine = [&](QPointF p) {
+                            double t = getT(p);
+                            QPointF proj = p1.points[0] + v * t;
+                            return QLineF(p, proj).length();
+                        };
+                        
+                        if (distToLine(p2.points[0]) < tol && distToLine(p2.points[1]) < tol) {
+                            // Collinear. Merge extents.
+                            double t1_0 = 0.0;
+                            double t1_1 = 1.0;
+                            double t2_0 = getT(p2.points[0]);
+                            double t2_1 = getT(p2.points[1]);
+                            
+                            // Check for interval overlap or touching
+                            double min1 = qMin(t1_0, t1_1);
+                            double max1 = qMax(t1_0, t1_1);
+                            double min2 = qMin(t2_0, t2_1);
+                            double max2 = qMax(t2_0, t2_1);
+                            
+                            if (qMax(min1, min2) <= qMin(max1, max2) + 0.01) { // Overlap or touch
+                                // Merge into min/max
+                                double finalMin = qMin(min1, min2);
+                                double finalMax = qMax(max1, max2);
+                                
+                                p1.points[0] = p1.points[0] + v * finalMin;
+                                p1.points[1] = p1.points[0] + v * (finalMax - finalMin); // Re-base from new start
+                                // Actually safer:
+                                // p1.points[0] corresponds to t=0. We want t=finalMin.
+                                // But v is based on old p1.
+                                // Let's just pick the 4 points, sort by T, take first and last.
+                                QList<QPair<double, QPointF>> points;
+                                points.append({0.0, p1.points[0]});
+                                points.append({1.0, p1.points[1]});
+                                points.append({t2_0, p2.points[0]});
+                                points.append({t2_1, p2.points[1]});
+                                std::sort(points.begin(), points.end(), [](const auto& a, const auto& b){ return a.first < b.first; });
+                                
+                                p1.points[0] = points.first().second;
+                                p1.points[1] = points.last().second;
+                                didMerge = true;
+                            }
+                        }
+                    }
+                }
+                
+                if (!didMerge) {
+                    // 2. Check Endpoint Connectivity
+                    QPointF s1 = p1.points.first();
+                    QPointF e1 = p1.points.last();
+                    QPointF s2 = p2.points.first();
+                    QPointF e2 = p2.points.last();
+                    
+                    if (QLineF(e1, s2).length() < tol) {
+                        // Append p2 to p1
+                        p1.points.append(p2.points);
+                        didMerge = true;
+                    } else if (QLineF(e1, e2).length() < tol) {
+                        // Reverse p2, append to p1
+                        QVector<QPointF> rev = p2.points;
+                        std::reverse(rev.begin(), rev.end());
+                        p1.points.append(rev);
+                        didMerge = true;
+                    } else if (QLineF(s1, s2).length() < tol) {
+                        // Reverse p1, append p2
+                        std::reverse(p1.points.begin(), p1.points.end());
+                        p1.points.append(p2.points);
+                        didMerge = true;
+                    } else if (QLineF(s1, e2).length() < tol) {
+                        // Prepend p2 to p1 (or append p1 to p2)
+                        // Let's append p1 to p2, then copy back to p1
+                        p2.points.append(p1.points);
+                        p1.points = p2.points;
+                        didMerge = true;
+                    }
+                }
+                
+                if (didMerge) {
+                    workList.removeAt(j);
+                    mergedSomething = true;
+                    break; // Restart loop or continue? Break inner to restart outer is safer
+                }
+            }
+            if (mergedSomething) break;
+        }
+    }
     
-    // Clear selection and select the new polyline
+    // Simplify and add back
+    for (CanvasPolyline& poly : workList) {
+        // Simplify: remove duplicates and collinear nodes
+        if (poly.points.size() > 2) {
+            QVector<QPointF> simple;
+            simple.append(poly.points[0]);
+            for (int i = 1; i < poly.points.size(); ++i) {
+                QPointF prev = simple.last();
+                QPointF curr = poly.points[i];
+                
+                // Skip duplicate
+                if (QLineF(prev, curr).length() < 0.001) continue;
+                
+                // Check collinearity with next
+                if (i < poly.points.size() - 1) {
+                    QPointF next = poly.points[i+1];
+                    
+                    QLineF l1(prev, curr);
+                    QLineF l2(curr, next);
+                    
+                    double angle = qAbs(l1.angle() - l2.angle());
+                    while (angle > 180) angle -= 360;
+                    angle = qAbs(angle);
+                    
+                    // Tolerance: 1 degree
+                    if (angle < 1.0) { 
+                         // Collinear: Skip curr (don't add it)
+                         continue;
+                    }
+                }
+                simple.append(curr);
+            }
+            poly.points = simple;
+        }
+        
+        m_polylines.append(poly);
+    }
+    
+    // Select the last one (usually the merged result)
     m_selectedPolylines.clear();
-    m_selectedPolylineIndex = m_polylines.size() - 1;
+    int newIndex = m_polylines.size() - 1;
+    m_selectedPolylines.insert(newIndex);
+    m_selectedPolylineIndex = newIndex;
+    
     emit selectionChanged(m_selectedPolylineIndex);
-    emit statusMessage(QString("Joined %1 polylines into one").arg(selected.size()));
+    emit statusMessage(QString("Merged into %1 polyline(s)").arg(workList.size()));
     update();
 }
 
@@ -2393,5 +3091,156 @@ void CanvasWidget::deleteSelectedPolyline()
     m_selectedPolylineIndex = -1;
     emit selectionChanged(-1);
     emit statusMessage("Polyline deleted (Ctrl+Z to undo)");
+    update();
+}
+
+// ============================================================================
+// Additional Modify Tools (AutoCAD-style)
+// ============================================================================
+
+void CanvasWidget::copySelectedPolyline()
+{
+    QVector<int> selectedIndices = getSelectedIndices();
+    
+    if (selectedIndices.isEmpty()) {
+        emit statusMessage("Select polylines to copy");
+        return;
+    }
+    
+    // Copy each selected polyline with a small offset
+    int copiedCount = 0;
+    for (int idx : selectedIndices) {
+        CanvasPolyline copy = m_polylines[idx];
+        
+        // Offset by a small amount so the copy is visible
+        double offsetX = 1.0;
+        double offsetY = -1.0;
+        for (QPointF& pt : copy.points) {
+            pt.setX(pt.x() + offsetX);
+            pt.setY(pt.y() + offsetY);
+        }
+        
+        // Store for undo
+        UndoCommand cmd;
+        cmd.type = UndoType::AddPolyline;
+        cmd.polyline = copy;
+        cmd.index = m_polylines.size();
+        m_undoStack.append(cmd);
+        
+        m_polylines.append(copy);
+        copiedCount++;
+    }
+    
+    m_redoStack.clear();
+    emit undoRedoChanged();
+    emit statusMessage(QString("Copied %1 polyline(s)").arg(copiedCount));
+    update();
+}
+
+void CanvasWidget::startMoveMode()
+{
+    if (m_selectedPolylineIndex < 0) {
+        emit statusMessage("Select a polyline first");
+        return;
+    }
+    
+    m_toolState = ToolState::MoveMode;
+    emit statusMessage("MOVE: Click base point, then destination point");
+    update();
+}
+
+void CanvasWidget::startMirrorMode()
+{
+    if (m_selectedPolylineIndex < 0) {
+        emit statusMessage("Select a polyline first");
+        return;
+    }
+    
+    m_toolState = ToolState::MirrorMode;
+    emit statusMessage("MIRROR: Click first point of mirror axis");
+    update();
+}
+
+void CanvasWidget::mirrorSelectedPolyline(const QPointF& p1, const QPointF& p2)
+{
+    if (m_selectedPolylineIndex < 0 || m_selectedPolylineIndex >= m_polylines.size()) {
+        emit statusMessage("No polyline selected");
+        return;
+    }
+    
+    // Calculate mirror axis
+    double dx = p2.x() - p1.x();
+    double dy = p2.y() - p1.y();
+    double lenSq = dx * dx + dy * dy;
+    
+    if (lenSq < 1e-12) {
+        emit statusMessage("Mirror axis too short");
+        return;
+    }
+    
+    // Create mirrored copy
+    CanvasPolyline mirrored = m_polylines[m_selectedPolylineIndex];
+    
+    for (QPointF& pt : mirrored.points) {
+        // Vector from p1 to point
+        double vx = pt.x() - p1.x();
+        double vy = pt.y() - p1.y();
+        
+        // Project onto axis
+        double t = (vx * dx + vy * dy) / lenSq;
+        double projX = p1.x() + t * dx;
+        double projY = p1.y() + t * dy;
+        
+        // Mirror: point' = 2 * proj - point
+        pt.setX(2 * projX - pt.x());
+        pt.setY(2 * projY - pt.y());
+    }
+    
+    // Reverse point order to maintain correct direction
+    std::reverse(mirrored.points.begin(), mirrored.points.end());
+    
+    // Store for undo
+    UndoCommand cmd;
+    cmd.type = UndoType::AddPolyline;
+    cmd.polyline = mirrored;
+    cmd.index = m_polylines.size();
+    m_undoStack.append(cmd);
+    m_redoStack.clear();
+    
+    m_polylines.append(mirrored);
+    m_toolState = ToolState::None;
+    
+    emit undoRedoChanged();
+    emit statusMessage("Polyline mirrored");
+    update();
+}
+
+void CanvasWidget::startTrimMode()
+{
+    emit statusMessage("TRIM: Select cutting edge, then click objects to trim");
+    m_toolState = ToolState::TrimMode;
+    update();
+}
+
+void CanvasWidget::startExtendMode()
+{
+    emit statusMessage("EXTEND: Select boundary edge, then click objects to extend");
+    m_toolState = ToolState::ExtendMode;
+    update();
+}
+
+void CanvasWidget::startFilletMode(double radius)
+{
+    m_pendingFilletRadius = radius;
+    m_toolState = ToolState::FilletMode;
+    emit statusMessage(QString("FILLET (R=%1): Click corner to round").arg(radius, 0, 'f', 2));
+    update();
+}
+
+void CanvasWidget::startMeasureMode()
+{
+    m_toolState = ToolState::MeasureMode;
+    setCursor(Qt::CrossCursor);
+    emit statusMessage("MEASURE: Click first point");
     update();
 }

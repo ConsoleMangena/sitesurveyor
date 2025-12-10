@@ -20,6 +20,9 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+protected:
+    void closeEvent(QCloseEvent *event) override;
+
 private slots:
     void importDXF();
     void importGDAL();
@@ -41,7 +44,6 @@ private:
     void setupStatusBar();
     void setupLayerPanel();
     void setupPropertiesPanel();
-    void setupToolsPanel();
     void addToRecentProjects(const QString& filePath);
     void updatePropertiesPanel();
 
@@ -54,7 +56,6 @@ private:
     // Dockable panels
     QDockWidget* m_layerDock{nullptr};
     QDockWidget* m_propertiesDock{nullptr};
-    QDockWidget* m_toolsDock{nullptr};
     QListWidget* m_layerList{nullptr};
     QTreeWidget* m_propertiesTree{nullptr};
     

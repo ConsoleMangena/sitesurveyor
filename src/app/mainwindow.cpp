@@ -29,6 +29,7 @@
 #include <QToolBar>
 #include <QSettings>
 #include <QTextBrowser>
+#include <QCloseEvent>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -57,9 +58,6 @@ MainWindow::MainWindow(QWidget *parent)
     
     // Setup properties panel
     setupPropertiesPanel();
-    
-    // Setup tools panel
-    setupToolsPanel();
     
     // Connect signals
     connect(m_canvas, &CanvasWidget::mouseWorldPosition, this, &MainWindow::updateCoordinates);
@@ -226,6 +224,31 @@ void MainWindow::setupMenus()
         if (m_layerDock) m_layerDock->setVisible(checked);
     });
     
+    viewMenu->addSeparator();
+    
+    QAction* maximizeAction = viewMenu->addAction("&Maximize Window");
+    maximizeAction->setShortcut(QKeySequence("F11"));
+    connect(maximizeAction, &QAction::triggered, this, [this]() {
+        showMaximized();
+    });
+    
+    QAction* restoreAction = viewMenu->addAction("&Restore Window");
+    restoreAction->setShortcut(QKeySequence("Escape"));
+    connect(restoreAction, &QAction::triggered, this, [this]() {
+        showNormal();
+    });
+    
+    QAction* fullscreenAction = viewMenu->addAction("F&ullscreen");
+    fullscreenAction->setShortcut(QKeySequence("Shift+F11"));
+    fullscreenAction->setCheckable(true);
+    connect(fullscreenAction, &QAction::toggled, this, [this](bool checked) {
+        if (checked) {
+            showFullScreen();
+        } else {
+            showNormal();
+        }
+    });
+    
     // Tools menu
     QMenu* toolsMenu = menuBar()->addMenu("&Tools");
     
@@ -237,11 +260,11 @@ void MainWindow::setupMenus()
     
     toolsMenu->addSeparator();
     
-    QAction* offsetAction = toolsMenu->addAction("&Offset Polyline...");
+    QAction* offsetAction = toolsMenu->addAction("&OFFSET...");
     offsetAction->setShortcut(QKeySequence("O"));
     connect(offsetAction, &QAction::triggered, this, &MainWindow::offsetPolyline);
     
-    QAction* partitionAction = toolsMenu->addAction("&Partition to Offset...");
+    QAction* partitionAction = toolsMenu->addAction("&PARTITION...");
     partitionAction->setShortcut(QKeySequence("P"));
     connect(partitionAction, &QAction::triggered, this, [this]() {
         if (m_canvas) {
@@ -251,10 +274,10 @@ void MainWindow::setupMenus()
     
     toolsMenu->addSeparator();
     
-    // Polyline Edit submenu
-    QMenu* polyEditMenu = toolsMenu->addMenu("Polyline &Edit");
+    // Modify submenu (AutoCAD-style naming)
+    QMenu* polyEditMenu = toolsMenu->addMenu("&Modify");
     
-    QAction* selectAction = polyEditMenu->addAction("&Select Mode");
+    QAction* selectAction = polyEditMenu->addAction("&SELECT");
     selectAction->setShortcut(QKeySequence("V"));
     connect(selectAction, &QAction::triggered, this, [this]() {
         if (m_canvas) m_canvas->startSelectMode();
@@ -262,39 +285,39 @@ void MainWindow::setupMenus()
     
     polyEditMenu->addSeparator();
     
-    QAction* explodeAction = polyEditMenu->addAction("&Explode");
+    QAction* explodeAction = polyEditMenu->addAction("&EXPLODE");
     explodeAction->setShortcut(QKeySequence("E"));
     connect(explodeAction, &QAction::triggered, this, [this]() {
         if (m_canvas) m_canvas->explodeSelectedPolyline();
     });
     
-    QAction* splitAction = polyEditMenu->addAction("Sp&lit at Point");
+    QAction* splitAction = polyEditMenu->addAction("&BREAK");
     splitAction->setShortcut(QKeySequence("X"));
     connect(splitAction, &QAction::triggered, this, [this]() {
         if (m_canvas) m_canvas->startSplitMode();
     });
     
-    QAction* joinAction = polyEditMenu->addAction("&Join Selected");
-    joinAction->setShortcut(QKeySequence("J"));
-    connect(joinAction, &QAction::triggered, this, [this]() {
+    QAction* mergeAction = polyEditMenu->addAction("&JOIN");
+    mergeAction->setShortcut(QKeySequence("M"));
+    connect(mergeAction, &QAction::triggered, this, [this]() {
         if (m_canvas) m_canvas->joinPolylines();
     });
     
     polyEditMenu->addSeparator();
     
-    QAction* closeAction = polyEditMenu->addAction("&Close/Open");
+    QAction* closeAction = polyEditMenu->addAction("&CLOSE/OPEN");
     closeAction->setShortcut(QKeySequence("Ctrl+Shift+C"));
     connect(closeAction, &QAction::triggered, this, [this]() {
         if (m_canvas) m_canvas->closeSelectedPolyline();
     });
     
-    QAction* reverseAction = polyEditMenu->addAction("&Reverse Direction");
+    QAction* reverseAction = polyEditMenu->addAction("&REVERSE");
     reverseAction->setShortcut(QKeySequence("R"));
     connect(reverseAction, &QAction::triggered, this, [this]() {
         if (m_canvas) m_canvas->reverseSelectedPolyline();
     });
     
-    QAction* deletePolyAction = polyEditMenu->addAction("&Delete");
+    QAction* deletePolyAction = polyEditMenu->addAction("&ERASE");
     deletePolyAction->setShortcut(QKeySequence::Delete);
     connect(deletePolyAction, &QAction::triggered, this, [this]() {
         if (m_canvas) m_canvas->deleteSelectedPolyline();
@@ -586,47 +609,7 @@ void MainWindow::setupPropertiesPanel()
     });
 }
 
-void MainWindow::setupToolsPanel()
-{
-    m_toolsDock = new QDockWidget("Quick Tools", this);
-    m_toolsDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea);
-    
-    QWidget* dockContents = new QWidget();
-    QVBoxLayout* layout = new QVBoxLayout(dockContents);
-    layout->setContentsMargins(8, 8, 8, 8);
-    layout->setSpacing(6);
-    
-    // Tool buttons with icons
-    auto addToolButton = [&](const QString& text, const QString& tooltip, auto slot) {
-        QPushButton* btn = new QPushButton(text);
-        btn->setToolTip(tooltip);
-        btn->setMinimumHeight(32);
-        connect(btn, &QPushButton::clicked, this, slot);
-        layout->addWidget(btn);
-        return btn;
-    };
-    
-    addToolButton("Select (V)", "Select polylines", [this]() { if (m_canvas) m_canvas->startSelectMode(); });
-    addToolButton("Offset (O)", "Offset polyline", [this]() { offsetPolyline(); });
-    addToolButton("Split (X)", "Split polyline at point", [this]() { if (m_canvas) m_canvas->startSplitMode(); });
-    addToolButton("Join (J)", "Join selected polylines", [this]() { if (m_canvas) m_canvas->joinPolylines(); });
-    addToolButton("Explode (E)", "Explode polyline", [this]() { if (m_canvas) m_canvas->explodeSelectedPolyline(); });
-    
-    layout->addStretch();
-    
-    // Station section
-    QLabel* stationLabel = new QLabel("Station:");
-    stationLabel->setStyleSheet("font-weight: bold; margin-top: 10px;");
-    layout->addWidget(stationLabel);
-    
-    addToolButton("Set Station (1)", "Set instrument station", [this]() { if (m_canvas) m_canvas->startSetStationMode(); });
-    addToolButton("Stakeout (K)", "Start stakeout mode", [this]() { if (m_canvas) m_canvas->startStakeoutMode(); });
-    
-    layout->addStretch();
-    
-    m_toolsDock->setWidget(dockContents);
-    addDockWidget(Qt::LeftDockWidgetArea, m_toolsDock);
-}
+
 
 void MainWindow::updatePropertiesPanel()
 {
@@ -995,11 +978,78 @@ void MainWindow::setupToolbar()
         if (m_canvas) m_canvas->startSplitMode();
     });
     
-    // Join Tool
-    QAction* joinAct = m_toolbar->addAction(QIcon(":/icons/join.svg"), "");
-    joinAct->setToolTip("Join Selected (J)");
-    connect(joinAct, &QAction::triggered, this, [this]() {
+    // Merge Tool
+    QAction* mergeAct = m_toolbar->addAction(QIcon(":/icons/join.svg"), "");
+    mergeAct->setToolTip("Merge Selected (M)");
+    connect(mergeAct, &QAction::triggered, this, [this]() {
         if (m_canvas) m_canvas->joinPolylines();
+    });
+    
+    // Copy Tool
+    QAction* copyAct = m_toolbar->addAction(QIcon(":/icons/copy.svg"), "");
+    copyAct->setToolTip("Copy Selected (C)");
+    connect(copyAct, &QAction::triggered, this, [this]() {
+        if (m_canvas) m_canvas->copySelectedPolyline();
+    });
+    
+    // Move Tool  
+    QAction* moveAct = m_toolbar->addAction("");
+    moveAct->setText("Move");
+    moveAct->setToolTip("Move Selected");
+    connect(moveAct, &QAction::triggered, this, [this]() {
+        if (m_canvas) m_canvas->startMoveMode();
+    });
+    
+    // Mirror Tool
+    QAction* mirrorAct = m_toolbar->addAction("");
+    mirrorAct->setText("Mirror");
+    mirrorAct->setToolTip("Mirror Selected");
+    connect(mirrorAct, &QAction::triggered, this, [this]() {
+        if (m_canvas) m_canvas->startMirrorMode();
+    });
+    
+    // Explode Tool
+    QAction* explodeAct = m_toolbar->addAction(QIcon(":/icons/delete.svg"), "");
+    explodeAct->setToolTip("Explode (E)");
+    connect(explodeAct, &QAction::triggered, this, [this]() {
+        if (m_canvas) m_canvas->explodeSelectedPolyline();
+    });
+    
+    // Trim Tool
+    QAction* trimAct = m_toolbar->addAction("");
+    trimAct->setText("Trim");
+    trimAct->setToolTip("Trim");
+    connect(trimAct, &QAction::triggered, this, [this]() {
+        if (m_canvas) m_canvas->startTrimMode();
+    });
+    
+    // Extend Tool
+    QAction* extendAct = m_toolbar->addAction("");
+    extendAct->setText("Extend");
+    extendAct->setToolTip("Extend");
+    connect(extendAct, &QAction::triggered, this, [this]() {
+        if (m_canvas) m_canvas->startExtendMode();
+    });
+    
+    // Fillet Tool
+    QAction* filletAct = m_toolbar->addAction("");
+    filletAct->setText("Fillet");
+    filletAct->setToolTip("Fillet");
+    connect(filletAct, &QAction::triggered, this, [this]() {
+        if (m_canvas) {
+            bool ok;
+            double radius = QInputDialog::getDouble(this, "Fillet Radius",
+                "Enter fillet radius:", 1.0, 0.001, 1000.0, 3, &ok);
+            if (ok) m_canvas->startFilletMode(radius);
+        }
+    });
+    
+    // Measure Tool
+    QAction* measureAct = m_toolbar->addAction("");
+    measureAct->setText("Measure");
+    measureAct->setToolTip("Measure Distance");
+    connect(measureAct, &QAction::triggered, this, [this]() {
+        if (m_canvas) m_canvas->startMeasureMode();
     });
     
     m_toolbar->addSeparator();
@@ -1188,4 +1238,20 @@ void MainWindow::addToRecentProjects(const QString& filePath)
     
     settings.setValue("recentProjects", recentFiles);
     updateRecentProjectsMenu();
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this, "Exit SiteSurveyor",
+        "Are you sure you want to exit?\n\nAny unsaved changes will be lost.",
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No
+    );
+    
+    if (reply == QMessageBox::Yes) {
+        event->accept();
+    } else {
+        event->ignore();
+    }
 }
