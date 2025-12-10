@@ -17,7 +17,10 @@ endif()
 
 # Find GDAL
 # Find GDAL
-find_package(GDAL CONFIG)
+if(WIN32)
+    find_package(GDAL CONFIG)
+endif()
+
 if(NOT GDAL_FOUND)
     find_package(GDAL REQUIRED)
 endif()
@@ -28,7 +31,10 @@ if(GDAL_FOUND)
 endif()
 
 # Find GEOS
-find_package(geos CONFIG)
+if(WIN32)
+    find_package(geos CONFIG)
+endif()
+
 if(geos_FOUND)
     message(STATUS "GEOS found via CONFIG: ${geos_VERSION}")
     set(HAVE_GEOS TRUE)
