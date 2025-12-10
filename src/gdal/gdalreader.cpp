@@ -99,7 +99,7 @@ bool GdalReader::readVectorData(GDALDataset* dataset)
         }
         
         // Get CRS
-        OGRSpatialReference* srs = layer->GetSpatialRef();
+        const OGRSpatialReference* srs = layer->GetSpatialRef();
         if (srs && m_data.crs.isEmpty()) {
             const char* authName = srs->GetAuthorityName(nullptr);
             const char* authCode = srs->GetAuthorityCode(nullptr);
