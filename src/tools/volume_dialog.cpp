@@ -167,7 +167,7 @@ void VolumeDialog::populatePegTable()
         // Checkbox
         QCheckBox* checkBox = new QCheckBox();
         checkBox->setChecked(true);
-        connect(checkBox, &QCheckBox::stateChanged, this, &VolumeDialog::updateSelectedCount);
+        connect(checkBox, &QCheckBox::toggled, this, &VolumeDialog::updateSelectedCount);
         QWidget* checkWidget = new QWidget();
         QHBoxLayout* checkLayout = new QHBoxLayout(checkWidget);
         checkLayout->addWidget(checkBox);
