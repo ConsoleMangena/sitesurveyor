@@ -15,14 +15,19 @@ jobs:
       with:
         submodules: recursive
     
-    - name: Install Qt
+    - name: Install Qt (MSVC)
       uses: jurplel/install-qt-action@v3
       with:
         version: '6.6.0'
         host: 'windows'
         target: 'desktop'
-        arch: 'win64_mingw'
+        arch: 'win64_msvc2019_64'
         setup-python: 'true'
+    
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
     
     - name: Install Ninja
       run: choco install ninja
@@ -33,35 +38,28 @@ jobs:
         path: |
           vcpkg/installed
           vcpkg/downloads
-        key: ${{ runner.os }}-vcpkg-${{ hashFiles('CMakeLists.txt') }}
+          vcpkg/buildtrees
+        key: ${{ runner.os }}-vcpkg-msvc-${{ hashFiles('CMakeLists.txt') }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-
-    
+          ${{ runner.os }}-vcpkg-msvc-
+
     - name: Install vcpkg (GDAL/GEOS)
       run: |
         git clone https://github.com/microsoft/vcpkg.git
         cd vcpkg
-        ./bootstrap-vcpkg.bat
-        ./vcpkg install gdal:x64-mingw-dynamic geos:x64-mingw-dynamic --recurse
-      shell: bash
+        .\bootstrap-vcpkg.bat
+        .\vcpkg install gdal:x64-windows geos:x64-windows --recurse
+      shell: pwsh
 
     - name: Configure CMake
       run: |
-        cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=./vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic
+        cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=./vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows
       env:
         Qt6_DIR: ${{ env.Qt6_DIR }}
         
     - name: Build
       run: cmake --build build --parallel
       
-    - name: Install Qt Installer Framework
-      run: |
-        curl -L -o qt-installer-framework.exe https://download.qt.io/official_releases/qt-installer-framework/4.7.0/QtInstallerFramework-windows-x86-4.7.0.exe
-        # Extract logic or silent install is hard. A better way is using aqtinstall which supports tools!
-        # Re-using aqtinstall action from earlier step is cleaner.
-      shell: bash
-      if: false # Placeholder to show I am rewriting this block entirely below
-
     - name: Install Qt Installer Framework (via aqt)
       run: |
         pip install aqtinstall
@@ -73,14 +71,14 @@ jobs:
         mkdir -p installer/packages/com.consolemangena.sitesurveyor/data
         cp build/bin/SiteSurveyor.exe installer/packages/com.consolemangena.sitesurveyor/data/
         # Copy DLLs using windeployqt
-        ${{ env.Qt6_DIR }}/bin/windeployqt.exe build/bin/SiteSurveyor.exe --dir installer/packages/com.consolemangena.sitesurveyor/data/
+        "${{ env.Qt6_DIR }}/bin/windeployqt.exe" build/bin/SiteSurveyor.exe --dir installer/packages/com.consolemangena.sitesurveyor/data/
         # Copy GDAL/GEOS DLLs from vcpkg
-        cp vcpkg/installed/x64-mingw-dynamic/bin/*.dll installer/packages/com.consolemangena.sitesurveyor/data/
+        cp vcpkg/installed/x64-windows/bin/*.dll installer/packages/com.consolemangena.sitesurveyor/data/
       shell: bash
 
     - name: Build Installer
       run: |
-        ${{ runner.temp }}/qtifw/Tools/QtInstallerFramework/4.7/bin/binarycreator.exe -c installer/config/config.xml -p installer/packages SiteSurveyorInstaller_Windows.exe
+        "${{ runner.temp }}/qtifw/Tools/QtInstallerFramework/4.7/bin/binarycreator.exe" -c installer/config/config.xml -p installer/packages SiteSurveyorInstaller_Windows.exe
       shell: bash
 
     - name: Upload Installer

@@ -16,6 +16,12 @@ AuthManager::AuthManager(QObject *parent)
     connect(m_licenseCheckTimer, &QTimer::timeout, this, &AuthManager::checkLicenseExpiration);
     // Check every 30 minutes
     m_licenseCheckTimer->setInterval(30 * 60 * 1000);
+    
+    // JWT refresh timer - refresh 2 minutes before 15-minute expiration = 13 minutes
+    m_jwtRefreshTimer = new QTimer(this);
+    connect(m_jwtRefreshTimer, &QTimer::timeout, this, &AuthManager::refreshJwt);
+    m_jwtRefreshTimer->setInterval(13 * 60 * 1000);  // 13 minutes
+    
     m_deviceId = getDeviceId();
     loadSession();
     loadLicense();  // Load cached license
@@ -38,6 +44,26 @@ QString AuthManager::getDeviceId()
     }
     
     return deviceId;
+}
+
+QNetworkRequest AuthManager::createAuthorizedRequest(const QUrl& url) const
+{
+    QNetworkRequest request(url);
+    request.setRawHeader("X-Appwrite-Project", PROJECT_ID.toUtf8());
+    if (!m_jwt.isEmpty()) {
+        // Use JWT for native desktop app authentication
+        request.setRawHeader("X-Appwrite-JWT", m_jwt.toUtf8());
+        qDebug() << "[AuthManager] Request to" << url.path() << "with JWT";
+    } else if (!m_sessionId.isEmpty()) {
+        // Fallback to session cookie
+        QString cookieName = QString("a_session_%1").arg(PROJECT_ID);
+        QString cookieValue = QString("%1=%2").arg(cookieName, m_sessionId);
+        request.setRawHeader("Cookie", cookieValue.toUtf8());
+        qDebug() << "[AuthManager] Request to" << url.path() << "with session cookie (no JWT)";
+    } else {
+        qDebug() << "[AuthManager] WARNING: Request to" << url.path() << "WITHOUT auth!";
+    }
+    return request;
 }
 
 void AuthManager::login(const QString& email, const QString& password)
@@ -92,8 +118,8 @@ void AuthManager::onLoginFinished()
                 
                 saveProfile();  // Cache profile for offline mode
                 
-                // Fetch license after profile
-                fetchLicense();
+                // Fetch JWT for native desktop app authentication
+                fetchJwt();
             }
             accountReply->deleteLater();
             emit loginSuccess();
@@ -148,7 +174,8 @@ void AuthManager::onCheckSessionFinished()
         saveProfile();  // Cache profile for offline mode
         
         // Fetch license after profile
-        fetchLicense();
+        // License check disabled for bucket-only mode
+        // fetchLicense();
         
         emit sessionVerified();
     } else {
@@ -186,9 +213,9 @@ void AuthManager::fetchLicense()
     query.addQueryItem("queries[]", QString("equal(\"userId\", \"%1\")").arg(m_profile.id));
     url.setQuery(query);
     
-    QNetworkRequest request(url);
-    request.setRawHeader("X-Appwrite-Project", PROJECT_ID.toUtf8());
-    request.setRawHeader("X-Appwrite-Session", m_sessionId.toUtf8());
+    url.setQuery(query);
+    
+    QNetworkRequest request = createAuthorizedRequest(url);
     
     QNetworkReply* reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this, &AuthManager::onLicenseFetched);
@@ -279,10 +306,8 @@ void AuthManager::registerDevice()
         .arg(m_license.id);
     
     QUrl url(updateUrl);
-    QNetworkRequest request(url);
+    QNetworkRequest request = createAuthorizedRequest(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    request.setRawHeader("X-Appwrite-Project", PROJECT_ID.toUtf8());
-    request.setRawHeader("X-Appwrite-Session", m_sessionId.toUtf8());
     
     // Add current device to list
     QStringList newDevices = m_license.deviceIds;
@@ -460,4 +485,76 @@ void AuthManager::checkLicenseExpiration()
         m_licenseCheckTimer->stop();
         emit licenseExpired();
     }
+}
+
+void AuthManager::fetchJwt()
+{
+    if (m_sessionId.isEmpty()) {
+        qDebug() << "[AuthManager] Cannot fetch JWT: no session";
+        return;
+    }
+    
+    QUrl url(API_ENDPOINT + "/account/jwts");
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    request.setRawHeader("X-Appwrite-Project", PROJECT_ID.toUtf8());
+    // For JWT creation, we need the session cookie since we don't have JWT yet
+    QString cookieName = QString("a_session_%1").arg(PROJECT_ID);
+    QString cookieValue = QString("%1=%2").arg(cookieName, m_sessionId);
+    request.setRawHeader("Cookie", cookieValue.toUtf8());
+    
+    QNetworkReply* reply = m_network->post(request, QByteArray("{}"));
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        if (reply->error() == QNetworkReply::NoError) {
+            QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+            QJsonObject obj = doc.object();
+            m_jwt = obj["jwt"].toString();
+            qDebug() << "[AuthManager] JWT fetched successfully, expires in 15 minutes";
+            
+            // Start auto-refresh timer
+            if (!m_jwtRefreshTimer->isActive()) {
+                m_jwtRefreshTimer->start();
+                qDebug() << "[AuthManager] JWT auto-refresh timer started (13 min interval)";
+            }
+        } else {
+            qDebug() << "[AuthManager] Failed to fetch JWT:" << reply->errorString();
+            QByteArray response = reply->readAll();
+            qDebug() << "[AuthManager] Response:" << response;
+        }
+        reply->deleteLater();
+    });
+}
+
+void AuthManager::refreshJwt()
+{
+    if (m_sessionId.isEmpty()) {
+        qDebug() << "[AuthManager] Cannot refresh JWT: no session";
+        m_jwtRefreshTimer->stop();
+        return;
+    }
+    
+    qDebug() << "[AuthManager] Auto-refreshing JWT...";
+    
+    QUrl url(API_ENDPOINT + "/account/jwts");
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    request.setRawHeader("X-Appwrite-Project", PROJECT_ID.toUtf8());
+    QString cookieName = QString("a_session_%1").arg(PROJECT_ID);
+    QString cookieValue = QString("%1=%2").arg(cookieName, m_sessionId);
+    request.setRawHeader("Cookie", cookieValue.toUtf8());
+    
+    QNetworkReply* reply = m_network->post(request, QByteArray("{}"));
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        if (reply->error() == QNetworkReply::NoError) {
+            QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+            QJsonObject obj = doc.object();
+            m_jwt = obj["jwt"].toString();
+            qDebug() << "[AuthManager] JWT refreshed successfully";
+            emit jwtRefreshed();
+        } else {
+            qDebug() << "[AuthManager] JWT refresh failed:" << reply->errorString();
+            // Don't stop timer - will retry on next interval
+        }
+        reply->deleteLater();
+    });
 }

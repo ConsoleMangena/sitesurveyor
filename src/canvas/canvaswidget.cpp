@@ -3504,6 +3504,18 @@ void CanvasWidget::drawStakeoutLine(QPainter& painter)
 
 bool CanvasWidget::saveProject(const QString& filePath) const
 {
+    QByteArray jsonData = saveProjectToJson();
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        return false;
+    }
+    file.write(jsonData);
+    file.close();
+    return true;
+}
+
+QByteArray CanvasWidget::saveProjectToJson() const
+{
     QJsonObject root;
     root["version"] = "1.0";
     root["format"] = "SiteSurveyor Project";
@@ -3570,17 +3582,8 @@ bool CanvasWidget::saveProject(const QString& filePath) const
     stationObj["backsightName"] = m_station.backsightName;
     root["station"] = stationObj;
 
-    
-    // Write to file
     QJsonDocument doc(root);
-    QFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly)) {
-        return false;
-    }
-    file.write(doc.toJson(QJsonDocument::Indented));
-    file.close();
-    
-    return true;
+    return doc.toJson(QJsonDocument::Indented);
 }
 
 bool CanvasWidget::loadProject(const QString& filePath)
@@ -3590,8 +3593,15 @@ bool CanvasWidget::loadProject(const QString& filePath)
         return false;
     }
     
-    QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    QByteArray jsonData = file.readAll();
     file.close();
+    
+    return loadProjectFromJson(jsonData);
+}
+
+bool CanvasWidget::loadProjectFromJson(const QByteArray& jsonData)
+{
+    QJsonDocument doc = QJsonDocument::fromJson(jsonData);
     
     if (doc.isNull() || !doc.isObject()) {
         return false;
@@ -3660,8 +3670,6 @@ bool CanvasWidget::loadProject(const QString& filePath)
     m_station.stationName = stationObj["stationName"].toString("STN");
     m_station.backsightName = stationObj["backsightName"].toString("BS");
 
-    
-    m_projectFilePath = filePath;
     
     emit layersChanged();
     update();

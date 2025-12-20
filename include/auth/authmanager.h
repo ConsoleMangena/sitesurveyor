@@ -59,6 +59,16 @@ public:
     // Status
     bool isAuthenticated() const { return m_isAuthenticated; }
     QString currentUser() const { return m_profile.name.isEmpty() ? m_profile.email : m_profile.name; }
+    QString sessionId() const { return m_sessionId; }
+    QString userId() const { return m_profile.id; }
+    QString jwt() const { return m_jwt; }
+    
+    // Config access
+    QString projectId() const { return PROJECT_ID; }
+    QString apiEndpoint() const { return API_ENDPOINT; }
+
+    // Helper to create authenticated requests
+    QNetworkRequest createAuthorizedRequest(const QUrl& url) const;
     
     // Profile access
     const UserProfile& userProfile() const { return m_profile; }
@@ -77,6 +87,7 @@ signals:
     void licenseLoaded();
     void licenseError(const QString& message);
     void licenseExpired();
+    void jwtRefreshed();
 
 
 private slots:
@@ -91,6 +102,7 @@ private:
     UserProfile m_profile;
     License m_license;
     QString m_sessionId;
+    QString m_jwt;
     QString m_deviceId;
     
     // Config
@@ -111,11 +123,14 @@ private:
     void saveProfile();
     void loadProfile();
     QString getDeviceId();
+    void fetchJwt();
+    void refreshJwt();
 private slots:
     void checkLicenseExpiration();
 
 private:
    QTimer* m_licenseCheckTimer;
+   QTimer* m_jwtRefreshTimer;
 };
 
 #endif // AUTHMANAGER_H

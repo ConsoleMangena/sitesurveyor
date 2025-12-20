@@ -12,6 +12,9 @@
   </qresource>
   <qresource prefix="/icons">
     <!-- Feather Icons (MIT License) - https://feathericons.com -->
+    <file alias="account.svg">icons/account.svg</file>
+    <file alias="history.svg">icons/history.svg</file>
+    <file alias="share.svg">icons/share.svg</file>
     <file alias="layers.svg">icons/layers.svg</file>
     <file alias="file-plus.svg">icons/file-plus.svg</file>
     <file alias="folder-open.svg">icons/folder-open.svg</file>

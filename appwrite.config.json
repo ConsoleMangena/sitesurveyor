@@ -48,114 +48,6 @@
     ],
     "tables": [
         {
-            "$id": "licenses",
-            "$permissions": [
-                "read(\"users\")",
-                "create(\"users\")",
-                "update(\"users\")",
-                "delete(\"users\")"
-            ],
-            "databaseId": "sitesurveyor",
-            "name": "Licenses",
-            "enabled": true,
-            "rowSecurity": false,
-            "columns": [
-                {
-                    "key": "userId",
-                    "type": "string",
-                    "required": true,
-                    "array": false,
-                    "size": 255,
-                    "default": null,
-                    "encrypt": false
-                },
-                {
-                    "key": "plan",
-                    "type": "string",
-                    "required": true,
-                    "array": false,
-                    "elements": [
-                        "free",
-                        "professional",
-                        "enterprise"
-                    ],
-                    "format": "enum",
-                    "default": null
-                },
-                {
-                    "key": "expiresAt",
-                    "type": "datetime",
-                    "required": true,
-                    "array": false,
-                    "format": "",
-                    "default": null
-                },
-                {
-                    "key": "features",
-                    "type": "string",
-                    "required": false,
-                    "array": true,
-                    "size": 1000,
-                    "default": null,
-                    "encrypt": false
-                },
-                {
-                    "key": "deviceIds",
-                    "type": "string",
-                    "required": false,
-                    "array": true,
-                    "size": 255,
-                    "default": null,
-                    "encrypt": false
-                },
-                {
-                    "key": "maxDevices",
-                    "type": "integer",
-                    "required": false,
-                    "array": false,
-                    "min": 1,
-                    "max": 100,
-                    "default": null
-                },
-                {
-                    "key": "isActive",
-                    "type": "boolean",
-                    "required": false,
-                    "array": false,
-                    "default": null
-                },
-                {
-                    "key": "licenseKey",
-                    "type": "string",
-                    "required": true,
-                    "array": false,
-                    "size": 50,
-                    "default": null,
-                    "encrypt": false
-                }
-            ],
-            "indexes": [
-                {
-                    "key": "userId_idx",
-                    "type": "key",
-                    "status": "available",
-                    "columns": [
-                        "userId"
-                    ],
-                    "orders": []
-                },
-                {
-                    "key": "licenseKey_idx",
-                    "type": "unique",
-                    "status": "available",
-                    "columns": [
-                        "licenseKey"
-                    ],
-                    "orders": []
-                }
-            ]
-        },
-        {
             "$id": "posts",
             "$permissions": [
                 "read(\"any\")",
@@ -268,6 +160,45 @@
                     "min": 1,
                     "max": 120,
                     "default": null
+                }
+            ],
+            "indexes": []
+        },
+        {
+            "$id": "newsletter",
+            "$permissions": [
+                "create(\"users\")",
+                "read(\"users\")"
+            ],
+            "databaseId": "sitesurveyor",
+            "name": "Newsletter Subscribers",
+            "enabled": true,
+            "rowSecurity": false,
+            "columns": [
+                {
+                    "key": "email",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "format": "email",
+                    "default": null
+                },
+                {
+                    "key": "subscribedAt",
+                    "type": "datetime",
+                    "required": true,
+                    "array": false,
+                    "format": "",
+                    "default": null
+                },
+                {
+                    "key": "status",
+                    "type": "string",
+                    "required": true,
+                    "array": false,
+                    "size": 20,
+                    "default": null,
+                    "encrypt": false
                 }
             ],
             "indexes": []

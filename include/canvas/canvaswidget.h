@@ -242,6 +242,8 @@ public:
     // Project save/load (JSON format)
     bool saveProject(const QString& filePath) const;
     bool loadProject(const QString& filePath);
+    QByteArray saveProjectToJson() const;
+    bool loadProjectFromJson(const QByteArray& jsonData);
     QString projectFilePath() const { return m_projectFilePath; }
     void setProjectFilePath(const QString& path) { m_projectFilePath = path; }
     

@@ -145,6 +145,20 @@ set(SOURCES
     src/tools/tin3dviewer.cpp
     src/tools/contour_dialog.cpp
 
+    # Auth & Cloud
+    src/auth/oauthhelper.cpp
+    src/auth/cloudmanager.cpp
+    src/auth/cloudfiledialog.cpp
+    src/auth/versionhistorydialog.cpp
+    src/auth/shareprojectdialog.cpp
+    src/auth/conflictdialog.cpp
+    include/auth/cloudmanager.h
+    include/auth/cloudfiledialog.h
+    include/auth/versionhistorydialog.h
+    include/auth/shareprojectdialog.h
+    include/auth/conflictdialog.h
+    include/auth/oauthhelper.h
+
     src/gama/gamaexporter.cpp
     src/gama/gamarunner.cpp
     src/gama/network_adjustment_dialog.cpp

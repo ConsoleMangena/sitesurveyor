@@ -99,6 +99,20 @@ private:
     
     // Authentication
     AuthManager* m_auth{nullptr};
+
+    // Cloud
+    class CloudManager* m_cloudManager{nullptr};
+
+private slots:
+    void saveToCloud();
+    void openFromCloud();
+    void showVersionHistory();
+    void shareProject();
+
+private:
+    // Track current cloud file
+    QString m_currentCloudFileId;
+    QString m_currentCloudEtag;
 };
 
 #endif // MAINWINDOW_H
