@@ -1,0 +1,58 @@
+GNU Gama package is dedicated to adjustment of geodetic networks.
+It is intended for use with traditional geodetic surveyings which are
+still used and needed in special measurements (e.g., underground or
+high precision engineering measurements) where the Global Positioning
+System (GPS) cannot be used.
+
+In general, surveying is the technique and science of accurately
+determining the terrestrial or three-dimensional spatial position of
+points and the distances and angles between them.@footnote{Wikipedia,
+@uref{http://en.wikipedia.org/wiki/Surveying}}
+
+Adjustment is a technical term traditionally used by geodesists and
+surveyors which simply means ``application of the least squares method to
+process the over-determined system of measurements'' (statistical
+methods other than least squares are used sometimes but are not common). In
+other words, we have more observations than needed and we are trying to
+get the best estimate for adjusted observations and/or coordinates.
+
+@dfn{Adjustment of geodetic networks} means that we have a set of fixed
+points with given coordinates, a set of points with unknown coordinates
+(possibly with approximate values available) and a set of
+observations among them. What is typical of adjustment of special
+geodetic measurements is that the resulting linearized system might be
+singular (we can have a network with no fixed points) and we are not
+only interested in the values of `adjusted parameters and
+observations' but also in the estimates of their covariances. This is
+what Gama does.
+
+Gama was originally inspired by Fortran system Geodet/PC (1990)
+designed by Frantisek Charamza. The GNU Gama project started
+at the department of mapping and cartography, faculty of Civil
+Engineering, Czech Technical University in Prague (CTU) about 1998 and
+its name is an acronym for @emph{geodesy and mapping}.  It was
+presented to a wider public for the first time at FIG Working Week 2000
+in Prague and then at FIG Workshop and Seminar at HUT Helsinki in
+2001.
+
+The GNU Gama home page is
+
+            @center   @uref{http://www.gnu.org/software/gama/}
+
+@noindent and the project is hosted on
+
+            @center   @uref{http://savannah.gnu.org/git/?group=gama}
+
+GNU Gama is released under the GNU General Public License and is based
+on a C++ library of geodetic classes and functions and a small C++
+template matrix library @code{matvec}. For parsing XML documents GNU
+Gama calls the @code{expat} parser version 1.1, written by James
+Clark. The @code{expat} parser is not part of the GNU Gama project,
+but it is used by the project.
+
+Adjustment in local Cartesian coordinate systems is fully supported
+by a command-line program @code{gama-local} that adjusts geodetic
+(free) networks of observed distances, directions, angles, height
+differences, 3D vectors and observed coordinates (coordinates with
+given variance-covariance matrix).  Adjustment in global coordinate
+systems is supported only partly as a @code{gama-g3} program.

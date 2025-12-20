@@ -1,0 +1,91 @@
+Developers:
+
+    Aleš Čepek <cepek@gnu.org>
+        - adjustment etc.
+
+    Jiří Veselý <vesely@gama.fsv.cvut.cz>
+        - classes for computaion of approximate coordinates
+
+    Petr Doubrava <petr@gepro.cz>
+        - support for iso-885902 and windows-1250 encoding for Expat
+          parser
+
+    Jan Pytel <jan.pytel@fsv.cvut.cz>
+        - linearization of slope observation types and GUI Rocinante
+          (now distributed separately from sourceforge.net)
+
+    Václav Petráš <vaclav.petras@fsv.cvut.cz>
+        - class SqliteReader
+
+    Petra Millarová <petramillarova@gmail.com>
+        - class Acord2 and other helper classes for combinatorial solution
+          of medians of approximate coordinates
+
+Contributors:
+
+    Chuck Ghilani (Surveying Program Chair, Penn State Wilkes-Barre)
+         - revision of documentation of XML input data and many
+           comments and suggestions
+
+    Dan Haggman <dhaggman@cc.hut.fi>
+        - Finish translation
+
+    Mauri Väisänen <mauri.vaisanen@hut.fi>
+        - Finish translation
+
+    John Dedrum <ddrum66@hotmail.com>
+        - Dutch translation
+
+    Boris Pihtin <cyb@bendery.md>
+        - Russian translation
+
+    Stéphane Kaloustian <stephane.kaloustian@laposte.net>
+        - French translation
+
+    Anton Horpynich <anton@vingeo.com>
+        - Ukrainian translatation and revision of Russian translation
+
+    Claudio Fontana <claudio@gnu.org>
+        - GNU Gama build system compatible with GNU policies
+
+    Jokin Zurutuza <zurutuza@ujaen.es> Universidad de Jaén
+        - Spanish translation
+
+    Siki Zoltan <siki@agt.bme.hu> Budapest University of Technology
+    and Economist (BME), Department of Geodesy and Surveying
+        - Hungarian translationary
+        - binary builds for MS Windows
+                http://www.agt.bme.hu/php/browse.php?/foss
+
+    项维 (Vim Xiang) <vimxiang@gmail.com>
+        - Chinese translation in GBK encoding
+
+    Tomáš Kubín <tomas.kubin@fsv.cvut.cz>
+        - update of output of a posteriori standard deviation Chi-Square test
+
+    Greg Troxel <gdt@lexort.com>
+        - many bug fixes of violations of GNU Coding Standards, namely
+          on OS X and NetBSD
+
+    Kristian Evers <kristianevers@gmail.com> The Danish Agency for
+    Data Supply and Efficiency
+        - concept of XML tag 'extern' for linking adjustement XML input
+          and output with external database keys
+        - conda-forge/gama-feedstock
+
+    Oleg Goussev
+        - bug in azimuth definition in input XML (missing optional
+          attribude from="")
+        - bug in html output format for --angles 360 (CC units used on several
+          places where SS belong)
+        - bug in gkf input data resulting in segmentation fault (network
+          with observed angles and one distance)
+
+    Jan Holešovský
+        - consultations and testing of Octave format with MATLAB
+
+    Friedhelm Krumm, Geodätisches Institut Universität Stuttgar
+        - contributed numerical examples for the adjustment of geodetic
+          networks (1D, 2D and 3D) published in his Geodetic Network
+          Adjustment Examples, Rev. 3.5, January 20, 2020.
+          https://www.gis.uni-stuttgart.de/

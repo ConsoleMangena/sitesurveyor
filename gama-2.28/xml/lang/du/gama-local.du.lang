@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="iso-8859-1" standalone="yes" ?> 
+<entries>
+
+<e id="T_GaMa_Adjustment_of_geodetic_network"   
+   EN="Adjustment of local geodetic network"
+   du="Vereffening van lokaal geodetisch netwerk" />
+
+<e id="T_GaMa_version"
+   EN="version: "
+   du="versie: " />
+
+<e id="T_GaMa_exception_1"
+   EN="Error during creation of InfoSit object"
+   du="Fout tijdens creëren van InfoSit object" />
+
+<e id="T_GaMa_exception_2a"
+   EN="GNU Gama - error on reading XML input configuration file!"
+   du="Fout bij lezen van XML input configuratie bestand!" />
+
+<e id="T_GaMa_exception_2b"
+   EN="On line number "
+   du="Op lijn nummer " />
+
+<e id="T_GaMa_No_points_available"
+   EN="No points available"
+   du="Geen punten beschikbaar" />
+
+<e id="T_GaMa_No_observations_available"
+   EN="No observations available"
+   du="Geen observaties beschikbaar" />
+
+<e id="T_GaMa_No_network_points_defined"
+   EN="No network points defined"
+   du="Geen netwerkpunten gedefinieerd" />
+
+<e id="T_GaMa_No_unknowns_defined"
+   EN="No unknowns have been defined"
+   du="Er zijn geen onbekenden gedefinieerd" />
+
+<e id="T_GaMa_Observatios_with_outlying_absolute_terms_removed"
+   EN="Observations with outlying absolute terms removed"
+   du="Verworpen observaties met afwijkende absolute condities" />
+
+<e id="T_GaMa_adjustment_iteration"
+   EN=" - adjustment iteration"
+   du=" - iteraties" />
+
+<e id="T_GaMa_Approximate_coordinates_replaced"
+   EN="Approximate coordinates of computed points replaced by adjusted"
+   du="Benaderende coördinaten van berekende punten vervangen door vereffende" />
+
+<e id="T_GaMa_solution_ended_with_error"
+   EN="GNU Gama - solution ended with error!"
+   du="GNU Gama - oplossing beëindigd met fouten!" />
+
+<e id="T_GaMa_internal_program_error"
+   EN="GNU Gama - internal program error!"
+   du="GNU Gama - interne programmafout!" />
+  
+</entries>   
+

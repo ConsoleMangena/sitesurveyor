@@ -1,0 +1,1762 @@
+@c @setfilename gama-local-adj.info
+
+@c @chapter   Network adjustment
+@c @cindex    network adjustment
+@c @cindex    adjustment
+
+
+@comment LaTex equation ==> Texinfo
+
+@ignore
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         ...............               \eqno ( )
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+( )      ............
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@c noindent
+@end ignore
+
+@comment iftex
+@comment exampleindent 0
+@comment end iftex
+
+Adjustment of local geodetic network is a classical case of
+@emph{adjustment of indirect observations.}  After estimation of
+approximate values of unknown parameters (coordinates of points) and
+linearization of functions describing relations between observations and
+parameters we solve linear system of equations
+@c
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+     \bf  Ax = b + v,               \eqno (1)
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(1)      Ax = b + v,
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+where @m{A} is coefficient matrix, @m{b} is vector of absolute terms
+(right hand side) and @m{v} is vector of residuals.
+This system is (generally) overdetermined and we seek
+the solution @m{x} satisfying the basic criterion of Least Squares
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+     \bf  v'Pv = \min,              \eqno (2)
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(2)      v'Pv = min,
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+where @m{P} is weight matrix. This criterion unambiguously defines the
+shape of adjusted network.
+
+
+
+Geodetic adjustment is traditionally computed as the solution of
+@emph{normal equations}
+@c
+@footnote{@code{gama-local} can solve the project equations (1)
+directly using algorithms @emph{Gram-Schmidt orthogonalisation} or
+@emph{Singular Value Decomposition}, which generally yield numerically
+more stable solution.}
+@c
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$ \bf{ Nx = n, \quad   N=A'PA, \quad n=A'Pb.} \eqno (a) $$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(a)      Nx = n,  where  N=A'PA  and  n=A'Pb.
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+
+
+
+In the case of @emph{free network,} i.e. network with no fixed
+coordinates (or network without sufficient number of fixed
+coordinates), the system (1) is singular, matrix @m{A} has linearly
+dependent columns, and there is infinite number of solutions @m{x}.
+
+To define a unique solution @m{x} we need to definine a set of
+constriant equations (@emph{inner constraints})
+@c
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$ \bf{ Cx = c} \eqno (b) $$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(b)      Cx = c
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+
+to minimize
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$ {\bf v'Pv - 2k'(Cx -c)} = \min  \eqno (c) $$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(c)      v'Pv - 2k'(Cx - c) = min
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+@c
+where @m{r} is the vector of residuals, @m{r = Ax - b}, @m{k} is a
+vector of so called @emph{Lagrange multipliers} and adjusted vector @m{x}
+is obtained from solution of
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+ \pmatrix{
+    \bf A'PA & \bf C' \cr
+    \bf C    & \bf 0  \cr
+ }
+ \pmatrix{
+    \bf x \cr
+    \bf k \cr
+ } =
+ \pmatrix{
+    \bf A'Pb \cr
+    \bf c    \cr
+ }                  \eqno (d)
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(d)      ( A'PA, C') (x) = (A'Pb)
+         ( C,    0 ) (k) = (  c )
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+@c
+
+
+
+
+In @code{gama-local} a slightly different approach is used, we define
+a second regularization criterion as
+@c
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         \sum_{i \in \Omega} x_i^2 = \min,            \eqno (3)
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(3)      \sum x_i^2 = min,      for all selected i
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+stating that at the same time with (2) we demand that the sum of
+squares corrections of selected parameters is minimal (corrections of
+unknown parameters with indexes from the set
+@c % +++++++++++++++++++++++
+@tex
+$\Omega$).
+@end tex
+@ifnottex
+of all selected unknowns.
+@end ifnottex
+@c % -----------------------
+Geometrically this criterion is equivalent to adjustment of the network
+according to (2) with simultaneous transformation to the selected set of
+fiducial points.  This transformation does not change the shape of
+adjusted network.
+
+
+
+Often it is advantageous to work with a @emph{homogenized system,}
+ie.@: with the system of project equations in which coefficient of each
+row and absolute term are multiplied by square root of the weight of
+corresponding observation.
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+    \bf  \tilde A x = \tilde b,              \eqno (4)
+$$
+where ${\bf \tilde A} = {\bf P}^{1/2}{\bf A}$, ${\bf \tilde b} = {\bf
+P}^{1/2}{\bf b}$. Symbol ${\bf P}^{1/2}$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(4)      ~A x = ~b,
+@end example
+
+@noindent
+where @gmat{~A = P^@{1/2@} A}, @gmat{~b =  P^@{1/2@} A}.
+Symbol @gmat{P^@{1/2@}}
+@end ifnottex
+@c % ----------------------------------------------------------------------
+denotes diagonal matrix of square roots of
+observation weights (or Cholesky decomposition of covariance matrix in
+the case of correlated observations).  To criterion (2) corresponds in
+the case of homogenized system criterion
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         \bf \tilde v'\tilde v = \min.                 \eqno (5)
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(5)      ~v'~v = min.
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+Normal equations are clearly equivalent for both systems.
+@tex
+$$
+   \bf (A'PA)x = (A'Pb)
+                  \quad\equiv\quad
+       ({\tilde A}'\tilde A)x = (\tilde A\tilde b).
+$$
+Between weight coefficients of the original system (1) and homogenized
+system (4) are the following relations
+$$\eqalign{
+      q_{x_i} &= \tilde q_{x_i},          \qquad i=1,\ldots,n, \cr
+      q_{L_j} &= \tilde q_{L_j}/p_j,      \qquad j=1,\ldots,m, \cr
+      q_{v_k} &= \tilde q_{v_k}/p_k
+                = (1-\tilde q_{L_k})/p_k
+                = 1/p_k - q_{L_k},        \qquad k=1,\ldots,m. \cr
+}
+$$
+@end tex
+
+
+@menu
+* Approximate coordinates::     Approximate coordinates
+* Gross absolute terms::        Gross absolute terms
+* Statistical analysis::        Parameters of statistical analysis
+* Standard deviation::          Test on the reference standard deviation
+* Information on points::       Information on points
+* Observations::                Adjusted observations and residuals
+* Weak network elements::       Identification of weak network elements
+* Estimation of errors::        Estimation of real errors
+* Linearization::               Test on linearization
+* Glossary::                    Glossary
+@end menu
+
+
+
+@node     Approximate coordinates
+@section  Approximate coordinates
+
+
+For computation of coefficients in system (1) (ie.@: during
+linearization) we need, first of all, an estimate of approximate
+coordinates of points and approximate values of orientations of observed
+directions sets.
+
+
+Approximate values of unknown parameters are usually not known and we
+have to compute them from the available observations.  For approximate
+value of orientation program @code{gama-local} uses median of all estimates
+from the given set of directions to the points with known coordinates.
+Median is less sensitive to outliers than arithmetic mean which is
+normally used for approximate estimate of orientations
+
+
+
+During the phase of computation of approximate coordinate of points,
+program @code{gama-local} walks through the list of computed points
+and for each point gathers all determining elements pointing to
+points with known or previously computed coordinates.
+Determining elements are
+
+@itemize @w{}
+
+@item
+@strong{outer bearing}  (oriented half-line) starting from the point
+with known coordinates and pointing to the computed point
+
+@strong{distance}       between given and computed points
+
+@item
+@strong{inner angle}    with vertex in the computed point and arms
+intersecting given points
+
+@end itemize
+
+@noindent
+For all combinations of determining elements program @code{gama-local}
+computes intersections and estimates approximate coordinates as the
+median of all available solutions.
+
+
+If at least one point was resolved while iterating through the list,
+the whole cycle is repeated.
+
+
+If no more coordinates can be solved using intersections and points with
+unknown coordinates are remaining, program tries to compute coordinates
+of unresolved points in a local coordinates system and obtain their
+coordinates using similarity transformation. If a transformation
+succeeds to resolve coordinates at least one computed point and there
+are still some points without coordinates left, the whole process is
+repeated.  Classes for computation of approximate coordinates have been
+written by Jiri Vesely.
+
+
+If program @code{gama-local} fails to compute approximate coordinates
+of some of the network points, they are eliminated from the
+adjustment and they are listed in the output listing.
+
+
+With the outlined strategy, program @code{gama-local} is able to estimate
+approximate coordinates in most of the cases we normally meet in
+surveying profession. Still there are cases in which the solution fails.
+One example is an inserted horizontal traverse with sets of observed
+direction on both ends but without a connecting observed distance.  The
+solution of approximate coordinates can fail when there is a number of
+gross error for example resulting from confusion of point
+identifications but in normal situations, leaving computation of
+approximate coordinates on program @code{gama-local} is recommended.
+
+
+@heading Example
+@c unnumberedsubsec Example
+
+@example
+Computation of approximate coordinates of points
+************************************************
+
+Number of points with given coordinates:      2
+Number of solved points                :      2
+Number of observations                 :      4
+-----------------------------------------------------
+Successfully solved points             :      0
+Remaining unsolved points              :      2
+
+
+List of unresolved points
+*************************
+422
+424
+@end example
+
+
+
+
+@node     Gross absolute terms
+@section  Gross absolute terms
+@cindex   gross absolute terms
+@cindex   absolute terms
+@cindex   terms, absolute
+
+
+
+One of parameters in XML input of program @code{gama-local} is tolerance
+@code{tol-abs} for detecting of gross absolute terms in
+project equations. Observations with outlying absolute terms
+are always excluded from adjustment.
+
+
+For measured distances program tests difference between observed value
+@gmat{d_i} and distance computed from approximate coordinates @gmat{d_0}
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         |d_i - d_0| > @code{tol-abs},
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         |d_i - d_0| > @code{tol-abs},
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+
+for observed directions program @code{gama-local} tests transverse deviation
+corresponding to absolute term @gmat{b_i} from
+project equations (1)
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         | b_i | d_0 > @code{tol-abs}
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         | b_i | d_0 > @code{tol-abs}
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+
+and similarly for angles, program tests the greater of two deviations
+corresponding to left and right distances (left and right arm of the
+angle)
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         |b_i| \max \{ d_{0_l}, d_{0_r} \}  > @code{tol-abs}.
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         |b_i| max@{ d_@{0_l@}, d_@{0_r@} @}  > @code{tol-abs}.
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+
+Default value of parameter @code{tol-abs} is 1000 mm.
+
+
+@heading Example
+
+@example
+Outlying absolute terms in project equations
+********************************************
+
+   i   standpoint       target           observed     absolute
+=========================================== value ===== term ==
+
+   2          103          104 dir.    301.087900       -9989.1
+
+
+Observations with outlying absolute terms removed
+@end example
+
+
+
+
+
+@node     Statistical analysis
+@section  Parameters of statistical analysis
+@cindex   parameters of statistical analysis
+@cindex   statistical analysis
+@cindex   analysis, statistical
+
+@comment  %%% \label{vyrovnani:parstatan}
+
+
+Program @code{gama-local} uses two basic statistical parameters
+
+@itemize @bullet{}
+
+@item
+confidence probability @gmat{P} (default value is 95%, see input XML
+parameter @code{conf-pr}) and
+
+@item
+actual type of reference standard deviation @mnakt{} (parameter
+@code{sigma-act}).
+@end itemize
+
+@noindent
+Confidence probability determines significance level on which
+statistical tests of adjusted quantities are carried.  Actual type of
+reference standard deviation @mnakt{} specifies whether during
+statistical analysis we use an a priori reference standard deviation
+@mnapr{} or an a posteriori estimate @mnemp{}.  On the type of actual
+reference standard deviation depends the choice of density functions
+of stochastic quantities in statistical analysis of the adjustment.
+
+@itemize @w{}
+
+@item
+@strong{A priori reference standard deviation @mnapr{}} is an estimate
+of the standard deviation of an observation with the unit
+weight. Numerically it is a scaling factor used in calculation of the
+weights. If we change @mnapr{}, only the sum of weighted residuals
+squares is changed and all adjustment results remain the same (there
+is just one least squares solution).  @mnapr{} can be selected in
+cases when we know its value in advance and with sufficient
+reliability.  Another situation when @mnapr{} is used are networks
+with low number of degrees of freedom (poorly overdetermined systems)
+or when veen degrees of freedom is zero. Examples may be analysis of
+network models etc.
+
+@item
+@strong{A posteri estimate of reference standard deviation @mnemp{}} is
+used in cases when a priori value of reference standard deviation
+@mnapr{} is not known and when degrees of freedom is sufficiently high
+and reliable for empirical estimate of @mnemp{}.
+@end itemize
+
+
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+
+The standard deviation of an adjusted quantity $\theta$ is computed in
+dependece on the choice of actual type of reference standard deviation
+@mnakt{} according to formula
+$$
+        m_{\theta_i} = \mnakt \sqrt{q_{\theta_{ii}}},
+$$
+where $q_{\theta_{ii}}$ is weight coefficient (cofactor) of the $i$-th
+adjusted unknown parameter (coordinate or orientation, $\theta=x_i$) or
+$i$-th adjusted observation (distance, direction, $\ldots, \theta=L_i$).
+
+
+Apart from standard deviation $m_{\theta}$, program @code{gama-local} computes
+for adjusted quantity $\theta$ its @emph{confidence interval}
+$(\Theta_1, \Theta_2)$ in which the real value $\Theta$ is located with
+probability $P$
+$$
+            P(\Theta_1 < \Theta < \Theta_2) = P,
+$$
+$$
+   \Theta_1 = \theta - k_p m_{\theta}, \qquad
+   \Theta_2 = \theta + k_p m_{\theta},
+$$
+where coefficient $k_p$ depends on confidence probability $P$ and in the
+case of low number of degrees of freedom on the choice of actual type of
+reference standard deviation \mnakt.
+
+
+
+Coefficient $k_p$ is computed for $\mnakt = \mnapr$ as critical value of
+normal distribution for probability $\alpha/2,$ for the case of choice
+$\mnakt = \mnemp$ as critical value of Student distribution on
+confidence level $\alpha/2$ with \nadb\ degrees of freedom
+$$
+   k_p = \left\{
+   \matrix{
+   u_{\alpha/2}        & \hbox{if $\mnakt = \mnapr$,} \cr
+   t_{\alpha/2,\nadb}  & \hbox{if $\mnakt = \mnemp$.} \cr
+   }
+   \right.
+$$
+Similarly confidence ellipses for adjusted points are defined in the
+following text.
+
+@end tex
+@c % ....................................................................
+@ifnottex
+
+The standard deviantion of an adjusted quantity is computed in
+dependence of the choice of actual type of reference standard deviation
+@mnakt{} according to formula
+
+@center @mnakt{} sqrt(q)
+
+@noindent
+where @gmat{q} is the weight coefficient of the corresponding adjusted
+unknown parameter or observation. Apart from the standard deviation,
+program @code{gama-local} computes for the adjusted quantity its
+@emph{confidence interval} in which its real value is located
+with the probability@gmat{P}.
+
+@end ifnottex
+@c % --------------------------------------------------------------------
+
+
+@node     Standard deviation
+@section  Test on the reference standard deviation
+@cindex   test on the reference standard deviation
+@cindex   reference standard deviation
+@cindex   standard deviation
+@cindex   deviation, reference standard
+@cindex   deviation, standard
+
+
+
+Null hypothesis @gmat{H_0: @mnapr{} = @mnemp{}} is tested versus
+alternative hypothesis @gmat{H_1: @mnapr{} \neq @mnemp{}}.
+Test criterion is ratio of a posteriori estimate of
+reference standard deviation
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         \mnemp = \sqrt{{\bf v'Pv}/\nadb}
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         @mnemp{} = sqrt( v'P v / @nadb{}).
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+and a priori reference standard deviation @mnapr{} (input data parameter
+@code{m0-apr}). For given significance level @gmat{\alpha} lower and
+upper bounds of interval @gmat{(L, U)} are computed so, that if
+hypothesis @gmat{H_0} is true, probabilities @gmat{P(@mnemp{}/@mnapr{}
+\le D)} and @gmat{P(@mnemp{}/@mnapr{} \ge H)} are equal to
+@gmat{\alpha/2}.  Lower and upper bounds of the interval are computed as
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+  L = \sqrt{(\chi^2_{1-\alpha/2,\nadb}/\nadb)},
+      \qquad U = \sqrt{(\chi^2_{\alpha/2,\nadb}/\nadb)}.
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         L = sqrt((Chi^2_@{1-alpha/2,@nadb{}@})/@nadb{}),
+         U = sqrt((Chi^2_@{ alpha/2 ,@nadb{}@})/@nadb{}).
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+Probability
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         P(L < @mnemp{}/@mnapr{} < U) = @code{conf-pr}
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         P(L < @mnemp{}/@mnapr{} < U) = @code{conf-pr}
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+is by default 95%, this corresponds to 5% confidence level test.
+
+
+
+Exceeding the upper limit @gmat{H} of the confidence interval can be
+caused even by a single gross error (one outlying observation).
+Method of Least Squares is generally very sensitive to presence of
+outliers. Safely can be detected only one observation whose elimination
+leads to maximal decrease of a posteriori estimate of reference standard
+deviation
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+\mnred = \sqrt{({\bf v'Pv}-\delta)/(\nadb-1)},
+         \qquad\delta = \max(v_i^2/q_{v_i}),      \eqno (6)
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(6)      @mnred{}  = sqrt@{(v'P v - delta)/(@nadb{}-1)@},
+         delta = max(v_i^2/q_vi),
+
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+where
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         q_{v_i} = 1/p_i - q_{L_i}               \eqno (7)
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(7)      q_vi = 1/p_i - q_Li
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+is weight coefficient of @gmat{i}-th residual.  If the set of
+observations contains only one gross error, the outlying observation is
+likely to be detected, but this can not be guaranteed.
+
+
+
+In addition, program @code{gama-local} computes a posteriori estimate
+of reference standard deviation separately for horizontal distances
+and directions and/or angles after formula from
+@c %%% \cite[str. 175]{charamza:geodetpc}
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         m'_{0t} = \sqrt{ \sum{{\tilde v}^2_{i_t}}
+                        / \sum{{\tilde q}_{v_{i_t}}}
+                          },\qquad t=d,s,
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         m0'_t = sqrt(sum@{~v^2_it@}) / sum@{~q_vi@}),    t=d,s,
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+where symbol @gmat{t} denotes observed distances, directions and/or
+angles.
+
+
+
+@heading Example
+
+
+@example
+m0  apriori  :    10.00
+m0' empirical:     9.64         [pvv] : 3.43560e+03
+
+During statistical analysis we work
+
+- with empirical standard deviation 9.64
+- with confidence level             95 %
+
+Ratio m0' empirical / m0 apriori: 0.964
+95 % interval (0.773, 1.227) contains value m0'/m0
+m0'/m0 (distances): 0.997   m0'/m0 (directions): 0.943
+
+Maximal decrease of m0''/m0 on elimination of one observation: 0.892
+
+Maximal studentized residual 2.48 exceeds critical value 1.95
+on significance level 5 % for observation #35
+<distance from="407" to="422" val="346.415" stdev="5.0" />
+@end example
+
+
+
+@node     Information on points
+@section  Information on points
+@cindex   information on points
+@cindex   points
+
+
+
+Program @code{gama-local} lists separately review of coordinates of fixed and
+adjusted points; adjusted @emph{constrained} coordinates are marked with
+@code{*}; see equation (3).  Adjusted coordinate standard deviations
+@gmat{m_x} and @gmat{m_y}, and values for computing confidence intervals
+are given in the listing of adjusted coordinates (@ref{Statistical
+analysis}).  In the review index @gmat{i} is the index of unknown
+@gmat{x_i} from the system of project equations (1) corresponding to the
+point coordinates @gmat{x} and @gmat{y}.
+
+
+@heading Example
+
+@example
+Fixed points
+************
+
+       point         x              y
+========================================
+
+           1  1054980.484     644498.590
+           2  1054933.801     643654.101
+
+
+Adjusted coordinates
+********************
+
+  i        point    approximate  correction  adjusted    std.dev conf.i.
+====================== value ====== [m] ====== value ========== [mm] ===
+
+             422
+  2            x   1055167.22747  -0.00510 1055167.22237     2.7     5.4
+  3            y    644041.46119   0.00023  644041.46142     2.5     5.1
+
+             424
+  4            X * 1055205.41198  -0.00056 1055205.41142     3.1     6.3
+  5            Y *  644318.24425  -0.00125  644318.24300     3.6     7.2
+
+@end example
+
+
+
+
+For adjusted points, program summarizes information on standard
+ellipses, confidence ellipses, mean square positional errors
+(@gmat{m_p}), mean coordinate errors
+@ifnottex
+(@gmat{m_xy})
+@end ifnottex
+@tex
+($m_{xy}$)
+@end tex
+and coefficients @gmat{g} characterizing position of approximate
+coordinates with regard to the confidence ellipse.
+
+
+@heading Example
+
+
+@example
+Mean errors and parameters of error ellipses
+********************************************
+
+  point     mp      mxy      mean error ellipse  conf.err. ellipse   g
+========== [mm] == [mm] ==== a [mm] b  alpha[g] ==== a' [mm] b' ========
+
+    422     3.6     2.6     2.7     2.5   187.0     6.8     6.4     0.8
+    424     4.7     3.4     3.7     2.9   131.8     9.5     7.4     0.2
+    403     5.7     4.0     4.3     3.6    78.9    11.0     9.3     1.1
+
+@end example
+
+
+Mean square positional error @gmat{m_p} and mean coordinate error
+@ifnottex
+(@gmat{m_xy})
+@end ifnottex
+@tex
+($m_{xy}$)
+@end tex
+are computed as
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         m_p = \sqrt{m_y^2 + m_x^2},  \qquad  m_{xy} = m_p / \sqrt{2},
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         m_p = sqrt(m_y^2 + m_x^2),    m_xy = m_p / sqrt(2),
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+where @gmat{m_y^2} and @gmat{m_x^2} are squares of standard deviations
+(variances) of adjusted points coordinates.
+
+
+
+Semimajor and semiminor axes of standard ellipse are denoted as @gmat{a}
+and @gmat{b} in the listing, bearing of semimajor axis is denoted as
+@gmat{\alpha} and they are computed from covariances of adjusted
+coordinates
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+      a = \sqrt{{1\over2}(\hbox{cov\ }{yy} + \hbox{cov\ }{xx} + c)}, \qquad
+      b = \sqrt{{1\over2}(\hbox{cov\ }{yy} + \hbox{cov\ }{xx} - c)},
+$$
+$$
+      c = \sqrt{(\hbox{cov\ }{xx} - \hbox{cov\ }{yy})^2
+           + 4(\hbox{cov\ }{xy})^2},
+$$
+$$
+      \tan 2\alpha = 2(\hbox{cov\ }{xy})/(\hbox{cov\ }{xx}
+           - \hbox{cov\ }{yy}).
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         a = sqrt(1/2(cov_yy + cov_xx + c),
+         b = sqrt(1/2(cov_yy + cov_xx - c),
+
+         c = sqrt( (cov_xx - cov_yy)^2 + 4(cov_xy)^2 ),
+
+         tan 2alpha = 2(cov_xy) / (cov_xx - cov_yy).
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+The angle @gmat{\alpha} (the bearing of semimajor axis) is measured
+clockwise from X axis.
+
+
+Probability that standard ellipse covers real position of a point is
+relatively low. For this reason program @code{gama-local} computes extra
+@emph{confidence ellipse} for which the probability of covering real
+point position is equal to the given confidence probability.  Both
+ellipses are located in the same center, they share the same bearing of
+semimajor axes and they are similar.  For lengths of their semi-axis
+holds
+@c % \cite[p. 191]{charamza:geodetpc}
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         a' = k_p a, \qquad b' = k_p b,
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         a' = k_p a,        b' = k_p b,
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+where @gmat{k_p} is a coefficient computed for the given probability
+@gmat{P} as defined in @ref{Statistical analysis}.
+
+
+@image{fig/gama-local-adj-ellipse-g,8cm}
+
+Position of  approximate coordinates of an adjusted point with
+respect to its confidence ellipse
+@c % +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+is described by two points $P$ and $V$
+%%% is shown in
+%%%
+%%% Fig.  ref@{priklad-elipsa-g@},
+%%%
+where point $P$ depicts approximate coordinates and $V$ adjusted
+coordinates.  Point $E$
+%%% in figure
+is the intersection of oriented half-line
+$VP$ and the confidence ellipse. Coefficient $g$ is defined as the
+ration of abscissae
+$$
+        g = \overline{VP} / \overline{VE}.
+$$
+@end tex
+@c % ...................................................................
+@ifnottex
+are expressed by a coeeficient @gmat{g}
+@end ifnottex
+@c % -------------------------------------------------------------------
+Three cases are possible
+
+@itemize @w{}
+
+@item
+@gmat{g < 1} approximate coordinates of adjusted point are located
+inside the confidence ellipse
+
+@item
+@gmat{g = 1} approximate coordinates of adjusted point are located on
+the confidence ellipse
+
+@item
+@gmat{g > 1} approximate coordinates of adjusted point are outside the
+confidence ellipse
+@end itemize
+
+
+@noindent
+The coefficient @gmat{g} is calculated from formula
+@c %%% \cite[p. 192]{charamza:geodetpc}
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         g = \sqrt{(a_0 / a')^2 + (b_0/b')^2}
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         g = sqrt( (a_0 / a')^2 + (b_0/b')^2 )
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+where
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+     b_0 = \delta_y \cos \alpha - \delta_x \sin \alpha,   \qquad
+     a_0 = \delta_y \sin \alpha - \delta_x \cos \alpha
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         b_0 = delta_y cos(alpha) - delta_x sin(alpha),
+         a_0 = delta_y sin(alpha) - delta_x cos(alpha)
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+symbol @gmat{\delta} is used for correction of approximate coordinates
+and @gmat{\alpha} is bearing of confidence ellipse semimajor axis.
+
+
+
+
+
+If network contains sets of observed directions, program writes
+information on corresponding adjusted orientations, standard deviations
+and confidence intervals.  Index @gmat{i} is the same as in the case of
+adjusted coordinates the index of @gmat{i}-th adjusted unknown in the
+project equations.
+
+
+
+@heading Example
+
+@example
+Adjusted bearings
+*****************
+
+  i   standpoint   approximate  correction  adjusted   std.dev conf.i.
+==================== value [g] ==== [g] === value [g] ======= [cc] ===
+
+  1            1    296.484371  -0.000917  296.483454      5.1    10.3
+ 10            2     96.484371   0.000708   96.485079      5.1    10.4
+ 21          403     20.850571  -0.001953   20.848618      8.8    17.7
+@end example
+
+
+
+
+@node     Observations
+@section  Adjusted observations and residuals
+
+
+In the review of adjusted observations program @code{gama-local} prints index of
+the observation, index of the row in matrix @m{A} in the system (1),
+identifications of standpoint and target point, type of the observation,
+its approximate and adjusted value, standard deviation and confidence
+interval.
+
+
+
+@heading Example
+
+
+@example
+Adjusted observations
+*********************
+
+   i   standpoint   target         observed     adjusted std.dev conf.i.
+===================================== value ==== [m|g] ====== [mm|cc] ==
+
+   1            1        2 dis.   845.77700    845.77907     3.0     6.1
+   2                   422 dir.   28.205700    28.205613     5.1    10.3
+   3                   424 dir.   60.490600    60.491359     6.7    13.6
+
+@end example
+
+
+
+Review of residuals serves for analysis of observations and containts
+values of normalized or studentized residuals (depending on type of
+@mnakt{} used) and three characteristics.
+@c %%%
+@c %%% adopted from Geodet/PC \cite[180--187]{charamza:geodetpc}.
+@c %%%
+Theese are coefficient @code{f} identifying weak network elements and
+estimates of real error of observation @code{e-obs} and real error of
+its adjusted value @code{e-adj}, see definition in the following text.
+
+
+
+If normalized or studentized residual exceeds critical value for the
+given confidence probability, it is marked in the review with symbol
+@code{c} (critical) and maximal normalized or studentized residual is
+marked with symbol @code{m}.
+
+
+
+@heading Example
+
+@example
+Residuals and analysis of observations
+**************************************
+
+   i standpoint   target        f[%]        v    |v'|     e-obs.  e-adj.
+======================================== [mm|cc] =========== [mm|cc] ===
+
+   1          1        2 dir.   47.4       9.170  1.1      12.7    3.5
+   2                 422 dir.   47.0      -0.873  0.1      -1.2   -0.3
+   3                 424 dir.   30.3       7.588  1.1      14.8    7.2
+
+@end example
+
+
+
+@comment Kolmogorov-Smirnov test removed, available only as conditional compile
+
+@c KS @comment this section is not included in texinfo
+@c KS @comment ***************************************
+@c KS
+@c KS @iftex
+@c KS
+@c KS @subsection Test on normal distribution of homogenized residuals
+@c KS
+@c KS
+@c KS Repeated observations often display a normal frequency distribution.
+@c KS Residual of observed quantities are linear function real errors.
+@c KS From presumption of normal ditribution of real errors follows
+@c KS that homogenized residuals should have normal distribution as well.
+@c KS
+@c KS
+@c KS
+@c KS Program  @code{gama-local} estimates mean value $E(\tilde {v})$ and estimate
+@c KS of variance $V(\tilde {v})$ for the vector of homogenized residuals
+@c KS $$
+@c KS         E(\tilde {v}) = {1\over N}\sum_{i=1}^N{\tilde {v}_i}, \qquad
+@c KS         V(\tilde {v}) = E(\tilde {v}^2) - (E(\tilde {v}))^2.
+@c KS $$
+@c KS Vector of homogenized residuals transforms to @emph{normalized
+@c KS (standardized) vector of residuals}
+@c KS $$
+@c KS   \nu_i = {{\tilde {v}_i - E(\tilde {v})}\over{\sqrt{V(\tilde {v})}}}.
+@c KS $$
+@c KS Using Kolmogorov-Smirnov test program @code{gama-local} verifies assumption of
+@c KS normality of elements of vector ${\bf \nu}$.  Result of the test is a
+@c KS value saying what is the probability that elements of vector ${\bf \nu}$
+@c KS are a random sample form normal distribution $N(0, 1).$
+@c KS
+@c KS
+@c KS
+@c KS
+@c KS Kolmogorov-Smirnov test for one sample is based on maximal difference
+@c KS between empirical and theoretical cumulative distribution function
+@c KS (normal distribution $N(0, 1)$ in our case).
+@c KS For random sample with $N$ elements $X_1, X_2, \ldots, X_N$
+@c KS from the population with cumulative distribution function  $F(x)$
+@c KS we form empirical cumulative distribution function
+@c KS $$
+@c KS   S_N(x) = (\hbox{number of elements $X_1,X_2,\ldots,X_N$
+@c KS              which are} \le x) / N,
+@c KS $$
+@c KS %%% ******   as is schematically depicted on Fig. \ref{vyrovnani:obrks}.
+@c KS If we denote
+@c KS $$
+@c KS        D = \max_{-\infty < x < \infty}|S_N(x) - F(x)|,
+@c KS $$
+@c KS the testing criterion $D\sqrt{N}$ has limit of Kolmogorov-Smirnov
+@c KS distribution.  Some critical values of testing criterion $D\sqrt{N}$
+@c KS computed from the $KS$ distribution are given in the following table
+@c KS $$
+@c KS \vbox{\offinterlineskip
+@c KS \halign{
+@c KS \strut
+@c KS \vrule\quad # \quad &\vrule
+@c KS \hfil\quad # \quad\hfil &
+@c KS \hfil\quad # \quad\hfil &
+@c KS \hfil\quad # \quad\hfil &
+@c KS \hfil\quad # \quad\hfil &
+@c KS \hfil\quad # \quad\hfil\vrule \cr
+@c KS \noalign{\hrule}
+@c KS       & 0.005 & 0.010 & 0.025 & 0.050 & 0.100 \cr
+@c KS \noalign{\hrule}
+@c KS Lower & 0.42  & 0.44  & 0.48  & 0.52  & 0.57  \cr
+@c KS Upper & 1.73  & 1.63  & 1.48  & 1.36  & 1.22  \cr
+@c KS \noalign{\hrule}
+@c KS }}
+@c KS $$
+@c KS @end iftex
+@c KS
+@c KS
+@c KS @ignore
+@c KS
+@c KS \begin{center}
+@c KS \begin{tabular}{|l|ccccc|}
+@c KS \hline
+@c KS       & 0.005 & 0.010 & 0.025 & 0.050 & 0.100 \\
+@c KS \hline
+@c KS Lower & 0.42  & 0.44  & 0.48  & 0.52  & 0.57  \\
+@c KS Upper & 1.73  & 1.63  & 1.48  & 1.36  & 1.22  \\
+@c KS \hline
+@c KS \end{tabular}
+@c KS \end{center}
+@c KS
+@c KS
+@c KS
+@c KS %=========================================================================
+@c KS \begin{figure}
+@c KS
+@c KS \begin{center}
+@c KS
+@c KS \setlength{\unitlength}{0.6ex}
+@c KS \framebox
+@c KS {
+@c KS \begin{picture}(100,100)
+@c KS     \linethickness{0.03ex}
+@c KS     \qbezier(0,0)(15,40)(50,50)
+@c KS     \qbezier(50,50)(85,60)(100,100)
+@c KS
+@c KS     \put( 0, 0){\line(1,0){ 7}}
+@c KS     \put( 7, 0){\line(0,1){10}}
+@c KS
+@c KS     \put( 7,10){\line(1,0){ 6}}   \put( 7,10){\circle*{1}}
+@c KS     \put(13,10){\line(0,1){ 8}}
+@c KS
+@c KS     \put(13,18){\line(1,0){ 7}}   \put(13,18){\circle*{1}}
+@c KS     \put(20,18){\line(0,1){10}}
+@c KS
+@c KS     \put(20,28){\line(1,0){ 4}}   \put(20,28){\circle*{1}}
+@c KS     \put(24,28){\line(0,1){11}}
+@c KS
+@c KS     \put(24,39){\line(1,0){20}}   \put(24,39){\circle*{1}}
+@c KS     \put(44,39){\line(0,1){12}}
+@c KS
+@c KS     \put(44,51){\line(1,0){25}}   \put(44,51){\circle*{1}}
+@c KS     \put(69,51){\line(0,1){30}}
+@c KS
+@c KS     \put(69,81){\line(1,0){17}}   \put(69,81){\circle*{1}}
+@c KS     \put(86,81){\line(0,1){ 5}}
+@c KS
+@c KS     \put(86,86){\line(1,0){ 9}}   \put(86,86){\circle*{1}}
+@c KS     \put(95,86){\line(0,1){14}}
+@c KS
+@c KS     \put(95,100){\line(1,0){ 5}}   \put(95,100){\circle*{1}}
+@c KS
+@c KS     %===========================================================
+@c KS
+@c KS     \put(85,65){$F(x)$}
+@c KS     \put(17, 8){$S_N(x)$}
+@c KS
+@c KS     \put(60,72.0){\vector(0,1){9}}   % 81 .. 58.5
+@c KS     \put(58.5,68.5){$D$}
+@c KS     \put(60,67.5){\vector(0,-1){9}}
+@c KS
+@c KS \end{picture}
+@c KS }
+@c KS
+@c KS $x$
+@c KS
+@c KS \end{center}
+@c KS
+@c KS    \caption{Empirical cumulative distribution function $S_N(x)$,
+@c KS             theoretical distribution function  $F(x)$ and maximal
+@c KS             difference $D$ of Kolmogorov-Smirnov test}
+@c KS
+@c KS \label{vyrovnani:obrks}
+@c KS
+@c KS \end{figure}
+@c KS %=======================================================================
+@c KS
+@c KS
+@c KS @heading Example
+@c KS
+@c KS @example
+@c KS Test of normality of homogenized residuals of observations
+@c KS ==========================================================
+@c KS
+@c KS Test Kolmogorov-Smirnov : 97.6 %
+@c KS
+@c KS Condition number        : 1.3e+01
+@c KS @end example
+@c KS @end ignore
+
+
+
+
+
+
+@node     Weak network elements
+@section  Identification of weak network elements
+
+
+When planning observations in a geodetic network we always try to
+guarantee that all observed elements are checked by other measurements.
+Only with redundant measurements it is possible to adjust observations
+and possibly remove blunders that might otherwise totaly corrupt
+the whole set of measurements. Apart from sufficient number of redundant
+observations the degree of control of single observed elements
+is given by the network configuration, ie. its geometry.
+
+
+Less controlled observations represent weak network elements and
+they can in extreme cases even disable detection of gross
+observational errors as it is in the case of uncontrolled
+observations.  There are two limit cases of observation control
+
+@itemize @w{}
+
+@item
+@strong{fully controlled observation} as is for example an observed
+distance between two fixed points (standard deviation of the adjusted
+element is zero; standard deviation of the residual equals to the
+standard deviation if the observation) and
+
+@item
+@strong{uncontrolled observations} as is a free polar bar for example
+(standard deviation of adjusted value is equal to standard deviation of
+observed quantity; residual and standard deviation of the residual are
+zero).
+@end itemize
+
+@noindent
+Weakly controlled or uncontrolled observations can result even from
+elimination of certain suspisios observations during analysis of
+adjusment.
+
+
+Standard deviation of adjusted observations is less
+than standard deviation of the measurement.
+Degree of observation control in network
+is defined as coefficient
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         f = 100 {{m_\ell - m_L}\over{m_\ell}},            \eqno (8)
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(8)      f = 100 (m_l - m_L)/m_l,
+@end example
+
+@end ifnottex
+where
+@tex
+$m_\ell$
+@end tex
+@ifnottex
+@gmat{m_l}
+@end ifnottex
+is standard deviation of observed quantity and @gmat{m_L} is standard
+deviation computed from a posteriori reference standard deviation
+@mnapr{}.  We consider observed network element to be
+
+
+@itemize @w{}
+
+@item
+@strong{uncontrolled} if @gmat{f < 0.1} (in listing marked with letter
+@code{u}),
+
+@item
+@strong{weakly controlled} if @gmat{0.1 \le f < 5} (in listing marked
+with letter @code{w}).
+@end itemize
+
+
+
+
+
+@node     Estimation of errors
+@section  Estimation of real errors
+
+
+@c % Estimation of real errors of observations and/or real errors of
+@c % residuals is adopted from \cite[pp. 183-187]{charamza:geodetpc}.
+
+Acording to previous section we can consider an observation to be
+controlled if its coefficient @gmat{f > 0.1}.  Any controlled
+observation can be eliminated from the network without corrupting the
+network consistency---network reduced by one controlled observation can
+be adjusted and all unknown parameters can be compute without the
+eliminated observation.
+
+
+
+Estimate of real error of @gmat{i}-th observation is defined as
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         \varepsilon_{\ell_i} = L_i^{{red}} - \ell_i,       \eqno (9)
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(9)      e_li = L^red_i - l_i,
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+where
+@tex
+$\ell_i$
+@end tex
+@ifnottex
+e_li
+@end ifnottex
+is value of @gmat{i}-th observation and
+@tex
+$L_i^{{red}}$
+@end tex
+@ifnottex
+@end ifnottex
+is value of @gmat{i}-th network element computed from adjusted
+coordinates and/or orientations of the reduced network.  Similarly is
+defined the estimate of real error of a residual
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         \varepsilon_{v_i} = L^{red}_i -L_i.         \eqno (10)
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(10)     e_vi = L^red_i - L_l.
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+
+
+Adjustment results are the best statistical estimate of unknown
+parameters that we have. This holds true even for adjustment of
+@emph{reduced} network which is not influenced by real error of
+@gmat{i}-th observation.  On favourable occasions differences (9) and
+(10) can help to detect blunders but to interpret these estimates as
+@emph{real errors} is possible only with substantial exaggeration.
+These estimates fail when there are more than one significant
+observational error. Generally holds tha the weaker the element is
+controlled in netowrk the less reliable these estimates are.
+
+
+
+
+
+Estimate of real error of an observation computes program @code{gama-local} as
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         \varepsilon_{\ell_i} = v_i / ( p_i q_{v_i} )
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         e_li = v_i/(p_i q_vi)
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+@noindent
+and estimate of real error of a residual as
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         \varepsilon_{v_i} = \varepsilon_{l_i} - v_i.
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         e_vi = e_li - v_i.
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+
+
+
+
+@node     Linearization
+@section  Test on linearization
+
+Mathematical model of geodetic network adjustment in @code{gama-local}
+is defined as a set of known real-valued differentiable functions
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         {\bf L}^* = \varphi(\bf X^*),               \eqno (11)
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(11)      L^* = f(X^*)
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+where
+@tex
+${\bf L}^*$
+@end tex
+@ifnottex
+L^*
+@end ifnottex
+is a vector of theoretical correct observations and
+@tex
+${\bf X}^*$
+@end tex
+@ifnottex
+X^*
+@end ifnottex
+is a vector of correct values of parameters. For the given sample set
+of observations @m{L} and the unknown vector of residuals @m{v} we
+can express the estimate of parameters @m{X} as a nonlinear set of
+equations
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         {\bf L + v} = \varphi(\bf X).                  \eqno (12)
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(12)      L + v = f(X).
+@end example
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+With approximate values @m{X_0} of unknown parameters
+@tex
+$$
+         {\bf X = X_0 + x}
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+(12)      X = X_0 + x
+@end example
+
+@end ifnottex
+we can linearize the equations (12)
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+         {\bf L + v} = \varphi({\bf X_0})
+                     + {\partial\varphi \over \partial{\bf X}}
+                       {\Bigg\vert}
+                       _{\bf X=X_0}
+                       {\bf x}
+$$
+yielding the linear set of equations (1) where
+$$
+        {\bf A} = {\partial\varphi \over \partial{\bf X}}
+                       {\Bigg\vert}
+                       _{\bf X=X_0}\quad {\rm and} \qquad
+        {\bf b} = {\bf L} - \varphi({\bf X}_0).
+$$
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+          L + v = f(X_0) + f'(X_0)x.
+@end example
+
+yielding the linear set of equations (1)
+@end ifnottex
+@c % ----------------------------------------------------------------------
+
+Unknown parameters in @code{gama-local} mathematical model are points
+coordinates and orientation angles (transforming observed directions
+to bearings). The observables described by functions (12) belong into
+two classes
+
+@itemize @w{}
+
+@item
+@strong{linear observables}: horizontal and slope distances, height
+differences, control coordinates and vectors (coordinate differences),
+
+@item
+@strong{angular observables}: directions, horizontal and zenith angles.
+@end itemize
+
+@noindent
+Internally in @code{gama-local} unknown corrections to linear
+observables are computed in millimeters and corrections to angular
+observables in centigrade seconds. To reflect the internal units in
+used all partial derivatives of angular observables by coordinates are
+scaled by factor
+@tex
+$2000/\pi = 10^{-3}\times(200\times10^{4}/\pi).$
+@end tex
+@ifnottex
+2000/pi.
+@end ifnottex
+
+
+@c ########################################################################
+
+When computing coefficients of project equations (1) we expect that
+approximate coordinates of points are known with sufficient accuracy
+needed for linearization of generally nonlinear relations between
+observations and unknown paramters. Most often this is true but not
+always and generally we have to check how close our approximation is to
+adjusted parameters.
+
+
+Generally we check linearization in adjustment by double calculation
+of residuals
+@c
+@c % ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+@tex
+$$
+\eqalign{
+        {\bf v}^{i}  &= {\bf A}{\bf x} - {\bf b},                \cr
+        {\bf v}^{ii} &= {\bf\bar \ell}({\bf\bar x}) - {\bf \ell},   \cr
+}
+$$
+where in our notation ${\bf x}$ is vector of corrections of approximate
+unknown parameters $\bf x_0$, ${\bf b}$ vector of reduced observations,
+$\ell$ vector of observations and ${\bf\bar \ell}({\bf\bar x})$ is vector
+of adjusted observations conputed from adjusted coordiantes
+${\bf\bar{x}} = {\bf x_0} + {\bf x}$.  Disagreement ${\bf v}^{i} \ne
+{\bf v}^{ii}$ signals discrepancies in linearization.
+
+@end tex
+@c % ......................................................................
+@ifnottex
+
+@example
+         v^I  = Ax - b,
+         v^II = ~l(~x) - l,
+@end example
+
+@noindent
+@c where in our notation @m{x} is vector of corrections of approximate
+@c unknown parameters @m{x_0}, @m{b} vector of reduced observations,
+@c @gmat{l} vector of observations and \@gmat{~l(~x)} is vector of adjusted
+@c observations conputed from adjusted coordiantes @gmat{@m{~x} = @m{x_0}
+@c + @m{x}}.  Disagreement @gmat{@m{v}^i \ne @m{v}^ii$ signals
+@c discrepancies in linearization.
+
+@end ifnottex
+@c % ----------------------------------------------------------------------
+
+
+
+Program @code{gama-local} similarly computes and tests differences in
+values of adjusted observations once computed from residuals
+and once from adjusted coordinates. For measured directions
+and angles @code{gama-local} computes in addition transverse deviation
+corresponding to computed angle difference in the distance
+of target point (or the farther of two targets for angle).
+As a criterion of bad linearization is supposed positional
+deviation greater or equal to 0.0005 millimetres.
+
+
+@heading Example
+
+
+@example
+Test of linearization error
+***************************
+
+Diffs in adj. obs from residuals and from adjusted coordinates
+**************************************************************
+
+ i standpoint     target          observed     r        difference
+=================================   value  = [mm|cc] = [cc] == [mm]=
+
+ 2 3022184030 3022724008 dist.   28.39200    -7.070          -0.003
+ 3            3022724002 dist.   72.30700   -18.815          -0.001
+ 7            3000001063 dir.  286.305200    11.272  -0.002  -0.001
+ 8            3022724008 dir.  357.800600   -23.947   0.037   0.002
+
+@end example
+
+
+
+
+From the practical point of view it might seem that the tolerance
+0.0005 mm for detecting poor linearization is too strict.  Its
+exceeding in program @code{gama-local} results in repeated adjustment
+with substitute adjusted coordinates for approximate. Given tolerance
+was chosen so strict to guarantee that listed output results would
+never be influenced by linearization and could serve for verification
+and testing of numerical solutions produced by other programs.
+
+Iterated adjustement with successive improvement of approximate
+unknown coordinates converges usually even for gross errors in initial
+estimates of unknown coordinates. If the influence of linearization is
+detected after adjustment, typically only one iteration is sufficient
+for recovering.
+
+
+For any automatically controlled iteration we have to set up certain
+stopping criterion independent on the convergence and results obtained.
+Program @code{gama-local} computes iterated adjustment three times at maximum.
+If the bad linearization is detected even after three readjustments it
+signals that given network configuration is somehow suspicious.
+@c % ----------------------------------------------------------------------
+
+
+
+
+@node    Glossary
+@section Glossary
+
+@c @ifnottex
+@c Glossary is available only in pdf and dvi formats.
+@c @end ifnottex
+@c
+@c @iftex
+@include gama-local-adj-glossary.texi
+@c @end iftex
+
+
+
+@comment iftex
+@comment exampleindent 5
+@comment end iftex

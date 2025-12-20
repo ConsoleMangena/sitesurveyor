@@ -1,0 +1,90 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.6.0'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_mingw'
+        setup-python: 'true'
+    
+    - name: Install Ninja
+      run: choco install ninja
+      
+    - name: Restore vcpkg artifacts
+      uses: actions/cache@v3
+      with:
+        path: |
+          vcpkg/installed
+          vcpkg/downloads
+        key: ${{ runner.os }}-vcpkg-${{ hashFiles('CMakeLists.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-
+    
+    - name: Install vcpkg (GDAL/GEOS)
+      run: |
+        git clone https://github.com/microsoft/vcpkg.git
+        cd vcpkg
+        ./bootstrap-vcpkg.bat
+        ./vcpkg install gdal:x64-mingw-dynamic geos:x64-mingw-dynamic --recurse
+      shell: bash
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=./vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic
+      env:
+        Qt6_DIR: ${{ env.Qt6_DIR }}
+        
+    - name: Build
+      run: cmake --build build --parallel
+      
+    - name: Install Qt Installer Framework
+      run: |
+        curl -L -o qt-installer-framework.exe https://download.qt.io/official_releases/qt-installer-framework/4.7.0/QtInstallerFramework-windows-x86-4.7.0.exe
+        # Extract logic or silent install is hard. A better way is using aqtinstall which supports tools!
+        # Re-using aqtinstall action from earlier step is cleaner.
+      shell: bash
+      if: false # Placeholder to show I am rewriting this block entirely below
+
+    - name: Install Qt Installer Framework (via aqt)
+      run: |
+        pip install aqtinstall
+        python -m aqt install-tool -O ${{ runner.temp }}/qtifw windows desktop tools_ifw
+      shell: bash
+
+    - name: Prepare Installer Data
+      run: |
+        mkdir -p installer/packages/com.consolemangena.sitesurveyor/data
+        cp build/bin/SiteSurveyor.exe installer/packages/com.consolemangena.sitesurveyor/data/
+        # Copy DLLs using windeployqt
+        ${{ env.Qt6_DIR }}/bin/windeployqt.exe build/bin/SiteSurveyor.exe --dir installer/packages/com.consolemangena.sitesurveyor/data/
+        # Copy GDAL/GEOS DLLs from vcpkg
+        cp vcpkg/installed/x64-mingw-dynamic/bin/*.dll installer/packages/com.consolemangena.sitesurveyor/data/
+      shell: bash
+
+    - name: Build Installer
+      run: |
+        ${{ runner.temp }}/qtifw/Tools/QtInstallerFramework/4.7/bin/binarycreator.exe -c installer/config/config.xml -p installer/packages SiteSurveyorInstaller_Windows.exe
+      shell: bash
+
+    - name: Upload Installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: SiteSurveyor-Windows-Installer
+        path: SiteSurveyorInstaller_Windows.exe

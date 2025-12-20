@@ -1,0 +1,203 @@
+# =========================
+# Build Directories
+# =========================
+build/
+cmake-build-*/
+out/
+obj-*/
+bin/
+lib/
+
+# =========================
+# Compiled Object Files
+# =========================
+*.o
+*.obj
+*.lo
+*.slo
+*.la
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+
+# =========================
+# Executables
+# =========================
+*.exe
+*.out
+*.app
+SiteSurveyor
+
+# =========================
+# CMake Generated Files
+# =========================
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# =========================
+# Qt Generated Files
+# =========================
+*.moc
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.qmlc
+*.jsc
+*.qmldir
+*_autogen/
+.qmake.cache
+.qmake.stash
+
+# =========================
+# IDE and Editor Files
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.user
+*.user.*
+*.pro.user
+*.pro.user.*
+.project
+.cproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+*.kate-swp
+.kate-swp
+
+# =========================
+# OS Generated Files
+# =========================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# =========================
+# Debian Packaging
+# =========================
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars
+debian/sitesurveyor/
+debian/sitesurveyor-desktop/
+*.deb
+*.buildinfo
+*.changes
+
+# =========================
+# Distribution Artifacts
+# =========================
+dist/
+release/
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.zip
+*.AppImage
+*.flatpak
+
+# =========================
+# Local Environment
+# =========================
+.env
+.env.local
+.env.*.local
+
+# =========================
+# Logs and Debugging
+# =========================
+*.log
+*.stackdump
+core
+core.*
+
+# =========================
+# Coverage and Testing
+# =========================
+*.gcov
+*.gcda
+*.gcno
+coverage/
+.coverage
+htmlcov/
+
+# =========================
+# Documentation Build
+# =========================
+docs/_build/
+docs/html/
+docs/latex/
+doxygen/
+
+# =========================
+# Temporary Files
+# =========================
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+
+# =========================
+# Project Specific
+# =========================
+*.ssp.backup
+crash_reports/
+
+
+# =========================
+# Installer Artifacts
+# =========================
+installer/output/
+*.rpm
+*.dmg
+*.pkg
+CMakeUserPresets.json
+
+# =========================
+# Docker
+# =========================
+.docker/
+docker-compose.override.yml
+
+# =========================
+# Windows Cross-Compile
+# =========================
+win-build/
+*.msi
+*.msix
+
+# =========================
+# Vcpkg
+# =========================
+vcpkg_installed/
+
+# =========================
+# External/Bundled Libs
+# =========================
+external/downloaded/
+
+# =========================
+# Gemini/AI Assistant
+# =========================
+.gemini/

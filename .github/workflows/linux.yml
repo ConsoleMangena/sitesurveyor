@@ -1,0 +1,64 @@
+name: Linux Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.6.0'
+        host: 'linux'
+        target: 'desktop'
+        arch: 'linux_gcc_64'
+        setup-python: 'true'
+    
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libgl1-mesa-dev libgdal-dev libgeos-dev ninja-build library-find-qt
+      
+    - name: Configure CMake
+      run: |
+        cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+      env:
+        Qt6_DIR: ${{ env.Qt6_DIR }}
+        
+    - name: Build
+      run: cmake --build build --parallel
+      
+    - name: Install Qt Installer Framework (via aqt)
+      run: |
+        pip install aqtinstall
+        python -m aqt install-tool -O ${{ runner.temp }}/qtifw linux desktop tools_ifw
+      shell: bash
+
+    - name: Prepare Installer Data
+      run: |
+        mkdir -p installer/packages/com.consolemangena.sitesurveyor/data
+        cp build/bin/SiteSurveyor installer/packages/com.consolemangena.sitesurveyor/data/
+        # Note: Ideally we bundle dependencies here using linuxdeployqt, 
+        # but for now we create a basic installer containing the binary.
+      shell: bash
+
+    - name: Build Installer
+      run: |
+        ${{ runner.temp }}/qtifw/Tools/QtInstallerFramework/4.7/bin/binarycreator -c installer/config/config.xml -p installer/packages SiteSurveyorInstaller_Linux.run
+      shell: bash
+
+    - name: Upload Installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: SiteSurveyor-Linux-Installer
+        path: SiteSurveyorInstaller_Linux.run

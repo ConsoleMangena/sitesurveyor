@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<entries>
+
+<!--
+   ./gamalib/xml/gkfparser.lang
+   ./gamalib/gamalib.lang
+   ./gamalib/local/pobs/pobs.lang
+   ./gamalib/local/results/text/review.lang
+   ./gamalib/local/rmpoints.lang
+   ./gamalib/local/network.lang
+   ./gamaprog/linux/gama-local/gama-local.lang
+-->
+
+<e id="T_IE_internal_error"
+   en="internal error" />
+
+<e id="T_GaMa_from_equals_to"
+   en="station and target are identical" />
+
+</entries>

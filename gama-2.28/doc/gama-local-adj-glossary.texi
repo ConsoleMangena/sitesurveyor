@@ -1,0 +1,198 @@
+
+@hyphenation{Linear}
+
+Symbols  and names used in adjustment statistics.
+
+@c
+@c
+@ifnottex
+@multitable @columnfractions .15 .85
+@end ifnottex
+@c
+@iftex
+@multitable @columnfractions .13 .87
+@end iftex
+@c
+@headitem Symbol @tab Description
+@c
+@c
+@ifnottex
+@item @t{v, V}
+@end ifnottex
+@c
+@iftex
+@item @math{v, \bf V}
+@end iftex
+@tab residual, vector of residuals
+@c
+@c
+@ifnottex
+@item @t{p, P}
+@end ifnottex
+@c
+@iftex
+@item @math{p, \bf P}
+@end iftex
+@tab observation weight, matrix of weights
+@c
+@c
+@ifnottex
+@item @t{[pvv]}
+@end ifnottex
+@c
+@iftex
+@item @math{\tt [pvv]}
+@end iftex
+@tab sum of weighted residuals v'Pv.
+     @*The summation symbol [.] used to be popular in geodetic
+     literiture, namely in connection with description of normal
+     equations, during pre-computer era. It was introduced by Carl
+     Friedrich Gauss who also introduce symbol P for weights (Latin
+     pondus means weight). Letter V for adjustment reductions comes
+     from German Verbesserung. @*We use [pvv] symbol only in html and
+     text adjustment output. Sic transit gloria mundi.
+@c
+@c
+@ifnottex
+@item @t{Ax = b, P}
+@end ifnottex
+@c
+@iftex
+@item @math{\bf Ax = b, P}
+@end iftex
+@tab design matrix, right-hand side (rhs) and weight matrix P
+@c   Linear system to be solved by the method of least squares.
+@c
+@c
+@ifnottex
+@item @t{r}
+@end ifnottex
+@iftex
+@c
+@iftex
+@item @math{r}
+@end iftex
+@tab redundancy, typically number of columns minus rows of A
+@c
+@c
+@ifnottex
+@item @t{Nx = n}
+@end ifnottex
+@c
+@iftex
+@item @math{\bf Nx = n}
+@end iftex
+@tab normal equations,
+@c
+@c
+@ifnottex
+ N = A'PA,
+@end ifnottex
+@c
+@iftex
+ @math{\bf N=A'PA},
+@end iftex
+@c
+@c
+@ifnottex
+ @t{n = A'Pb}.
+@end ifnottex
+@c
+@iftex
+ @math{\bf n=A'Pb}.
+@end iftex
+@*The method of least squares can be solved directly from
+@ifnottex
+ @t{Ax=b}.
+@end ifnottex
+@iftex
+ @math{\bf Ax = b},
+@end iftex
+which is generally a more numerically stable solution
+@c
+@c
+@ifnottex
+@item @t{Q = inv(N)}
+@end ifnottex
+@c
+@iftex
+@item @math{\bf Q = N^{-1}}
+@end iftex
+@tab cofactor matrix for adjusted unknowns (matrix of weight
+     coefficients, cofactors, of adjusted unknowns)
+@c
+@c
+@ifnottex
+@item @t{Q_L = AQA'}
+@end ifnottex
+@c
+@iftex
+@item @math{\bf Q_L = AQA'}
+@end iftex
+@tab cofactor matrix for adjusted observations
+@c
+@c
+@ifnottex
+@item @t{f[%]}
+@end ifnottex
+@iftex
+@item @math{\tt f[\%]}@c @math{f[\%]}
+@end iftex
+@tab degree of control of an observation in the network, spans
+     from 0% (uncontrolled, e.g. observed direction and distance to an
+     isolated adjustment point) to 100% (fully controled,
+     e.g. measured distance between two fixed points)
+@c
+@c
+@ifnottex
+@item @t{m0}
+@end ifnottex
+@c
+@iftex
+@item @math{m_0}
+@end iftex
+@tab a priori reference standard deviation.
+@c
+@c
+@ifnottex
+@item @t{m0'}
+@end ifnottex
+@c
+@iftex
+@item @math{m_0'}
+@end iftex
+@tab a posteriori estimate of reference standard deviation
+@c
+@c
+@ifnottex
+@item @t{m0''}
+@end ifnottex
+@c
+@iftex
+@item @math{m_0''}
+@end iftex
+@tab minimal a posteriori estimate of reference standard
+     deviation after removal one observation (removal of the
+     observation leading to minimal value of m0'')
+@c
+@c
+@ifnottex
+@item @t{g}
+@end ifnottex
+@c
+@iftex
+@item @math{\tt g}
+@end iftex
+@tab position of approximate coordinates xy of the adjusted point with
+     respect to its confidence ellipse (g < 1 approximate coordinates
+     are located inside the ellipse; g = 1 on the ellipse; g > 1
+     outside the ellipse).  @*Zero value of g indicates that
+     approximate and adjusted coordinates are identical. This
+     situation typically happens when iterative adjustement is needed
+     due to poor initial linearization (initial approximate
+     coordinates are too far from the adjusted) and the iterative
+     process ends up with identical approximate and adjusted
+     coordinates.
+@c
+@c
+@end multitable

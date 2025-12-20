@@ -1,0 +1,73 @@
+<RCC>
+  <qresource prefix="/branding">
+    <file alias="logo-main.png">logo/SiteSurveyor.png</file>
+    <file alias="logo.ico">logo/SiteSurveyor.ico</file>
+    <file alias="logo-256.png">logo/SiteSurveyor.png</file>
+    <file alias="logo-128.png">logo/SiteSurveyor.png</file>
+    <file alias="logo.svg">logo/SiteSurveyor Vector.svg</file>
+  </qresource>
+  <qresource prefix="/styles">
+    <file alias="dark-theme.qss">styles/dark-theme.qss</file>
+    <file alias="light-theme.qss">styles/light-theme.qss</file>
+  </qresource>
+  <qresource prefix="/icons">
+    <!-- Feather Icons (MIT License) - https://feathericons.com -->
+    <file alias="layers.svg">icons/layers.svg</file>
+    <file alias="file-plus.svg">icons/file-plus.svg</file>
+    <file alias="folder-open.svg">icons/folder-open.svg</file>
+    <file alias="save.svg">icons/save.svg</file>
+    <file alias="settings.svg">icons/settings.svg</file>
+    <file alias="zoom-in.svg">icons/zoom-in.svg</file>
+    <file alias="zoom-out.svg">icons/zoom-out.svg</file>
+    <file alias="zoom-fit.svg">icons/zoom-fit.svg</file>
+    <file alias="grid.svg">icons/grid.svg</file>
+    <file alias="snap.svg">icons/snap.svg</file>
+    <file alias="select.svg">icons/select.svg</file>
+    <file alias="split.svg">icons/split.svg</file>
+    <file alias="join.svg">icons/join.svg</file>
+    <file alias="copy.svg">icons/copy.svg</file>
+    <file alias="station.svg">icons/station.svg</file>
+    <file alias="stakeout.svg">icons/stakeout.svg</file>
+    <file alias="target.svg">icons/target.svg</file>
+    <file alias="offset.svg">icons/offset.svg</file>
+    <file alias="ruler.svg">icons/ruler.svg</file>
+    <file alias="edit.svg">icons/edit.svg</file>
+    <file alias="import.svg">icons/import.svg</file>
+    <file alias="move.svg">icons/move.svg</file>
+    <file alias="mirror.svg">icons/mirror.svg</file>
+    <file alias="explode.svg">icons/explode.svg</file>
+    <file alias="trim.svg">icons/trim.svg</file>
+    <file alias="extend.svg">icons/extend.svg</file>
+  </qresource>
+
+  <qresource prefix="/icons/dark">
+    <!-- Dark mode versions (white stroke) -->
+    <file alias="layers.svg">icons/dark/layers.svg</file>
+    <file alias="file-plus.svg">icons/dark/file-plus.svg</file>
+    <file alias="folder-open.svg">icons/dark/folder-open.svg</file>
+    <file alias="save.svg">icons/dark/save.svg</file>
+    <file alias="settings.svg">icons/dark/settings.svg</file>
+    <file alias="zoom-in.svg">icons/dark/zoom-in.svg</file>
+    <file alias="zoom-out.svg">icons/dark/zoom-out.svg</file>
+    <file alias="zoom-fit.svg">icons/dark/zoom-fit.svg</file>
+    <file alias="grid.svg">icons/dark/grid.svg</file>
+    <file alias="snap.svg">icons/dark/snap.svg</file>
+    <file alias="select.svg">icons/dark/select.svg</file>
+    <file alias="split.svg">icons/dark/split.svg</file>
+    <file alias="join.svg">icons/dark/join.svg</file>
+    <file alias="copy.svg">icons/dark/copy.svg</file>
+    <file alias="station.svg">icons/dark/station.svg</file>
+    <file alias="stakeout.svg">icons/dark/stakeout.svg</file>
+    <file alias="target.svg">icons/dark/target.svg</file>
+    <file alias="offset.svg">icons/dark/offset.svg</file>
+    <file alias="ruler.svg">icons/dark/ruler.svg</file>
+    <file alias="edit.svg">icons/dark/edit.svg</file>
+    <file alias="import.svg">icons/dark/import.svg</file>
+    <file alias="move.svg">icons/dark/move.svg</file>
+    <file alias="mirror.svg">icons/dark/mirror.svg</file>
+    <file alias="explode.svg">icons/dark/explode.svg</file>
+    <file alias="trim.svg">icons/dark/trim.svg</file>
+    <file alias="extend.svg">icons/dark/extend.svg</file>
+  </qresource>
+</RCC>
+

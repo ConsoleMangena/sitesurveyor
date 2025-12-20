@@ -1,0 +1,70 @@
+name: macOS Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.6.0'
+        # host 'mac' is implicit or specifies osx
+        host: 'mac' 
+        target: 'desktop'
+        arch: 'clang_64'
+        setup-python: 'true'
+    
+    - name: Install Dependencies
+      run: |
+        brew install gdal geos ninja
+      
+    - name: Configure CMake
+      run: |
+        cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+      env:
+        Qt6_DIR: ${{ env.Qt6_DIR }}
+        
+    - name: Build
+      run: cmake --build build --parallel
+      
+    - name: Bundle with macdeployqt
+      run: |
+        # Bundles Qt frameworks into the .app
+        ${{ env.Qt6_DIR }}/bin/macdeployqt build/bin/SiteSurveyor.app -verbose=1
+      shell: bash
+
+    - name: Install Qt Installer Framework (via aqt)
+      run: |
+        pip install aqtinstall
+        python -m aqt install-tool -O ${{ runner.temp }}/qtifw mac desktop tools_ifw
+      shell: bash
+
+    - name: Prepare Installer Data
+      run: |
+        mkdir -p installer/packages/com.consolemangena.sitesurveyor/data
+        # Copy the .app bundle to data
+        cp -R build/bin/SiteSurveyor.app installer/packages/com.consolemangena.sitesurveyor/data/
+      shell: bash
+
+    - name: Build Installer
+      run: |
+        # Generate dmg
+        ${{ runner.temp }}/qtifw/Tools/QtInstallerFramework/4.7/bin/binarycreator -c installer/config/config.xml -p installer/packages SiteSurveyorInstaller_macOS.dmg
+      shell: bash
+
+    - name: Upload Installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: SiteSurveyor-macOS-Installer
+        path: SiteSurveyorInstaller_macOS.dmg

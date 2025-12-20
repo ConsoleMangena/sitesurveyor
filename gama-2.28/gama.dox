@@ -1,0 +1,36 @@
+/** \mainpage GNU Gama classes and functions
+
+GNU Gama http://www.gnu.org/software/gama is a project dedicated to
+adjustment of geodetic networks. It is intended for use with
+traditional geodetic surveyings which are still used and needed in
+special measurements (e.g., underground or high precision engineering
+measurements) where the Global Positioning System (GPS) cannot be
+used.
+
+Adjustment in local Cartesian coordinate systems is fully supported by
+a command-line program gama-local that adjusts geodetic (free)
+networks of observed distances, directions, angles, height
+differences, 3D vectors and observed coordinates (coordinates with
+given variance-covariance matrix). Adjustment in global coordinate
+systems is supported only partly as a gama-g3 program.
+
+
+GNU Gama can be found in the subdirectory /gnu/gama/ on any of GNU FTP
+server mirrors http://ftpmirror.gnu.org/gama or checked-out from the
+GIT server. See our project page at
+http://savannah.gnu.org/projects/gama/ for more information.
+
+To get an anonymous read-only access to the GIT repository for the
+latest GNU Gama source, issue the following command
+
+\verbatim
+git clone git://git.sv.gnu.org/gama.git
+\endverbatim
+
+The collection of sample networks is available separately. To checkout
+the gama-local examples from GIT use the command
+
+\verbatim
+git clone git://git.sv.gnu.org/gama/examples.git
+\endverbatim
+*/
