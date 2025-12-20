@@ -27,7 +27,7 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential libgl1-mesa-dev libgdal-dev libgeos-dev ninja-build library-find-qt
+        sudo apt-get install -y build-essential libgl1-mesa-dev libgdal-dev libgeos-dev ninja-build
       
     - name: Configure CMake
       run: |
