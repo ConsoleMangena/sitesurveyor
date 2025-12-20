@@ -114,6 +114,10 @@ add_subdirectory(external/ads EXCLUDE_FROM_ALL)
 # Create alias for linking
 add_library(qtadvanceddocking ALIAS qtadvanceddocking-qt${QT_VERSION_MAJOR})
 
+if(UNIX)
+    target_compile_options(qtadvanceddocking-qt${QT_VERSION_MAJOR} PRIVATE -Wno-deprecated-declarations)
+endif()
+
 # Source files
 set(SOURCES
     src/app/main.cpp
