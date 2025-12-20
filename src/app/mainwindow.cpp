@@ -1219,9 +1219,9 @@ void MainWindow::setupMenus()
     connect(aboutAction, &QAction::triggered, this, [this]() {
         QMessageBox::about(this, "About SiteSurveyor",
             "<h2>SiteSurveyor</h2>"
-            "<p>Version 1.0.8</p>"
-            "<p>Developed by <b>Eineva Incorporated</b></p>"
-            "<p><a href='https://sitesurveyor.dev'>https://sitesurveyor.dev</a></p>");
+            "<p>Professional Land Surveying Software</p>"
+            "<p>Official Site: <a href='https://sitesurveyor.dev'>sitesurveyor.dev</a></p>"
+            "<p>Developed by <b>Eineva Incorporated</b></p>");
     });
 }
 
