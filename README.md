@@ -1,6 +1,6 @@
 # SiteSurveyor
 
-Professional land surveying software for Windows, Linux, and macOS.
+Professional Free Geomatics software for Windows, Linux, and macOS.
 
 **Official Website**: [sitesurveyor.dev](https://sitesurveyor.dev)
 
