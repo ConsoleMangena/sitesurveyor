@@ -21,7 +21,7 @@ jobs:
         version: '6.6.0'
         host: 'linux'
         target: 'desktop'
-        arch: 'linux_gcc_64'
+        arch: 'gcc_64'
         setup-python: 'true'
     
     - name: Install Dependencies

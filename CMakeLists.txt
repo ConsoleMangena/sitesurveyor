@@ -273,7 +273,10 @@ endif()
 
 # Install target and desktop integration
 include(GNUInstallDirs)
-install(TARGETS SiteSurveyor RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS SiteSurveyor 
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    BUNDLE DESTINATION .
+)
 install(FILES resources/sitesurveyor.desktop DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
 install(FILES "resources/logo/SiteSurveyor Vector.svg" DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps RENAME sitesurveyor.svg)
 # install(FILES resources/logo/sitesurveyor_256.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/256x256/apps RENAME sitesurveyor.png)
