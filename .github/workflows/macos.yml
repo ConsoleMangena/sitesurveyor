@@ -41,7 +41,7 @@ jobs:
     - name: Bundle with macdeployqt
       run: |
         # Bundles Qt frameworks into the .app
-        ${{ env.Qt6_DIR }}/bin/macdeployqt build/bin/SiteSurveyor.app -verbose=1
+        ${{ env.Qt6_DIR }}/bin/macdeployqt build/SiteSurveyor.app -verbose=1
       shell: bash
 
     - name: Install Qt Installer Framework (via aqt)
@@ -54,7 +54,7 @@ jobs:
       run: |
         mkdir -p installer/packages/com.consolemangena.sitesurveyor/data
         # Copy the .app bundle to data
-        cp -R build/bin/SiteSurveyor.app installer/packages/com.consolemangena.sitesurveyor/data/
+        cp -R build/SiteSurveyor.app installer/packages/com.consolemangena.sitesurveyor/data/
       shell: bash
 
     - name: Build Installer
