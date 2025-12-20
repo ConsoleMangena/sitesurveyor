@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  # Linux Build
+  # Linux Build - Simple binary upload
   build-linux:
     runs-on: ubuntu-22.04
     
@@ -36,43 +36,28 @@ jobs:
           libgdal-dev \
           libgeos-dev \
           libproj-dev \
-          libfuse2
+          libxcb-cursor0
 
     - name: Configure CMake
       run: |
         cmake -B build -G Ninja \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=/usr
+          -DCMAKE_BUILD_TYPE=Release
 
     - name: Build
       run: cmake --build build --parallel
       
-    - name: Install to AppDir
+    - name: Create Archive
       run: |
-        DESTDIR=AppDir cmake --install build
-        mkdir -p AppDir/usr/bin
-        cp build/bin/SiteSurveyor AppDir/usr/bin/
-        
-    - name: Download linuxdeploy
-      run: |
-        wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-        wget https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
-        chmod +x linuxdeploy*.AppImage
-        
-    - name: Create AppImage
-      run: |
-        export QMAKE=${{ env.Qt6_DIR }}/bin/qmake
-        ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage \
-          --desktop-file installer/linux/sitesurveyor.desktop \
-          --icon-file resources/logo/SiteSurveyor.png
-      env:
-        LDAI_OUTPUT: SiteSurveyor-${{ github.ref_name }}-linux-x86_64.AppImage
+        mkdir -p dist/SiteSurveyor-linux
+        cp build/bin/SiteSurveyor dist/SiteSurveyor-linux/
+        cp README.md LICENSE dist/SiteSurveyor-linux/ 2>/dev/null || true
+        cd dist && tar -czvf ../SiteSurveyor-${{ github.ref_name }}-linux-x64.tar.gz SiteSurveyor-linux
         
     - name: Upload Linux Artifact
       uses: actions/upload-artifact@v4
       with:
         name: linux-build
-        path: SiteSurveyor*.AppImage
+        path: SiteSurveyor-*.tar.gz
 
   # Windows Build  
   build-windows:
@@ -99,37 +84,46 @@ jobs:
     - name: Install Ninja
       run: choco install ninja
       
+    - name: Clone vcpkg
+      run: |
+        git clone https://github.com/microsoft/vcpkg.git
+        cd vcpkg
+        .\bootstrap-vcpkg.bat
+      shell: pwsh
+      
     - name: Restore vcpkg cache
       uses: actions/cache@v4
       with:
         path: |
           vcpkg/installed
-          vcpkg/downloads
-        key: ${{ runner.os }}-vcpkg-release-${{ hashFiles('CMakeLists.txt') }}
+          vcpkg/packages
+        key: ${{ runner.os }}-vcpkg-release-v2-${{ hashFiles('CMakeLists.txt') }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-release-
+          ${{ runner.os }}-vcpkg-release-v2-
 
     - name: Install vcpkg dependencies
       run: |
-        git clone https://github.com/microsoft/vcpkg.git
         cd vcpkg
-        .\bootstrap-vcpkg.bat
         .\vcpkg install gdal:x64-windows geos:x64-windows --recurse
       shell: pwsh
 
     - name: Configure CMake
       run: |
-        cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=./vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows
+        cmake -B build -G "Ninja" `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_TOOLCHAIN_FILE="$PWD/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+          -DVCPKG_TARGET_TRIPLET=x64-windows
+      shell: pwsh
         
     - name: Build
       run: cmake --build build --parallel
       
     - name: Prepare Distribution
       run: |
-        mkdir -p dist
-        cp build/bin/SiteSurveyor.exe dist/
-        & "${{ env.Qt6_DIR }}/bin/windeployqt.exe" dist/SiteSurveyor.exe
-        cp vcpkg/installed/x64-windows/bin/*.dll dist/
+        New-Item -ItemType Directory -Force -Path dist
+        Copy-Item build/bin/SiteSurveyor.exe dist/
+        & "$env:Qt6_DIR/bin/windeployqt.exe" dist/SiteSurveyor.exe
+        Copy-Item vcpkg/installed/x64-windows/bin/*.dll dist/ -ErrorAction SilentlyContinue
       shell: pwsh
 
     - name: Create ZIP
@@ -141,7 +135,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: windows-build
-        path: SiteSurveyor*.zip
+        path: SiteSurveyor-*.zip
 
   # macOS Build
   build-macos:
@@ -168,31 +162,40 @@ jobs:
       run: |
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_PREFIX_PATH=${{ env.Qt6_DIR }}
+          -DCMAKE_PREFIX_PATH=$Qt6_DIR
 
     - name: Build
       run: cmake --build build --parallel
       
-    - name: Create DMG
+    - name: Find and Package Binary
       run: |
+        echo "=== Build output ==="
+        find build -name "SiteSurveyor*" -type f 2>/dev/null || true
+        ls -la build/bin/ 2>/dev/null || true
+        
         mkdir -p dist
-        cp -R build/bin/SiteSurveyor.app dist/ 2>/dev/null || cp build/bin/SiteSurveyor dist/
-        ${{ env.Qt6_DIR }}/bin/macdeployqt dist/SiteSurveyor.app -dmg 2>/dev/null || true
-        # Fallback: create simple zip if no .app
-        if [ ! -f dist/SiteSurveyor.dmg ]; then
-          cd dist && zip -r ../SiteSurveyor-${{ github.ref_name }}-macos-x64.zip . && cd ..
+        # Try different possible locations
+        if [ -f "build/bin/SiteSurveyor" ]; then
+          cp build/bin/SiteSurveyor dist/
+        elif [ -d "build/bin/SiteSurveyor.app" ]; then
+          cp -R build/bin/SiteSurveyor.app dist/
+        elif [ -f "build/SiteSurveyor" ]; then
+          cp build/SiteSurveyor dist/
         else
-          mv dist/SiteSurveyor.dmg SiteSurveyor-${{ github.ref_name }}-macos-x64.dmg
+          echo "Binary not found, listing build directory:"
+          find build -type f -executable 2>/dev/null | head -20
+          exit 1
         fi
+        
+        cd dist
+        zip -r ../SiteSurveyor-${{ github.ref_name }}-macos-x64.zip .
       shell: bash
         
     - name: Upload macOS Artifact
       uses: actions/upload-artifact@v4
       with:
         name: macos-build
-        path: |
-          SiteSurveyor*.dmg
-          SiteSurveyor*.zip
+        path: SiteSurveyor-*.zip
 
   # Create Release
   release:
@@ -216,20 +219,20 @@ jobs:
           ## SiteSurveyor ${{ github.ref_name }}
           
           ### Downloads
-          - **Linux**: AppImage (portable, run directly)
+          - **Linux**: tar.gz archive (extract and run)
           - **Windows**: ZIP archive (extract and run)
-          - **macOS**: DMG/ZIP archive
+          - **macOS**: ZIP archive (extract and run)
           
           ### What's New
           - Bug fixes and improvements
+          - Multi-platform release builds
           
           ### Requirements
           - OpenGL 3.3+ support
           - 64-bit operating system
         files: |
-          SiteSurveyor*.AppImage
-          SiteSurveyor*.zip
-          SiteSurveyor*.dmg
+          SiteSurveyor-*.tar.gz
+          SiteSurveyor-*.zip
         draft: false
         prerelease: false
       env:
