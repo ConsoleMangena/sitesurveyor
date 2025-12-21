@@ -55,25 +55,51 @@ jobs:
       run: |
         # Clear and prepare data directory
         rm -rf installer/packages/com.consolemangena.sitesurveyor/data/*
-        mkdir -p installer/packages/com.consolemangena.sitesurveyor/data
-        
-        # Copy binary
-        cp build/bin/SiteSurveyor installer/packages/com.consolemangena.sitesurveyor/data/
-        
-        # Copy Qt libs using linuxdeployqt-style manual copy
-        cp -L $Qt6_DIR/lib/libQt6Core.so.6 installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libQt6Gui.so.6 installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libQt6Widgets.so.6 installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libQt6Network.so.6 installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libQt6PrintSupport.so.6 installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
-        
-        # Copy plugins
+        mkdir -p installer/packages/com.consolemangena.sitesurveyor/data/lib
         mkdir -p installer/packages/com.consolemangena.sitesurveyor/data/plugins/platforms
-        cp -r $Qt6_DIR/plugins/platforms/libqxcb.so installer/packages/com.consolemangena.sitesurveyor/data/plugins/platforms/ 2>/dev/null || true
+        
+        # Copy binary (rename to SiteSurveyor.bin)
+        cp build/bin/SiteSurveyor installer/packages/com.consolemangena.sitesurveyor/data/SiteSurveyor.bin
+        
+        # Create launcher script
+        cat > installer/packages/com.consolemangena.sitesurveyor/data/SiteSurveyor << 'EOF'
+        #!/bin/bash
+        # SiteSurveyor Launcher
+        # Sets up library paths before running the application
+        
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        export LD_LIBRARY_PATH="$SCRIPT_DIR/lib:$LD_LIBRARY_PATH"
+        export QT_PLUGIN_PATH="$SCRIPT_DIR/plugins"
+        export QT_QPA_PLATFORM_PLUGIN_PATH="$SCRIPT_DIR/plugins/platforms"
+        
+        exec "$SCRIPT_DIR/SiteSurveyor.bin" "$@"
+        EOF
+        chmod +x installer/packages/com.consolemangena.sitesurveyor/data/SiteSurveyor
+        
+        # Copy Qt libs to lib/ subdirectory
+        cp -L $Qt6_DIR/lib/libQt6Core.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libQt6Gui.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libQt6Widgets.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libQt6Network.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libQt6PrintSupport.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libQt6DBus.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libQt6XcbQpa.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libQt6OpenGL.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libicui18n.so.* installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libicuuc.so.* installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libicudata.so.* installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
+        
+        # Copy platform plugin
+        cp -L $Qt6_DIR/plugins/platforms/libqxcb.so installer/packages/com.consolemangena.sitesurveyor/data/plugins/platforms/ 2>/dev/null || true
         
         # Copy resources
         cp README.md installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
         cp LICENSE installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
+        
+        # List what was copied
+        echo "=== Installer data contents ==="
+        ls -la installer/packages/com.consolemangena.sitesurveyor/data/
+        ls -la installer/packages/com.consolemangena.sitesurveyor/data/lib/
 
     - name: Update Config Version
       run: |
