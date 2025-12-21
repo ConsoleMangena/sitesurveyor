@@ -162,29 +162,58 @@ jobs:
       run: |
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_PREFIX_PATH=$Qt6_DIR
+          -DCMAKE_PREFIX_PATH=$Qt6_DIR \
+          -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$PWD/build/bin
 
     - name: Build
       run: cmake --build build --parallel
       
-    - name: Find and Package Binary
+    - name: List Build Output
       run: |
-        echo "=== Build output ==="
-        find build -name "SiteSurveyor*" -type f 2>/dev/null || true
-        ls -la build/bin/ 2>/dev/null || true
-        
+        echo "=== All files in build directory ==="
+        find build -type f -name "SiteSurveyor*" 2>/dev/null || true
+        echo "=== Executables ==="
+        find build -type f -perm +111 2>/dev/null | grep -v cmake | head -30 || true
+        echo "=== build/bin contents ==="
+        ls -la build/bin/ 2>/dev/null || echo "No build/bin directory"
+        echo "=== build root contents ==="
+        ls -la build/ 2>/dev/null | head -20
+
+    - name: Package Binary
+      run: |
         mkdir -p dist
-        # Try different possible locations
+        
+        # Find the binary - check all possible locations
+        BINARY=""
         if [ -f "build/bin/SiteSurveyor" ]; then
-          cp build/bin/SiteSurveyor dist/
+          BINARY="build/bin/SiteSurveyor"
         elif [ -d "build/bin/SiteSurveyor.app" ]; then
-          cp -R build/bin/SiteSurveyor.app dist/
+          BINARY="build/bin/SiteSurveyor.app"
         elif [ -f "build/SiteSurveyor" ]; then
-          cp build/SiteSurveyor dist/
+          BINARY="build/SiteSurveyor"
+        elif [ -d "build/SiteSurveyor.app" ]; then
+          BINARY="build/SiteSurveyor.app"
         else
-          echo "Binary not found, listing build directory:"
-          find build -type f -executable 2>/dev/null | head -20
+          # Search for any SiteSurveyor executable
+          BINARY=$(find build -type f -name "SiteSurveyor" 2>/dev/null | head -1)
+          if [ -z "$BINARY" ]; then
+            BINARY=$(find build -type d -name "SiteSurveyor.app" 2>/dev/null | head -1)
+          fi
+        fi
+        
+        if [ -z "$BINARY" ]; then
+          echo "ERROR: Could not find SiteSurveyor binary!"
+          echo "Build directory contents:"
+          find build -type f 2>/dev/null
           exit 1
+        fi
+        
+        echo "Found binary at: $BINARY"
+        
+        if [ -d "$BINARY" ]; then
+          cp -R "$BINARY" dist/
+        else
+          cp "$BINARY" dist/
         fi
         
         cd dist
