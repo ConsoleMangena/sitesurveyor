@@ -135,19 +135,22 @@ jobs:
         WRAPPER
         chmod +x AppDir/usr/bin/SiteSurveyor
 
-        # Run linuxdeploy to bundle Qt and create AppImage
+        # Run linuxdeploy to bundle Qt (but don't create AppImage yet)
         export VERSION="${{ steps.version.outputs.version }}"
         export EXTRA_QT_PLUGINS="iconengines;imageformats;platforms;platformthemes;styles"
 
         ./linuxdeploy-x86_64.AppImage \
           --appdir AppDir \
           --plugin qt \
-          --output appimage \
           --desktop-file AppDir/sitesurveyor.desktop \
           --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/sitesurveyor.png
 
-        # Rename output
-        mv SiteSurveyor*.AppImage SiteSurveyor-${{ steps.version.outputs.version }}-linux-x86_64.AppImage
+        # Download appimagetool and create AppImage with gzip compression
+        wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x appimagetool-x86_64.AppImage
+
+        # Create AppImage with gzip compression for maximum compatibility
+        ARCH=x86_64 ./appimagetool-x86_64.AppImage --comp gzip AppDir SiteSurveyor-${{ steps.version.outputs.version }}-linux-x86_64.AppImage
 
     - name: Upload Linux Artifact
       uses: actions/upload-artifact@v4
