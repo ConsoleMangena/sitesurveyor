@@ -8,8 +8,12 @@ on:
 permissions:
   contents: write
 
+env:
+  QT_VERSION: '6.6.0'
+  IFW_VERSION: '4.7'
+
 jobs:
-  # Linux Build - Simple binary upload
+  # Linux Build with Qt Installer Framework
   build-linux:
     runs-on: ubuntu-22.04
     
@@ -21,9 +25,10 @@ jobs:
     - name: Install Qt
       uses: jurplel/install-qt-action@v3
       with:
-        version: '6.6.0'
+        version: ${{ env.QT_VERSION }}
         host: 'linux'
         target: 'desktop'
+        tools: 'tools_ifw'
 
     - name: Install Dependencies
       run: |
@@ -46,20 +51,57 @@ jobs:
     - name: Build
       run: cmake --build build --parallel
       
-    - name: Create Archive
+    - name: Prepare Installer Data
       run: |
-        mkdir -p dist/SiteSurveyor-linux
-        cp build/bin/SiteSurveyor dist/SiteSurveyor-linux/
-        cp README.md LICENSE dist/SiteSurveyor-linux/ 2>/dev/null || true
-        cd dist && tar -czvf ../SiteSurveyor-${{ github.ref_name }}-linux-x64.tar.gz SiteSurveyor-linux
+        # Clear and prepare data directory
+        rm -rf installer/packages/com.consolemangena.sitesurveyor/data/*
+        mkdir -p installer/packages/com.consolemangena.sitesurveyor/data
+        
+        # Copy binary
+        cp build/bin/SiteSurveyor installer/packages/com.consolemangena.sitesurveyor/data/
+        
+        # Copy Qt libs using linuxdeployqt-style manual copy
+        cp -L $Qt6_DIR/lib/libQt6Core.so.6 installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libQt6Gui.so.6 installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libQt6Widgets.so.6 installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libQt6Network.so.6 installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
+        cp -L $Qt6_DIR/lib/libQt6PrintSupport.so.6 installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
+        
+        # Copy plugins
+        mkdir -p installer/packages/com.consolemangena.sitesurveyor/data/plugins/platforms
+        cp -r $Qt6_DIR/plugins/platforms/libqxcb.so installer/packages/com.consolemangena.sitesurveyor/data/plugins/platforms/ 2>/dev/null || true
+        
+        # Copy resources
+        cp README.md installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
+        cp LICENSE installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
+
+    - name: Update Config Version
+      run: |
+        VERSION="${{ github.ref_name }}"
+        VERSION="${VERSION#v}"  # Remove 'v' prefix
+        sed -i "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" installer/config/config.xml
+
+    - name: Build Installer
+      run: |
+        # Find binarycreator
+        IFW_PATH=$(find $IQTA_TOOLS -name "binarycreator" -type f 2>/dev/null | head -1)
+        if [ -z "$IFW_PATH" ]; then
+          IFW_PATH=$(find ${{ runner.temp }} -name "binarycreator" -type f 2>/dev/null | head -1)
+        fi
+        
+        echo "Using binarycreator: $IFW_PATH"
+        
+        cd installer
+        "$IFW_PATH" --offline-only -c config/config.xml -p packages \
+          ../SiteSurveyor-${{ github.ref_name }}-linux-x64-installer
         
     - name: Upload Linux Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: linux-build
-        path: SiteSurveyor-*.tar.gz
+        name: linux-installer
+        path: SiteSurveyor-*-linux-*
 
-  # Windows Build  
+  # Windows Build with Qt Installer Framework
   build-windows:
     runs-on: windows-latest
     
@@ -71,10 +113,11 @@ jobs:
     - name: Install Qt (MSVC)
       uses: jurplel/install-qt-action@v3
       with:
-        version: '6.6.0'
+        version: ${{ env.QT_VERSION }}
         host: 'windows'
         target: 'desktop'
         arch: 'win64_msvc2019_64'
+        tools: 'tools_ifw'
     
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
@@ -85,11 +128,11 @@ jobs:
       run: choco install ninja
       
     - name: Clone vcpkg
-      run: |
-        git clone https://github.com/microsoft/vcpkg.git
-        cd vcpkg
-        .\bootstrap-vcpkg.bat
-      shell: pwsh
+      run: git clone https://github.com/microsoft/vcpkg.git
+      
+    - name: Bootstrap vcpkg
+      run: .\vcpkg\bootstrap-vcpkg.bat
+      shell: cmd
       
     - name: Restore vcpkg cache
       uses: actions/cache@v4
@@ -97,15 +140,13 @@ jobs:
         path: |
           vcpkg/installed
           vcpkg/packages
-        key: ${{ runner.os }}-vcpkg-release-v2-${{ hashFiles('CMakeLists.txt') }}
+        key: ${{ runner.os }}-vcpkg-release-v3-${{ hashFiles('CMakeLists.txt') }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-release-v2-
+          ${{ runner.os }}-vcpkg-release-v3-
 
     - name: Install vcpkg dependencies
-      run: |
-        cd vcpkg
-        .\vcpkg install gdal:x64-windows geos:x64-windows --recurse
-      shell: pwsh
+      run: .\vcpkg\vcpkg install gdal:x64-windows geos:x64-windows --recurse
+      shell: cmd
 
     - name: Configure CMake
       run: |
@@ -118,26 +159,53 @@ jobs:
     - name: Build
       run: cmake --build build --parallel
       
-    - name: Prepare Distribution
+    - name: Prepare Installer Data
       run: |
-        New-Item -ItemType Directory -Force -Path dist
-        Copy-Item build/bin/SiteSurveyor.exe dist/
-        & "$env:Qt6_DIR/bin/windeployqt.exe" dist/SiteSurveyor.exe
-        Copy-Item vcpkg/installed/x64-windows/bin/*.dll dist/ -ErrorAction SilentlyContinue
+        # Clear and prepare data directory
+        Remove-Item -Recurse -Force installer/packages/com.consolemangena.sitesurveyor/data/* -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force -Path installer/packages/com.consolemangena.sitesurveyor/data
+        
+        # Copy binary
+        Copy-Item build/bin/SiteSurveyor.exe installer/packages/com.consolemangena.sitesurveyor/data/
+        
+        # Run windeployqt
+        & "$env:Qt6_DIR/bin/windeployqt.exe" installer/packages/com.consolemangena.sitesurveyor/data/SiteSurveyor.exe
+        
+        # Copy GDAL/GEOS DLLs
+        Copy-Item vcpkg/installed/x64-windows/bin/*.dll installer/packages/com.consolemangena.sitesurveyor/data/ -ErrorAction SilentlyContinue
+        
+        # Copy docs
+        Copy-Item README.md installer/packages/com.consolemangena.sitesurveyor/data/ -ErrorAction SilentlyContinue
+        Copy-Item LICENSE installer/packages/com.consolemangena.sitesurveyor/data/ -ErrorAction SilentlyContinue
       shell: pwsh
 
-    - name: Create ZIP
+    - name: Update Config Version
       run: |
-        Compress-Archive -Path dist/* -DestinationPath SiteSurveyor-${{ github.ref_name }}-windows-x64.zip
+        $version = "${{ github.ref_name }}".TrimStart("v")
+        (Get-Content installer/config/config.xml) -replace '<Version>.*</Version>', "<Version>$version</Version>" | Set-Content installer/config/config.xml
+      shell: pwsh
+
+    - name: Build Installer
+      run: |
+        # Find binarycreator
+        $IFW_PATH = Get-ChildItem -Recurse -Path "$env:IQTA_TOOLS" -Filter "binarycreator.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $IFW_PATH) {
+          $IFW_PATH = Get-ChildItem -Recurse -Path "${{ runner.temp }}" -Filter "binarycreator.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+        
+        Write-Host "Using binarycreator: $($IFW_PATH.FullName)"
+        
+        & $IFW_PATH.FullName --offline-only -c installer/config/config.xml -p installer/packages `
+          "SiteSurveyor-${{ github.ref_name }}-windows-x64-installer.exe"
       shell: pwsh
       
     - name: Upload Windows Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: windows-build
-        path: SiteSurveyor-*.zip
+        name: windows-installer
+        path: SiteSurveyor-*-windows-*
 
-  # macOS Build
+  # macOS Build with Qt Installer Framework
   build-macos:
     runs-on: macos-latest
     
@@ -149,10 +217,11 @@ jobs:
     - name: Install Qt
       uses: jurplel/install-qt-action@v3
       with:
-        version: '6.6.0'
+        version: ${{ env.QT_VERSION }}
         host: 'mac'
         target: 'desktop'
         arch: 'clang_64'
+        tools: 'tools_ifw'
 
     - name: Install Dependencies
       run: |
@@ -168,22 +237,10 @@ jobs:
     - name: Build
       run: cmake --build build --parallel
       
-    - name: List Build Output
+    - name: Find Binary
+      id: find_binary
       run: |
-        echo "=== All files in build directory ==="
-        find build -type f -name "SiteSurveyor*" 2>/dev/null || true
-        echo "=== Executables ==="
-        find build -type f -perm +111 2>/dev/null | grep -v cmake | head -30 || true
-        echo "=== build/bin contents ==="
-        ls -la build/bin/ 2>/dev/null || echo "No build/bin directory"
-        echo "=== build root contents ==="
-        ls -la build/ 2>/dev/null | head -20
-
-    - name: Package Binary
-      run: |
-        mkdir -p dist
-        
-        # Find the binary - check all possible locations
+        echo "=== Searching for binary ==="
         BINARY=""
         if [ -f "build/bin/SiteSurveyor" ]; then
           BINARY="build/bin/SiteSurveyor"
@@ -191,40 +248,59 @@ jobs:
           BINARY="build/bin/SiteSurveyor.app"
         elif [ -f "build/SiteSurveyor" ]; then
           BINARY="build/SiteSurveyor"
-        elif [ -d "build/SiteSurveyor.app" ]; then
-          BINARY="build/SiteSurveyor.app"
         else
-          # Search for any SiteSurveyor executable
           BINARY=$(find build -type f -name "SiteSurveyor" 2>/dev/null | head -1)
-          if [ -z "$BINARY" ]; then
-            BINARY=$(find build -type d -name "SiteSurveyor.app" 2>/dev/null | head -1)
-          fi
         fi
         
-        if [ -z "$BINARY" ]; then
-          echo "ERROR: Could not find SiteSurveyor binary!"
-          echo "Build directory contents:"
-          find build -type f 2>/dev/null
-          exit 1
-        fi
+        echo "Found: $BINARY"
+        echo "binary_path=$BINARY" >> $GITHUB_OUTPUT
+      
+    - name: Prepare Installer Data
+      run: |
+        # Clear and prepare data directory
+        rm -rf installer/packages/com.consolemangena.sitesurveyor/data/*
+        mkdir -p installer/packages/com.consolemangena.sitesurveyor/data
         
-        echo "Found binary at: $BINARY"
+        BINARY="${{ steps.find_binary.outputs.binary_path }}"
         
         if [ -d "$BINARY" ]; then
-          cp -R "$BINARY" dist/
+          # It's an .app bundle
+          cp -R "$BINARY" installer/packages/com.consolemangena.sitesurveyor/data/
+          $Qt6_DIR/bin/macdeployqt installer/packages/com.consolemangena.sitesurveyor/data/SiteSurveyor.app 2>/dev/null || true
         else
-          cp "$BINARY" dist/
+          # Raw binary
+          cp "$BINARY" installer/packages/com.consolemangena.sitesurveyor/data/
         fi
         
-        cd dist
-        zip -r ../SiteSurveyor-${{ github.ref_name }}-macos-x64.zip .
-      shell: bash
+        # Copy docs
+        cp README.md installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
+        cp LICENSE installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
+
+    - name: Update Config Version
+      run: |
+        VERSION="${{ github.ref_name }}"
+        VERSION="${VERSION#v}"
+        sed -i '' "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" installer/config/config.xml
+
+    - name: Build Installer
+      run: |
+        # Find binarycreator
+        IFW_PATH=$(find $IQTA_TOOLS -name "binarycreator" -type f 2>/dev/null | head -1)
+        if [ -z "$IFW_PATH" ]; then
+          IFW_PATH=$(find ${{ runner.temp }} -name "binarycreator" -type f 2>/dev/null | head -1)
+        fi
+        
+        echo "Using binarycreator: $IFW_PATH"
+        
+        cd installer
+        "$IFW_PATH" --offline-only -c config/config.xml -p packages \
+          ../SiteSurveyor-${{ github.ref_name }}-macos-x64-installer
         
     - name: Upload macOS Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: macos-build
-        path: SiteSurveyor-*.zip
+        name: macos-installer
+        path: SiteSurveyor-*-macos-*
 
   # Create Release
   release:
@@ -248,20 +324,34 @@ jobs:
           ## SiteSurveyor ${{ github.ref_name }}
           
           ### Downloads
-          - **Linux**: tar.gz archive (extract and run)
-          - **Windows**: ZIP archive (extract and run)
-          - **macOS**: ZIP archive (extract and run)
           
-          ### What's New
-          - Bug fixes and improvements
-          - Multi-platform release builds
+          | Platform | Installer | Description |
+          |----------|-----------|-------------|
+          | **Windows** | `SiteSurveyor-${{ github.ref_name }}-windows-x64-installer.exe` | Offline installer |
+          | **Linux** | `SiteSurveyor-${{ github.ref_name }}-linux-x64-installer` | Offline installer (make executable: `chmod +x`) |
+          | **macOS** | `SiteSurveyor-${{ github.ref_name }}-macos-x64-installer` | Offline installer |
+          
+          ### Installation
+          
+          **Windows:** Run the installer and follow the wizard.
+          
+          **Linux:** 
+          ```bash
+          chmod +x SiteSurveyor-*-linux-*-installer
+          ./SiteSurveyor-*-linux-*-installer
+          ```
+          
+          **macOS:** Run the installer app.
           
           ### Requirements
           - OpenGL 3.3+ support
           - 64-bit operating system
+          
+          ### What's New
+          - Professional offline installers using Qt Installer Framework
+          - Multi-platform support
         files: |
-          SiteSurveyor-*.tar.gz
-          SiteSurveyor-*.zip
+          SiteSurveyor-*
         draft: false
         prerelease: false
       env:
