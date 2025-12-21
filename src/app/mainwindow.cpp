@@ -190,13 +190,22 @@ void MainWindow::setupMenus()
     QAction* newAction = fileMenu->addAction("&New Project");
     newAction->setShortcut(QKeySequence::New);
     connect(newAction, &QAction::triggered, this, [this]() {
-        if (!m_canvas) return;
-        if (QMessageBox::question(this, "New Project", 
-                "Clear current project and start new?") == QMessageBox::Yes) {
-            m_canvas->clearAll();
-            m_canvas->setProjectFilePath("");
-            setWindowTitle("SiteSurveyor - Untitled");
-            updateLayerPanel();
+        try {
+            if (!m_canvas) {
+                QMessageBox::warning(this, "Error", "Canvas not initialized");
+                return;
+            }
+            if (QMessageBox::question(this, "New Project", 
+                    "Clear current project and start new?") == QMessageBox::Yes) {
+                m_canvas->clearAll();
+                m_canvas->setProjectFilePath("");
+                setWindowTitle("SiteSurveyor - Untitled");
+                updateLayerPanel();
+            }
+        } catch (const std::exception& e) {
+            QMessageBox::critical(this, "Error", QString("New Project failed: %1").arg(e.what()));
+        } catch (...) {
+            QMessageBox::critical(this, "Error", "New Project failed with unknown error");
         }
     });
     
