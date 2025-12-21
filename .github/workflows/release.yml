@@ -42,7 +42,9 @@ jobs:
           libproj-dev \
           libxcb-cursor0 \
           libfuse2 \
-          patchelf
+          patchelf \
+          imagemagick
+
 
     - name: Configure CMake
       run: |
@@ -83,8 +85,8 @@ jobs:
         # Copy binary
         cp build/bin/SiteSurveyor AppDir/usr/bin/
 
-        # Copy icon
-        cp resources/logo/SiteSurveyor.png AppDir/usr/share/icons/hicolor/256x256/apps/sitesurveyor.png
+        # Resize and copy icon (must be exactly 256x256)
+        convert resources/logo/SiteSurveyor.png -resize 256x256 AppDir/usr/share/icons/hicolor/256x256/apps/sitesurveyor.png
 
         # Create desktop file
         cat > AppDir/usr/share/applications/sitesurveyor.desktop << 'EOF'
