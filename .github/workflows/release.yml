@@ -13,7 +13,7 @@ env:
   IFW_VERSION: '4.7'
 
 jobs:
-  # Linux Build with Qt Installer Framework
+  # Linux Build - Debian Package (.deb)
   build-linux:
     runs-on: ubuntu-22.04
     
@@ -28,7 +28,6 @@ jobs:
         version: ${{ env.QT_VERSION }}
         host: 'linux'
         target: 'desktop'
-        tools: 'tools_ifw'
 
     - name: Install Dependencies
       run: |
@@ -41,91 +40,97 @@ jobs:
           libgdal-dev \
           libgeos-dev \
           libproj-dev \
-          libxcb-cursor0
+          libxcb-cursor0 \
+          dpkg-dev \
+          fakeroot
 
     - name: Configure CMake
       run: |
         cmake -B build -G Ninja \
-          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr
 
     - name: Build
       run: cmake --build build --parallel
-      
-    - name: Prepare Installer Data
-      run: |
-        # Clear and prepare data directory
-        rm -rf installer/packages/com.consolemangena.sitesurveyor/data/*
-        mkdir -p installer/packages/com.consolemangena.sitesurveyor/data/lib
-        mkdir -p installer/packages/com.consolemangena.sitesurveyor/data/plugins/platforms
-        
-        # Copy binary (rename to SiteSurveyor.bin)
-        cp build/bin/SiteSurveyor installer/packages/com.consolemangena.sitesurveyor/data/SiteSurveyor.bin
-        
-        # Create launcher script
-        cat > installer/packages/com.consolemangena.sitesurveyor/data/SiteSurveyor << 'EOF'
-        #!/bin/bash
-        # SiteSurveyor Launcher
-        # Sets up library paths before running the application
-        
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        export LD_LIBRARY_PATH="$SCRIPT_DIR/lib:$LD_LIBRARY_PATH"
-        export QT_PLUGIN_PATH="$SCRIPT_DIR/plugins"
-        export QT_QPA_PLATFORM_PLUGIN_PATH="$SCRIPT_DIR/plugins/platforms"
-        
-        exec "$SCRIPT_DIR/SiteSurveyor.bin" "$@"
-        EOF
-        chmod +x installer/packages/com.consolemangena.sitesurveyor/data/SiteSurveyor
-        
-        # Copy Qt libs to lib/ subdirectory
-        cp -L $Qt6_DIR/lib/libQt6Core.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libQt6Gui.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libQt6Widgets.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libQt6Network.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libQt6PrintSupport.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libQt6DBus.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libQt6XcbQpa.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libQt6OpenGL.so.6 installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libicui18n.so.* installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libicuuc.so.* installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
-        cp -L $Qt6_DIR/lib/libicudata.so.* installer/packages/com.consolemangena.sitesurveyor/data/lib/ 2>/dev/null || true
-        
-        # Copy platform plugin
-        cp -L $Qt6_DIR/plugins/platforms/libqxcb.so installer/packages/com.consolemangena.sitesurveyor/data/plugins/platforms/ 2>/dev/null || true
-        
-        # Copy resources
-        cp README.md installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
-        cp LICENSE installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
-        
-        # List what was copied
-        echo "=== Installer data contents ==="
-        ls -la installer/packages/com.consolemangena.sitesurveyor/data/
-        ls -la installer/packages/com.consolemangena.sitesurveyor/data/lib/
 
-    - name: Update Config Version
+    - name: Get Version
+      id: version
       run: |
         VERSION="${{ github.ref_name }}"
-        VERSION="${VERSION#v}"  # Remove 'v' prefix
-        sed -i "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" installer/config/config.xml
+        VERSION="${VERSION#v}"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-    - name: Build Installer
+    - name: Create Debian Package Structure
       run: |
-        # Find binarycreator
-        IFW_PATH=$(find $IQTA_TOOLS -name "binarycreator" -type f 2>/dev/null | head -1)
-        if [ -z "$IFW_PATH" ]; then
-          IFW_PATH=$(find ${{ runner.temp }} -name "binarycreator" -type f 2>/dev/null | head -1)
-        fi
+        PKG_NAME="sitesurveyor"
+        PKG_VERSION="${{ steps.version.outputs.version }}"
+        PKG_ARCH="amd64"
+        PKG_DIR="${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}"
         
-        echo "Using binarycreator: $IFW_PATH"
+        mkdir -p ${PKG_DIR}/DEBIAN
+        mkdir -p ${PKG_DIR}/usr/bin
+        mkdir -p ${PKG_DIR}/usr/share/applications
+        mkdir -p ${PKG_DIR}/usr/share/icons/hicolor/256x256/apps
+        mkdir -p ${PKG_DIR}/usr/share/doc/sitesurveyor
         
-        cd installer
-        "$IFW_PATH" --offline-only -c config/config.xml -p packages \
-          ../SiteSurveyor-${{ github.ref_name }}-linux-x64-installer
+        # Copy binary
+        cp build/bin/SiteSurveyor ${PKG_DIR}/usr/bin/sitesurveyor
+        chmod 755 ${PKG_DIR}/usr/bin/sitesurveyor
+        
+        # Copy icon
+        cp resources/logo/SiteSurveyor.png ${PKG_DIR}/usr/share/icons/hicolor/256x256/apps/sitesurveyor.png
+        
+        # Create desktop file
+        cat > ${PKG_DIR}/usr/share/applications/sitesurveyor.desktop << 'EOF'
+        [Desktop Entry]
+        Type=Application
+        Name=SiteSurveyor
+        GenericName=Geomatics Software
+        Comment=Professional Geomatics Software - Developed by Eineva Incorporated
+        Exec=sitesurveyor
+        Icon=sitesurveyor
+        Categories=Science;Engineering;Geography;
+        Terminal=false
+        StartupNotify=true
+        Keywords=survey;geomatics;gis;cad;dxf;cogo;
+        EOF
+        
+        # Copy docs
+        cp README.md ${PKG_DIR}/usr/share/doc/sitesurveyor/ 2>/dev/null || true
+        cp LICENSE ${PKG_DIR}/usr/share/doc/sitesurveyor/copyright 2>/dev/null || true
+        
+        # Create control file
+        cat > ${PKG_DIR}/DEBIAN/control << EOF
+        Package: sitesurveyor
+        Version: ${PKG_VERSION}
+        Section: science
+        Priority: optional
+        Architecture: ${PKG_ARCH}
+        Depends: libqt6core6, libqt6gui6, libqt6widgets6, libqt6network6, libqt6printsupport6, libgdal30 | libgdal32 | libgdal34, libgeos-c1v5, libproj22 | libproj25, libgl1
+        Maintainer: Eineva Incorporated <support@eineva.com>
+        Homepage: https://sitesurveyor.dev
+        Description: Professional Geomatics Software
+         SiteSurveyor is a professional geomatics software for surveying and
+         land development. Features include:
+         - Import/Export (DXF, Shapefile, CSV, GeoJSON)
+         - COGO Calculations (Polars, Joins, Intersections)
+         - Network Adjustments (GNU Gama)
+         - Volumetric Calculations
+         .
+         Developed by Eineva Incorporated
+        EOF
+        
+        # Build the package
+        fakeroot dpkg-deb --build ${PKG_DIR}
+        
+        # Rename to include version tag
+        mv ${PKG_DIR}.deb SiteSurveyor-${{ github.ref_name }}-linux-amd64.deb
         
     - name: Upload Linux Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: linux-installer
-        path: SiteSurveyor-*-linux-*
+        name: linux-deb
+        path: SiteSurveyor-*.deb
 
   # Windows Build with Qt Installer Framework
   build-windows:
@@ -349,33 +354,36 @@ jobs:
         body: |
           ## SiteSurveyor ${{ github.ref_name }}
           
+          **Developed by Eineva Incorporated**
+          
           ### Downloads
           
-          | Platform | Installer | Description |
-          |----------|-----------|-------------|
-          | **Windows** | `SiteSurveyor-${{ github.ref_name }}-windows-x64-installer.exe` | Offline installer |
-          | **Linux** | `SiteSurveyor-${{ github.ref_name }}-linux-x64-installer` | Offline installer (make executable: `chmod +x`) |
-          | **macOS** | `SiteSurveyor-${{ github.ref_name }}-macos-x64-installer` | Offline installer |
+          | Platform | File | Installation |
+          |----------|------|--------------|
+          | **Linux (Debian/Ubuntu)** | `.deb` | `sudo dpkg -i SiteSurveyor-*.deb && sudo apt-get install -f` |
+          | **Windows** | `.exe` | Run installer wizard |
+          | **macOS** | installer | Run installer app |
           
-          ### Installation
+          ### Linux Installation
           
-          **Windows:** Run the installer and follow the wizard.
-          
-          **Linux:** 
           ```bash
-          chmod +x SiteSurveyor-*-linux-*-installer
-          ./SiteSurveyor-*-linux-*-installer
+          # Download and install
+          sudo dpkg -i SiteSurveyor-${{ github.ref_name }}-linux-amd64.deb
+          
+          # Install missing dependencies if any
+          sudo apt-get install -f
           ```
           
-          **macOS:** Run the installer app.
-          
           ### Requirements
+          - **Linux**: Qt 6, GDAL, GEOS, PROJ (auto-installed via apt)
+          - **Windows/macOS**: All dependencies bundled
           - OpenGL 3.3+ support
           - 64-bit operating system
           
           ### What's New
-          - Professional offline installers using Qt Installer Framework
-          - Multi-platform support
+          - Debian package format for Linux (proper dependency management)
+          - Qt Installer Framework for Windows/macOS
+          - Developed by Eineva Incorporated
         files: |
           SiteSurveyor-*
         draft: false
