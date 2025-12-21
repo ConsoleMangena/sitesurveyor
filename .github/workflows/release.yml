@@ -10,7 +10,6 @@ permissions:
 
 env:
   QT_VERSION: '6.6.0'
-  IFW_VERSION: '4.7'
 
 jobs:
   # Linux Build - Debian Package (.deb)
@@ -60,7 +59,7 @@ jobs:
         VERSION="${VERSION#v}"
         echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-    - name: Create Debian Package Structure
+    - name: Create Debian Package
       run: |
         PKG_NAME="sitesurveyor"
         PKG_VERSION="${{ steps.version.outputs.version }}"
@@ -81,44 +80,40 @@ jobs:
         cp resources/logo/SiteSurveyor.png ${PKG_DIR}/usr/share/icons/hicolor/256x256/apps/sitesurveyor.png
         
         # Create desktop file
-        cat > ${PKG_DIR}/usr/share/applications/sitesurveyor.desktop << 'EOF'
-        [Desktop Entry]
-        Type=Application
-        Name=SiteSurveyor
-        GenericName=Geomatics Software
-        Comment=Professional Geomatics Software - Developed by Eineva Incorporated
-        Exec=sitesurveyor
-        Icon=sitesurveyor
-        Categories=Science;Engineering;Geography;
-        Terminal=false
-        StartupNotify=true
-        Keywords=survey;geomatics;gis;cad;dxf;cogo;
-        EOF
+        cat > ${PKG_DIR}/usr/share/applications/sitesurveyor.desktop << 'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=SiteSurveyor
+GenericName=Geomatics Software
+Comment=Professional Geomatics Software - Developed by Eineva Incorporated
+Exec=sitesurveyor
+Icon=sitesurveyor
+Categories=Science;Engineering;Geography;
+Terminal=false
+StartupNotify=true
+Keywords=survey;geomatics;gis;cad;dxf;cogo;
+DESKTOP
         
         # Copy docs
         cp README.md ${PKG_DIR}/usr/share/doc/sitesurveyor/ 2>/dev/null || true
         cp LICENSE ${PKG_DIR}/usr/share/doc/sitesurveyor/copyright 2>/dev/null || true
         
         # Create control file
-        cat > ${PKG_DIR}/DEBIAN/control << EOF
-        Package: sitesurveyor
-        Version: ${PKG_VERSION}
-        Section: science
-        Priority: optional
-        Architecture: ${PKG_ARCH}
-        Depends: libqt6core6, libqt6gui6, libqt6widgets6, libqt6network6, libqt6printsupport6, libgdal30 | libgdal32 | libgdal34, libgeos-c1v5, libproj22 | libproj25, libgl1
-        Maintainer: Eineva Incorporated <support@eineva.com>
-        Homepage: https://sitesurveyor.dev
-        Description: Professional Geomatics Software
-         SiteSurveyor is a professional geomatics software for surveying and
-         land development. Features include:
-         - Import/Export (DXF, Shapefile, CSV, GeoJSON)
-         - COGO Calculations (Polars, Joins, Intersections)
-         - Network Adjustments (GNU Gama)
-         - Volumetric Calculations
-         .
-         Developed by Eineva Incorporated
-        EOF
+        cat > ${PKG_DIR}/DEBIAN/control << CTRL
+Package: sitesurveyor
+Version: ${PKG_VERSION}
+Section: science
+Priority: optional
+Architecture: ${PKG_ARCH}
+Depends: libqt6core6, libqt6gui6, libqt6widgets6, libqt6network6, libqt6printsupport6, libgdal30 | libgdal32 | libgdal34, libgeos-c1v5, libproj22 | libproj25, libgl1
+Maintainer: Eineva Incorporated <support@eineva.com>
+Homepage: https://sitesurveyor.dev
+Description: Professional Geomatics Software
+ SiteSurveyor is a professional geomatics software for surveying and
+ land development. Features include Import/Export (DXF, Shapefile, CSV),
+ COGO Calculations, Network Adjustments, and Volumetric Calculations.
+ Developed by Eineva Incorporated.
+CTRL
         
         # Build the package
         fakeroot dpkg-deb --build ${PKG_DIR}
@@ -132,7 +127,7 @@ jobs:
         name: linux-deb
         path: SiteSurveyor-*.deb
 
-  # Windows Build with Qt Installer Framework
+  # Windows Build - ZIP with all dependencies
   build-windows:
     runs-on: windows-latest
     
@@ -148,7 +143,6 @@ jobs:
         host: 'windows'
         target: 'desktop'
         arch: 'win64_msvc2019_64'
-        tools: 'tools_ifw'
     
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
@@ -171,9 +165,9 @@ jobs:
         path: |
           vcpkg/installed
           vcpkg/packages
-        key: ${{ runner.os }}-vcpkg-release-v3-${{ hashFiles('CMakeLists.txt') }}
+        key: ${{ runner.os }}-vcpkg-release-v4-${{ hashFiles('CMakeLists.txt') }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-release-v3-
+          ${{ runner.os }}-vcpkg-release-v4-
 
     - name: Install vcpkg dependencies
       run: .\vcpkg\vcpkg install gdal:x64-windows geos:x64-windows --recurse
@@ -190,152 +184,42 @@ jobs:
     - name: Build
       run: cmake --build build --parallel
       
-    - name: Prepare Installer Data
+    - name: Create Distribution Folder
       run: |
-        # Clear and prepare data directory
-        Remove-Item -Recurse -Force installer/packages/com.consolemangena.sitesurveyor/data/* -ErrorAction SilentlyContinue
-        New-Item -ItemType Directory -Force -Path installer/packages/com.consolemangena.sitesurveyor/data
+        # Create dist folder
+        New-Item -ItemType Directory -Force -Path dist/SiteSurveyor
         
         # Copy binary
-        Copy-Item build/bin/SiteSurveyor.exe installer/packages/com.consolemangena.sitesurveyor/data/
+        Copy-Item build/bin/SiteSurveyor.exe dist/SiteSurveyor/
         
-        # Run windeployqt
-        & "$env:Qt6_DIR/bin/windeployqt.exe" installer/packages/com.consolemangena.sitesurveyor/data/SiteSurveyor.exe
+        # Run windeployqt to copy Qt dependencies
+        & "$env:Qt6_DIR/bin/windeployqt.exe" dist/SiteSurveyor/SiteSurveyor.exe
         
         # Copy GDAL/GEOS DLLs
-        Copy-Item vcpkg/installed/x64-windows/bin/*.dll installer/packages/com.consolemangena.sitesurveyor/data/ -ErrorAction SilentlyContinue
+        Copy-Item vcpkg/installed/x64-windows/bin/*.dll dist/SiteSurveyor/ -ErrorAction SilentlyContinue
         
         # Copy docs
-        Copy-Item README.md installer/packages/com.consolemangena.sitesurveyor/data/ -ErrorAction SilentlyContinue
-        Copy-Item LICENSE installer/packages/com.consolemangena.sitesurveyor/data/ -ErrorAction SilentlyContinue
+        Copy-Item README.md dist/SiteSurveyor/ -ErrorAction SilentlyContinue
+        Copy-Item LICENSE dist/SiteSurveyor/ -ErrorAction SilentlyContinue
+        
+        # List contents
+        Get-ChildItem dist/SiteSurveyor/
       shell: pwsh
 
-    - name: Update Config Version
+    - name: Create ZIP
       run: |
-        $version = "${{ github.ref_name }}".TrimStart("v")
-        (Get-Content installer/config/config.xml) -replace '<Version>.*</Version>', "<Version>$version</Version>" | Set-Content installer/config/config.xml
-      shell: pwsh
-
-    - name: Build Installer
-      run: |
-        # Find binarycreator
-        $IFW_PATH = Get-ChildItem -Recurse -Path "$env:IQTA_TOOLS" -Filter "binarycreator.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $IFW_PATH) {
-          $IFW_PATH = Get-ChildItem -Recurse -Path "${{ runner.temp }}" -Filter "binarycreator.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-        }
-        
-        Write-Host "Using binarycreator: $($IFW_PATH.FullName)"
-        
-        & $IFW_PATH.FullName --offline-only -c installer/config/config.xml -p installer/packages `
-          "SiteSurveyor-${{ github.ref_name }}-windows-x64-installer.exe"
+        Compress-Archive -Path dist/SiteSurveyor -DestinationPath SiteSurveyor-${{ github.ref_name }}-windows-x64.zip
       shell: pwsh
       
     - name: Upload Windows Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: windows-installer
-        path: SiteSurveyor-*-windows-*
-
-  # macOS Build with Qt Installer Framework
-  build-macos:
-    runs-on: macos-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-
-    - name: Install Qt
-      uses: jurplel/install-qt-action@v3
-      with:
-        version: ${{ env.QT_VERSION }}
-        host: 'mac'
-        target: 'desktop'
-        arch: 'clang_64'
-        tools: 'tools_ifw'
-
-    - name: Install Dependencies
-      run: |
-        brew install cmake ninja gdal geos proj
-
-    - name: Configure CMake
-      run: |
-        cmake -B build -G Ninja \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_PREFIX_PATH=$Qt6_DIR \
-          -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$PWD/build/bin
-
-    - name: Build
-      run: cmake --build build --parallel
-      
-    - name: Find Binary
-      id: find_binary
-      run: |
-        echo "=== Searching for binary ==="
-        BINARY=""
-        if [ -f "build/bin/SiteSurveyor" ]; then
-          BINARY="build/bin/SiteSurveyor"
-        elif [ -d "build/bin/SiteSurveyor.app" ]; then
-          BINARY="build/bin/SiteSurveyor.app"
-        elif [ -f "build/SiteSurveyor" ]; then
-          BINARY="build/SiteSurveyor"
-        else
-          BINARY=$(find build -type f -name "SiteSurveyor" 2>/dev/null | head -1)
-        fi
-        
-        echo "Found: $BINARY"
-        echo "binary_path=$BINARY" >> $GITHUB_OUTPUT
-      
-    - name: Prepare Installer Data
-      run: |
-        # Clear and prepare data directory
-        rm -rf installer/packages/com.consolemangena.sitesurveyor/data/*
-        mkdir -p installer/packages/com.consolemangena.sitesurveyor/data
-        
-        BINARY="${{ steps.find_binary.outputs.binary_path }}"
-        
-        if [ -d "$BINARY" ]; then
-          # It's an .app bundle
-          cp -R "$BINARY" installer/packages/com.consolemangena.sitesurveyor/data/
-          $Qt6_DIR/bin/macdeployqt installer/packages/com.consolemangena.sitesurveyor/data/SiteSurveyor.app 2>/dev/null || true
-        else
-          # Raw binary
-          cp "$BINARY" installer/packages/com.consolemangena.sitesurveyor/data/
-        fi
-        
-        # Copy docs
-        cp README.md installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
-        cp LICENSE installer/packages/com.consolemangena.sitesurveyor/data/ 2>/dev/null || true
-
-    - name: Update Config Version
-      run: |
-        VERSION="${{ github.ref_name }}"
-        VERSION="${VERSION#v}"
-        sed -i '' "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" installer/config/config.xml
-
-    - name: Build Installer
-      run: |
-        # Find binarycreator
-        IFW_PATH=$(find $IQTA_TOOLS -name "binarycreator" -type f 2>/dev/null | head -1)
-        if [ -z "$IFW_PATH" ]; then
-          IFW_PATH=$(find ${{ runner.temp }} -name "binarycreator" -type f 2>/dev/null | head -1)
-        fi
-        
-        echo "Using binarycreator: $IFW_PATH"
-        
-        cd installer
-        "$IFW_PATH" --offline-only -c config/config.xml -p packages \
-          ../SiteSurveyor-${{ github.ref_name }}-macos-x64-installer
-        
-    - name: Upload macOS Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: macos-installer
-        path: SiteSurveyor-*-macos-*
+        name: windows-zip
+        path: SiteSurveyor-*.zip
 
   # Create Release
   release:
-    needs: [build-linux, build-windows, build-macos]
+    needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
     
     steps:
@@ -360,30 +244,27 @@ jobs:
           
           | Platform | File | Installation |
           |----------|------|--------------|
-          | **Linux (Debian/Ubuntu)** | `.deb` | `sudo dpkg -i SiteSurveyor-*.deb && sudo apt-get install -f` |
-          | **Windows** | `.exe` | Run installer wizard |
-          | **macOS** | installer | Run installer app |
+          | **Windows** | `.zip` | Extract and run `SiteSurveyor.exe` |
+          | **Linux (Debian/Ubuntu)** | `.deb` | `sudo dpkg -i *.deb && sudo apt-get install -f` |
+          
+          ### Windows Installation
+          
+          1. Download the `.zip` file
+          2. Extract to any folder
+          3. Run `SiteSurveyor.exe`
           
           ### Linux Installation
           
           ```bash
-          # Download and install
           sudo dpkg -i SiteSurveyor-${{ github.ref_name }}-linux-amd64.deb
-          
-          # Install missing dependencies if any
-          sudo apt-get install -f
+          sudo apt-get install -f  # Install dependencies
           ```
           
           ### Requirements
-          - **Linux**: Qt 6, GDAL, GEOS, PROJ (auto-installed via apt)
-          - **Windows/macOS**: All dependencies bundled
+          - **Windows**: All dependencies included
+          - **Linux**: Qt 6, GDAL, GEOS, PROJ (installed via apt)
           - OpenGL 3.3+ support
           - 64-bit operating system
-          
-          ### What's New
-          - Debian package format for Linux (proper dependency management)
-          - Qt Installer Framework for Windows/macOS
-          - Developed by Eineva Incorporated
         files: |
           SiteSurveyor-*
         draft: false
