@@ -8,11 +8,6 @@
     <StartMenuDir>SiteSurveyor</StartMenuDir>
     <TargetDir>@HomeDir@/SiteSurveyor</TargetDir>
     
-    <!-- Branding -->
-    <InstallerWindowIcon>logo</InstallerWindowIcon>
-    <InstallerApplicationIcon>logo</InstallerApplicationIcon>
-    <Logo>logo.png</Logo>
-    
     <!-- Style -->
     <WizardStyle>Modern</WizardStyle>
     <WizardDefaultWidth>600</WizardDefaultWidth>
