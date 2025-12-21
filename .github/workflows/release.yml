@@ -245,12 +245,6 @@ jobs:
           Copy-Item vcpkg/installed/x64-windows/share/proj4/* dist/SiteSurveyor/proj-data/ -Recurse -Force
         }
 
-        # Copy Visual C++ Runtime (if not using static linking)
-        $vcRedist = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio" -Recurse -Filter "vcruntime*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($vcRedist) {
-          Copy-Item $vcRedist.DirectoryName\*.dll dist/SiteSurveyor/ -ErrorAction SilentlyContinue
-        }
-
         # Copy docs
         Copy-Item README.md dist/SiteSurveyor/ -ErrorAction SilentlyContinue
         Copy-Item LICENSE dist/SiteSurveyor/ -ErrorAction SilentlyContinue
