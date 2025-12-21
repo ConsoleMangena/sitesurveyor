@@ -1,0 +1,30 @@
+{
+    "C_Cpp.default.cppStandard": "c++17",
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.clang_format_style": "file",
+    "C_Cpp.clang_format_fallbackStyle": "LLVM",
+    "cmake.configureOnOpen": true,
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.generator": "Ninja",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true,
+    "files.associations": {
+        "*.h": "cpp",
+        "*.hpp": "cpp",
+        "*.qss": "css",
+        "*.qrc": "xml"
+    },
+    "search.exclude": {
+        "**/build": true,
+        "**/external": true,
+        "**/gama-2.28": true
+    },
+    "files.watcherExclude": {
+        "**/build/**": true,
+        "**/external/**": true,
+        "**/gama-2.28/**": true
+    }
+}

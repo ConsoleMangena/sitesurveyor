@@ -1,0 +1,20 @@
+# GitHub Funding Configuration
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+
+# GitHub Sponsors username
+github: [ConsoleMangena]
+
+# Patreon username
+# patreon: sitesurveyor
+
+# Buy Me a Coffee
+# buy_me_a_coffee: sitesurveyor
+
+# Ko-fi username
+# ko_fi: sitesurveyor
+
+# Open Collective
+# open_collective: sitesurveyor
+
+# Custom funding URLs
+custom: ['https://sitesurveyor.dev/donate']

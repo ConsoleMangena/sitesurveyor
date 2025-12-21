@@ -1,0 +1,66 @@
+# Docker Compose for SiteSurveyor development
+# Supports X11 forwarding for GUI applications
+
+version: '3.8'
+
+services:
+  sitesurveyor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sitesurveyor:latest
+    container_name: sitesurveyor
+
+    # X11 forwarding for GUI
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+
+    volumes:
+      # X11 socket
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # User projects directory
+      - ./projects:/home/surveyor/projects
+      # Persist settings
+      - sitesurveyor-config:/home/surveyor/.config/SiteSurveyor
+
+    # Network mode for X11
+    network_mode: host
+
+    # Security options for X11
+    security_opt:
+      - seccomp:unconfined
+
+    # Interactive mode
+    stdin_open: true
+    tty: true
+
+  # Development/build service
+  sitesurveyor-dev:
+    image: ubuntu:22.04
+    container_name: sitesurveyor-dev
+
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
+
+    volumes:
+      - .:/src:rw
+      - sitesurveyor-build:/src/build
+
+    working_dir: /src
+
+    command: >
+      bash -c "
+        apt-get update &&
+        apt-get install -y build-essential cmake ninja-build git
+          qt6-base-dev libgdal-dev libgeos-dev libproj-dev libgl1-mesa-dev &&
+        cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug &&
+        cmake --build build --parallel
+      "
+
+    profiles:
+      - dev
+
+volumes:
+  sitesurveyor-config:
+  sitesurveyor-build:

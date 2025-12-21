@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/ConsoleMangena/sitesurveyor/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: 📖 Documentation
+    url: https://sitesurveyor.dev/docs
+    about: Read the official documentation
+  - name: 🌐 Official Website
+    url: https://sitesurveyor.dev
+    about: Visit our official website

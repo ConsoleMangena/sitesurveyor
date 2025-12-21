@@ -1,0 +1,116 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMake: Configure Debug",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B",
+                "build",
+                "-G",
+                "Ninja",
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "-DWITH_GDAL=ON",
+                "-DWITH_GEOS=ON"
+            ],
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "CMake: Configure Release",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B",
+                "build",
+                "-G",
+                "Ninja",
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DWITH_GDAL=ON",
+                "-DWITH_GEOS=ON"
+            ],
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "CMake: Build Debug",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "build",
+                "--parallel"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$gcc",
+            "dependsOn": "CMake: Configure Debug"
+        },
+        {
+            "label": "CMake: Build Release",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "build",
+                "--parallel"
+            ],
+            "group": "build",
+            "problemMatcher": "$gcc",
+            "dependsOn": "CMake: Configure Release"
+        },
+        {
+            "label": "CMake: Clean",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "build",
+                "--target",
+                "clean"
+            ],
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Run SiteSurveyor",
+            "type": "shell",
+            "command": "./build/bin/SiteSurveyor",
+            "group": "none",
+            "problemMatcher": [],
+            "dependsOn": "CMake: Build Debug"
+        },
+        {
+            "label": "Format Code (clang-format)",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "find src include -name '*.cpp' -o -name '*.h' | xargs clang-format -i"
+            ],
+            "group": "none",
+            "problemMatcher": []
+        },
+        {
+            "label": "Run clang-tidy",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "find src -name '*.cpp' | head -20 | xargs clang-tidy -p build"
+            ],
+            "group": "none",
+            "problemMatcher": "$gcc"
+        },
+        {
+            "label": "Quick Start",
+            "type": "shell",
+            "command": "./scripts/quickstart.sh",
+            "group": "build",
+            "problemMatcher": []
+        }
+    ]
+}

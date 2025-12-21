@@ -1,0 +1,70 @@
+# EditorConfig - https://editorconfig.org
+# Helps maintain consistent coding styles across different editors
+
+root = true
+
+# Default settings for all files
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# C++ source and header files
+[*.{cpp,h,hpp,c,cc,cxx,hxx}]
+indent_size = 4
+
+# CMake files
+[CMakeLists.txt]
+indent_size = 4
+
+[*.cmake]
+indent_size = 4
+
+# JSON files
+[*.json]
+indent_size = 2
+
+# YAML files
+[*.{yml,yaml}]
+indent_size = 2
+
+# Markdown files
+[*.md]
+trim_trailing_whitespace = false
+indent_size = 2
+
+# Qt project files
+[*.{pro,pri}]
+indent_size = 4
+
+# Qt resource files
+[*.qrc]
+indent_size = 2
+
+# Qt stylesheet files
+[*.qss]
+indent_size = 4
+
+# Shell scripts
+[*.sh]
+indent_size = 2
+
+# Batch files (Windows)
+[*.{bat,cmd}]
+end_of_line = crlf
+indent_size = 4
+
+# Makefiles
+[Makefile]
+indent_style = tab
+
+# XML files
+[*.xml]
+indent_size = 2
+
+# GitHub Actions
+[.github/workflows/*.yml]
+indent_size = 2

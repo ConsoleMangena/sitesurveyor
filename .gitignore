@@ -62,7 +62,14 @@ ui_*.h
 # =========================
 # IDE and Editor Files
 # =========================
-.vscode/
+# VS Code - track shared settings, ignore user-specific
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.vscode/*.code-workspace
+
 .idea/
 *.swp
 *.swo
