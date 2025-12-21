@@ -190,6 +190,7 @@ void MainWindow::setupMenus()
     QAction* newAction = fileMenu->addAction("&New Project");
     newAction->setShortcut(QKeySequence::New);
     connect(newAction, &QAction::triggered, this, [this]() {
+        if (!m_canvas) return;
         if (QMessageBox::question(this, "New Project", 
                 "Clear current project and start new?") == QMessageBox::Yes) {
             m_canvas->clearAll();
@@ -1331,7 +1332,7 @@ void MainWindow::setupLayerPanel()
 
 void MainWindow::updateLayerPanel()
 {
-    if (!m_layerList) return;
+    if (!m_layerList || !m_canvas) return;
     
     m_layerList->blockSignals(true);
     m_layerList->clear();
