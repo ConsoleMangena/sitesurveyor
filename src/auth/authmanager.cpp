@@ -185,6 +185,7 @@ void AuthManager::onCheckSessionFinished()
         }
 
         m_isAuthenticated = true;
+        m_isOfflineMode = false;
         saveProfile();  // Cache profile for offline mode
 
         // Fetch license after profile
@@ -193,11 +194,14 @@ void AuthManager::onCheckSessionFinished()
 
         emit sessionVerified();
     } else {
+        // Don't clear session here - allow offline login to use saved credentials
+        // Session will only be cleared on explicit logout
         m_isAuthenticated = false;
-        clearSession();
+        qDebug() << "[AuthManager] Remote session check failed:" << reply->errorString();
         emit sessionInvalid();
     }
     reply->deleteLater();
+
 }
 
 void AuthManager::parseProfileFromPrefs(const QJsonObject& prefs)
