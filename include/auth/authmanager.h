@@ -30,13 +30,13 @@ struct License {
     QStringList deviceIds;   // Registered device UUIDs
     int maxDevices = 1;      // Max simultaneous devices
     bool isActive = false;   // License active status
-    
+
     bool isValid() const {
         if (!isActive) return false;
         if (plan == "free") return true;  // Free never expires
         return expiresAt.isValid() && expiresAt > QDateTime::currentDateTime();
     }
-    
+
     bool hasFeature(const QString& feature) const {
         return features.contains(feature);
     }
@@ -48,31 +48,35 @@ class AuthManager : public QObject
 
 public:
     explicit AuthManager(QObject *parent = nullptr);
-    
+
     // Core actions
     void login(const QString& email, const QString& password);
     void checkSession();
     void logout();
-    
 
-    
+    // Offline login - verify stored credentials when offline
+    bool tryOfflineLogin(const QString& email, const QString& password);
+    bool hasOfflineCredentials() const;
+
+
+
     // Status
     bool isAuthenticated() const { return m_isAuthenticated; }
     QString currentUser() const { return m_profile.name.isEmpty() ? m_profile.email : m_profile.name; }
     QString sessionId() const { return m_sessionId; }
     QString userId() const { return m_profile.id; }
     QString jwt() const { return m_jwt; }
-    
+
     // Config access
     QString projectId() const { return PROJECT_ID; }
     QString apiEndpoint() const { return API_ENDPOINT; }
 
     // Helper to create authenticated requests
     QNetworkRequest createAuthorizedRequest(const QUrl& url) const;
-    
+
     // Profile access
     const UserProfile& userProfile() const { return m_profile; }
-    
+
     // License access
     const License& license() const { return m_license; }
     bool hasFeature(const QString& feature) const { return m_license.hasFeature(feature); }
@@ -84,6 +88,7 @@ signals:
     void loginError(const QString& message);
     void sessionVerified();
     void sessionInvalid();
+    void offlineLoginSuccess();  // Emitted when offline login succeeds
     void licenseLoaded();
     void licenseError(const QString& message);
     void licenseExpired();
@@ -104,14 +109,16 @@ private:
     QString m_sessionId;
     QString m_jwt;
     QString m_deviceId;
-    
+    QString m_pendingEmail;      // Temporary storage during login
+    QString m_pendingPassword;   // Temporary storage during login
+
     // Config
     const QString API_ENDPOINT = "https://nyc.cloud.appwrite.io/v1";
     const QString PROJECT_ID = "690f708900139eaa58f4";
     const QString DATABASE_ID = "sitesurveyor";
     const QString LICENSES_COLLECTION = "licenses";
     const QString API_KEY = "standard_b432bca7313523e8e09f74151f265876552f4ff92daa46960442685084484972150d85e4c74c949f4c0e4a1ad93f4ff7f6968832ba66f1c36b0d615bf4144645719724d4f17e88364438c856fc510045463c350f671a07406725ba012c165c0cdeb9fcd645d5f6059d788e2e0315081366f4065753f93204f943382270a0d355";
-    
+
     void saveSession(const QString& sessionId);
     void loadSession();
     void clearSession();
@@ -125,6 +132,12 @@ private:
     QString getDeviceId();
     void fetchJwt();
     void refreshJwt();
+
+    // Offline credential storage (hashed)
+    void saveOfflineCredentials(const QString& email, const QString& password);
+    QString hashCredentials(const QString& email, const QString& password) const;
+    bool m_isOfflineMode = false;
+
 private slots:
     void checkLicenseExpiration();
 

@@ -16,12 +16,12 @@ AuthManager::AuthManager(QObject *parent)
     connect(m_licenseCheckTimer, &QTimer::timeout, this, &AuthManager::checkLicenseExpiration);
     // Check every 30 minutes
     m_licenseCheckTimer->setInterval(30 * 60 * 1000);
-    
+
     // JWT refresh timer - refresh 2 minutes before 15-minute expiration = 13 minutes
     m_jwtRefreshTimer = new QTimer(this);
     connect(m_jwtRefreshTimer, &QTimer::timeout, this, &AuthManager::refreshJwt);
     m_jwtRefreshTimer->setInterval(13 * 60 * 1000);  // 13 minutes
-    
+
     m_deviceId = getDeviceId();
     loadSession();
     loadLicense();  // Load cached license
@@ -32,17 +32,17 @@ QString AuthManager::getDeviceId()
     // Generate unique device ID based on machine info
     QSettings settings("SiteSurveyor", "Device");
     QString deviceId = settings.value("deviceId").toString();
-    
+
     if (deviceId.isEmpty()) {
         // Generate new device ID from machine unique ID
-        QString machineInfo = QSysInfo::machineHostName() + 
-                              QSysInfo::productType() + 
+        QString machineInfo = QSysInfo::machineHostName() +
+                              QSysInfo::productType() +
                               QSysInfo::currentCpuArchitecture();
         QByteArray hash = QCryptographicHash::hash(machineInfo.toUtf8(), QCryptographicHash::Sha256);
         deviceId = hash.toHex().left(32);  // Use first 32 chars
         settings.setValue("deviceId", deviceId);
     }
-    
+
     return deviceId;
 }
 
@@ -68,16 +68,20 @@ QNetworkRequest AuthManager::createAuthorizedRequest(const QUrl& url) const
 
 void AuthManager::login(const QString& email, const QString& password)
 {
+    // Store credentials temporarily for offline save after successful login
+    m_pendingEmail = email;
+    m_pendingPassword = password;
+
     QUrl url(API_ENDPOINT + "/account/sessions/email");
     QNetworkRequest request(url);
-    
+
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setRawHeader("X-Appwrite-Project", PROJECT_ID.toUtf8());
-    
+
     QJsonObject json;
     json["email"] = email;
     json["password"] = password;
-    
+
     QNetworkReply* reply = m_network->post(request, QJsonDocument(json).toJson());
     connect(reply, &QNetworkReply::finished, this, &AuthManager::onLoginFinished);
 }
@@ -86,38 +90,46 @@ void AuthManager::onLoginFinished()
 {
     QNetworkReply* reply = qobject_cast<QNetworkReply*>(sender());
     if (!reply) return;
-    
+
     if (reply->error() == QNetworkReply::NoError) {
         QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
         QJsonObject obj = doc.object();
-        
+
         m_sessionId = obj["$id"].toString();
         m_isAuthenticated = true;
-        
+        m_isOfflineMode = false;
+
         saveSession(m_sessionId);
-        
+
+        // Save credentials for offline login
+        if (!m_pendingEmail.isEmpty() && !m_pendingPassword.isEmpty()) {
+            saveOfflineCredentials(m_pendingEmail, m_pendingPassword);
+            m_pendingEmail.clear();
+            m_pendingPassword.clear();
+        }
+
         // Fetch profile data before emitting success
         QUrl url(API_ENDPOINT + "/account");
         QNetworkRequest request(url);
         request.setRawHeader("X-Appwrite-Project", PROJECT_ID.toUtf8());
         request.setRawHeader("X-Appwrite-Session", m_sessionId.toUtf8());
-        
+
         QNetworkReply* accountReply = m_network->get(request);
         connect(accountReply, &QNetworkReply::finished, this, [this, accountReply]() {
             if (accountReply->error() == QNetworkReply::NoError) {
                 QJsonDocument doc = QJsonDocument::fromJson(accountReply->readAll());
                 QJsonObject obj = doc.object();
-                
+
                 m_profile.id = obj["$id"].toString();
                 m_profile.name = obj["name"].toString();
                 m_profile.email = obj["email"].toString();
-                
+
                 if (obj.contains("prefs") && obj["prefs"].isObject()) {
                     parseProfileFromPrefs(obj["prefs"].toObject());
                 }
-                
+
                 saveProfile();  // Cache profile for offline mode
-                
+
                 // Fetch JWT for native desktop app authentication
                 fetchJwt();
             }
@@ -130,6 +142,8 @@ void AuthManager::onLoginFinished()
         if (!doc.isNull()) {
             errApi = doc.object()["message"].toString();
         }
+        m_pendingEmail.clear();
+        m_pendingPassword.clear();
         emit loginError(errApi.isEmpty() ? reply->errorString() : errApi);
     }
     reply->deleteLater();
@@ -141,14 +155,14 @@ void AuthManager::checkSession()
         emit sessionInvalid();
         return;
     }
-    
+
     QUrl url(API_ENDPOINT + "/account");
     QNetworkRequest request(url);
     request.setRawHeader("X-Appwrite-Project", PROJECT_ID.toUtf8());
     if (!m_sessionId.isEmpty()) {
         request.setRawHeader("X-Appwrite-Session", m_sessionId.toUtf8());
     }
-    
+
     QNetworkReply* reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this, &AuthManager::onCheckSessionFinished);
 }
@@ -157,26 +171,26 @@ void AuthManager::onCheckSessionFinished()
 {
     QNetworkReply* reply = qobject_cast<QNetworkReply*>(sender());
     if (!reply) return;
-    
+
     if (reply->error() == QNetworkReply::NoError) {
         QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
         QJsonObject obj = doc.object();
-        
+
         m_profile.id = obj["$id"].toString();
         m_profile.name = obj["name"].toString();
         m_profile.email = obj["email"].toString();
-        
+
         if (obj.contains("prefs") && obj["prefs"].isObject()) {
             parseProfileFromPrefs(obj["prefs"].toObject());
         }
-        
+
         m_isAuthenticated = true;
         saveProfile();  // Cache profile for offline mode
-        
+
         // Fetch license after profile
         // License check disabled for bucket-only mode
         // fetchLicense();
-        
+
         emit sessionVerified();
     } else {
         m_isAuthenticated = false;
@@ -192,7 +206,7 @@ void AuthManager::parseProfileFromPrefs(const QJsonObject& prefs)
     if (!fullName.isEmpty()) {
         m_profile.name = fullName;
     }
-    
+
     m_profile.username = prefs["username"].toString();
     m_profile.organization = prefs["organization"].toString();
     m_profile.userType = prefs["userType"].toString();
@@ -207,16 +221,16 @@ void AuthManager::fetchLicense()
         .arg(API_ENDPOINT)
         .arg(DATABASE_ID)
         .arg(LICENSES_COLLECTION);
-    
+
     QUrl url(queryUrl);
     QUrlQuery query;
     query.addQueryItem("queries[]", QString("equal(\"userId\", \"%1\")").arg(m_profile.id));
     url.setQuery(query);
-    
+
     url.setQuery(query);
-    
+
     QNetworkRequest request = createAuthorizedRequest(url);
-    
+
     QNetworkReply* reply = m_network->get(request);
     connect(reply, &QNetworkReply::finished, this, &AuthManager::onLicenseFetched);
 }
@@ -225,48 +239,48 @@ void AuthManager::onLicenseFetched()
 {
     QNetworkReply* reply = qobject_cast<QNetworkReply*>(sender());
     if (!reply) return;
-    
+
     if (reply->error() == QNetworkReply::NoError) {
         QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
         QJsonObject obj = doc.object();
         QJsonArray documents = obj["documents"].toArray();
-        
+
         if (!documents.isEmpty()) {
             QJsonObject licenseDoc = documents[0].toObject();
-            
+
             m_license.id = licenseDoc["$id"].toString();
             m_license.userId = licenseDoc["userId"].toString();
             m_license.plan = licenseDoc["plan"].toString();
             m_license.isActive = licenseDoc["isActive"].toBool();
             m_license.maxDevices = licenseDoc["maxDevices"].toInt(1);
-            
+
             // Parse expiration date
             QString expiresStr = licenseDoc["expiresAt"].toString();
             if (!expiresStr.isEmpty()) {
                 m_license.expiresAt = QDateTime::fromString(expiresStr, Qt::ISODate);
             }
-            
+
             // Parse features array
             m_license.features.clear();
             QJsonArray featuresArr = licenseDoc["features"].toArray();
             for (const auto& f : featuresArr) {
                 m_license.features.append(f.toString());
             }
-            
+
             // Parse device IDs array
             m_license.deviceIds.clear();
             QJsonArray devicesArr = licenseDoc["deviceIds"].toArray();
             for (const auto& d : devicesArr) {
                 m_license.deviceIds.append(d.toString());
             }
-            
+
             // Check if license is valid (active and not expired)
             if (!m_license.isValid()) {
                 emit licenseExpired();
                 reply->deleteLater();
                 return;
             }
-            
+
             // Check if current device is registered
             if (!m_license.deviceIds.contains(m_deviceId)) {
                 if (m_license.deviceIds.count() < m_license.maxDevices) {
@@ -277,12 +291,12 @@ void AuthManager::onLicenseFetched()
                 }
             } else {
                 saveLicense();  // Cache the license locally
-                
+
                 // Start runtime check
                 if (!m_licenseCheckTimer->isActive()) {
                     m_licenseCheckTimer->start();
                 }
-                
+
                 emit licenseLoaded();
             }
         } else {
@@ -304,25 +318,25 @@ void AuthManager::registerDevice()
         .arg(DATABASE_ID)
         .arg(LICENSES_COLLECTION)
         .arg(m_license.id);
-    
+
     QUrl url(updateUrl);
     QNetworkRequest request = createAuthorizedRequest(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    
+
     // Add current device to list
     QStringList newDevices = m_license.deviceIds;
     newDevices.append(m_deviceId);
-    
+
     QJsonObject data;
     QJsonArray devicesArr;
     for (const QString& d : newDevices) {
         devicesArr.append(d);
     }
     data["deviceIds"] = devicesArr;
-    
+
     QJsonObject body;
     body["data"] = data;
-    
+
     QNetworkReply* reply = m_network->sendCustomRequest(request, "PATCH", QJsonDocument(body).toJson());
     connect(reply, &QNetworkReply::finished, this, &AuthManager::onDeviceRegistered);
 }
@@ -331,7 +345,7 @@ void AuthManager::onDeviceRegistered()
 {
     QNetworkReply* reply = qobject_cast<QNetworkReply*>(sender());
     if (!reply) return;
-    
+
     if (reply->error() == QNetworkReply::NoError) {
         m_license.deviceIds.append(m_deviceId);
         saveLicense();  // Cache the license locally
@@ -345,14 +359,14 @@ void AuthManager::onDeviceRegistered()
 void AuthManager::logout()
 {
     if (!m_isAuthenticated) return;
-    
+
     QUrl url(API_ENDPOINT + "/account/sessions/current");
     QNetworkRequest request(url);
     request.setRawHeader("X-Appwrite-Project", PROJECT_ID.toUtf8());
     if (!m_sessionId.isEmpty()) {
         request.setRawHeader("X-Appwrite-Session", m_sessionId.toUtf8());
     }
-    
+
     m_network->deleteResource(request);
     clearSession();
 }
@@ -393,7 +407,7 @@ void AuthManager::clearSession()
     settings.remove("profile/userType");
     settings.remove("profile/city");
     settings.remove("profile/country");
-    
+
     m_sessionId.clear();
     m_profile = UserProfile();
     m_license = License();
@@ -419,7 +433,7 @@ void AuthManager::loadLicense()
 {
     QSettings settings("SiteSurveyor", "Auth");
     QString cachedId = settings.value("license/id").toString();
-    
+
     if (!cachedId.isEmpty()) {
         m_license.id = cachedId;
         m_license.userId = settings.value("license/userId").toString();
@@ -434,7 +448,7 @@ void AuthManager::loadLicense()
         m_license.isActive = settings.value("license/isActive", false).toBool();
         qDebug() << "[License] Loaded cached license:" << m_license.id << "plan:" << m_license.plan << "valid:" << m_license.isValid();
     }
-    
+
     // Also load cached profile for offline mode
     loadProfile();
 }
@@ -457,7 +471,7 @@ void AuthManager::loadProfile()
 {
     QSettings settings("SiteSurveyor", "Auth");
     QString cachedEmail = settings.value("profile/email").toString();
-    
+
     if (!cachedEmail.isEmpty()) {
         m_profile.id = settings.value("profile/id").toString();
         m_profile.name = settings.value("profile/name").toString();
@@ -467,7 +481,7 @@ void AuthManager::loadProfile()
         m_profile.userType = settings.value("profile/userType").toString();
         m_profile.city = settings.value("profile/city").toString();
         m_profile.country = settings.value("profile/country").toString();
-        
+
         // If we have a cached session and profile, consider authenticated for offline mode
         if (!m_sessionId.isEmpty() && m_license.isValid()) {
             m_isAuthenticated = true;
@@ -493,7 +507,7 @@ void AuthManager::fetchJwt()
         qDebug() << "[AuthManager] Cannot fetch JWT: no session";
         return;
     }
-    
+
     QUrl url(API_ENDPOINT + "/account/jwts");
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
@@ -502,7 +516,7 @@ void AuthManager::fetchJwt()
     QString cookieName = QString("a_session_%1").arg(PROJECT_ID);
     QString cookieValue = QString("%1=%2").arg(cookieName, m_sessionId);
     request.setRawHeader("Cookie", cookieValue.toUtf8());
-    
+
     QNetworkReply* reply = m_network->post(request, QByteArray("{}"));
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         if (reply->error() == QNetworkReply::NoError) {
@@ -510,7 +524,7 @@ void AuthManager::fetchJwt()
             QJsonObject obj = doc.object();
             m_jwt = obj["jwt"].toString();
             qDebug() << "[AuthManager] JWT fetched successfully, expires in 15 minutes";
-            
+
             // Start auto-refresh timer
             if (!m_jwtRefreshTimer->isActive()) {
                 m_jwtRefreshTimer->start();
@@ -532,9 +546,9 @@ void AuthManager::refreshJwt()
         m_jwtRefreshTimer->stop();
         return;
     }
-    
+
     qDebug() << "[AuthManager] Auto-refreshing JWT...";
-    
+
     QUrl url(API_ENDPOINT + "/account/jwts");
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
@@ -542,7 +556,7 @@ void AuthManager::refreshJwt()
     QString cookieName = QString("a_session_%1").arg(PROJECT_ID);
     QString cookieValue = QString("%1=%2").arg(cookieName, m_sessionId);
     request.setRawHeader("Cookie", cookieValue.toUtf8());
-    
+
     QNetworkReply* reply = m_network->post(request, QByteArray("{}"));
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         if (reply->error() == QNetworkReply::NoError) {
@@ -557,4 +571,84 @@ void AuthManager::refreshJwt()
         }
         reply->deleteLater();
     });
+}
+
+// =========================================================================
+// OFFLINE LOGIN SUPPORT
+// =========================================================================
+
+QString AuthManager::hashCredentials(const QString& email, const QString& password) const
+{
+    // Create a secure hash of email + password + device-specific salt
+    QString combined = email.toLower() + ":" + password + ":" + m_deviceId;
+    QByteArray hash = QCryptographicHash::hash(combined.toUtf8(), QCryptographicHash::Sha256);
+    return hash.toHex();
+}
+
+void AuthManager::saveOfflineCredentials(const QString& email, const QString& password)
+{
+    QSettings settings("SiteSurveyor", "Auth");
+    QString credHash = hashCredentials(email, password);
+    settings.setValue("offline/credentialHash", credHash);
+    settings.setValue("offline/email", email.toLower());
+    settings.setValue("offline/enabled", true);
+    qDebug() << "[AuthManager] Offline credentials saved for:" << email;
+}
+
+bool AuthManager::hasOfflineCredentials() const
+{
+    QSettings settings("SiteSurveyor", "Auth");
+    return settings.value("offline/enabled", false).toBool() &&
+           !settings.value("offline/credentialHash").toString().isEmpty() &&
+           !settings.value("profile/email").toString().isEmpty();
+}
+
+bool AuthManager::tryOfflineLogin(const QString& email, const QString& password)
+{
+    QSettings settings("SiteSurveyor", "Auth");
+
+    // Check if offline login is enabled and credentials exist
+    if (!settings.value("offline/enabled", false).toBool()) {
+        qDebug() << "[AuthManager] Offline login not enabled";
+        return false;
+    }
+
+    QString storedHash = settings.value("offline/credentialHash").toString();
+    QString storedEmail = settings.value("offline/email").toString();
+
+    if (storedHash.isEmpty() || storedEmail.isEmpty()) {
+        qDebug() << "[AuthManager] No stored offline credentials";
+        return false;
+    }
+
+    // Verify email matches
+    if (email.toLower() != storedEmail.toLower()) {
+        qDebug() << "[AuthManager] Offline login: email mismatch";
+        return false;
+    }
+
+    // Verify password hash
+    QString providedHash = hashCredentials(email, password);
+    if (providedHash != storedHash) {
+        qDebug() << "[AuthManager] Offline login: password mismatch";
+        return false;
+    }
+
+    // Credentials match - load cached profile and authenticate
+    loadProfile();
+    loadLicense();
+
+    // Verify we have cached profile data
+    if (m_profile.email.isEmpty()) {
+        qDebug() << "[AuthManager] Offline login: no cached profile";
+        return false;
+    }
+
+    m_isAuthenticated = true;
+    m_isOfflineMode = true;
+
+    qDebug() << "[AuthManager] Offline login successful for:" << m_profile.email;
+    emit offlineLoginSuccess();
+
+    return true;
 }

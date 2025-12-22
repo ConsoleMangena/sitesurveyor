@@ -21,13 +21,16 @@ private slots:
     void onLoginClicked();
     void onLoginSuccess();
     void onLoginError(const QString& message);
+    void onOfflineLoginSuccess();
 
 private:
     void setupUi();
     void applyTheme();
-    
+    void tryOfflineLogin();
+
+
     AuthManager* m_auth;
-    
+
     QLineEdit* m_emailEdit;
     QLineEdit* m_passwordEdit;
     QLabel* m_statusLabel;
