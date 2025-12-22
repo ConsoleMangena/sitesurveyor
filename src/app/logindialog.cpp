@@ -218,6 +218,24 @@ void LoginDialog::setupUi()
     connect(m_loginBtn, &QPushButton::clicked, this, &LoginDialog::onLoginClicked);
     layout->addWidget(m_loginBtn);
 
+    // Skip Button (use offline without account)
+    m_skipBtn = new QPushButton("Skip - Use Offline");
+    m_skipBtn->setStyleSheet(QString(R"(
+        QPushButton {
+            background-color: transparent;
+            color: %1;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            border: 1px solid %2;
+        }
+        QPushButton:hover { background-color: %3; }
+    )").arg(isDark ? "#aaaaaa" : "#666666",
+            isDark ? "#555555" : "#cccccc",
+            isDark ? "#333333" : "#f0f0f0"));
+    connect(m_skipBtn, &QPushButton::clicked, this, &LoginDialog::onSkipClicked);
+    layout->addWidget(m_skipBtn);
+
     // Registration Link
     QLabel* registerLabel = new QLabel("Don't have an account? <a href=\"https://sitesurveyor.dev/login/\" style=\"color: #0078d4;\">Sign up at sitesurveyor.dev</a>");
     registerLabel->setAlignment(Qt::AlignCenter);
@@ -230,6 +248,7 @@ void LoginDialog::setupUi()
         m_emailEdit->setText(settings.value("auth/savedEmail", "").toString());
     }
 }
+
 
 void LoginDialog::onLoginClicked()
 {
@@ -328,4 +347,10 @@ void LoginDialog::onOfflineLoginSuccess()
 
     // Brief delay to show the message, then accept
     QTimer::singleShot(1000, this, &QDialog::accept);
+}
+
+void LoginDialog::onSkipClicked()
+{
+    m_wasSkipped = true;
+    accept();
 }

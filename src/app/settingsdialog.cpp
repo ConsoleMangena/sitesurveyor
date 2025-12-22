@@ -17,6 +17,7 @@
 #include <QIcon>
 #include <QDesktopServices>
 #include <QUrl>
+#include <QTimer>
 
 SettingsDialog::SettingsDialog(CanvasWidget* canvas, AuthManager* auth, QWidget* parent)
     : QDialog(parent)
@@ -29,7 +30,7 @@ SettingsDialog::SettingsDialog(CanvasWidget* canvas, AuthManager* auth, QWidget*
     setWindowTitle("Settings");
     setMinimumSize(550, 450);
     resize(700, 550);
-    
+
     setupUI();
     loadCurrentSettings();
 }
@@ -39,18 +40,18 @@ void SettingsDialog::setupUI()
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
     mainLayout->setSpacing(10);
     mainLayout->setContentsMargins(16, 16, 16, 16);
-    
+
     // Get theme for styling
     QSettings themeSettings;
     bool isDark = (themeSettings.value("appearance/theme", "light").toString() == "dark");
-    
+
     // Style group boxes - compact sizing
     QString groupStyle = isDark ?
         "QGroupBox { font-weight: bold; font-size: 11px; border: 1px solid #3c3c3c; border-radius: 3px; margin-top: 10px; padding: 6px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 6px; padding: 0 4px; }" :
         "QGroupBox { font-weight: bold; font-size: 11px; border: 1px solid #d0d0d0; border-radius: 3px; margin-top: 10px; padding: 6px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 6px; padding: 0 4px; }";
-    
+
     QTabWidget* tabs = new QTabWidget();
     tabs->setUsesScrollButtons(true);
     tabs->setElideMode(Qt::ElideNone);
@@ -70,12 +71,12 @@ void SettingsDialog::setupUI()
         "QTabBar::scroller { width: 30px; }"
         "QTabBar QToolButton { background: transparent; border: none; }");
 
-    
+
     // ========== General Tab (Units + CRS + Theme) ==========
     QWidget* generalTab = new QWidget();
     QVBoxLayout* generalLayout = new QVBoxLayout(generalTab);
     generalLayout->setSpacing(10);
-    
+
     // Units Group
     QGroupBox* lengthGroup = new QGroupBox("Length Units");
     lengthGroup->setStyleSheet(groupStyle);
@@ -88,7 +89,7 @@ void SettingsDialog::setupUI()
     m_lengthPrecision->setValue(3);
     lengthForm->addRow("Precision:", m_lengthPrecision);
     generalLayout->addWidget(lengthGroup);
-    
+
     QGroupBox* angleGroup = new QGroupBox("Angle Units");
     angleGroup->setStyleSheet(groupStyle);
     QFormLayout* angleForm = new QFormLayout(angleGroup);
@@ -99,23 +100,23 @@ void SettingsDialog::setupUI()
     m_anglePrecision->setRange(0, 8);
     m_anglePrecision->setValue(4);
     angleForm->addRow("Precision:", m_anglePrecision);
-    
+
     m_clockwiseCheck = new QCheckBox("Clockwise Direction");
     angleForm->addRow(m_clockwiseCheck);
-    
+
     m_directionBaseCombo = new QComboBox();
     m_directionBaseCombo->addItem("East (0)", 0);
     m_directionBaseCombo->addItem("North (90)", 1);
     m_directionBaseCombo->addItem("West (180)", 2);
     m_directionBaseCombo->addItem("South (0) [Zero South]", 3);
     angleForm->addRow("Base Angle:", m_directionBaseCombo);
-    
+
     m_swapXY = new QCheckBox("Swap X/Y (Y-X Convention)");
     m_swapXY->setToolTip("Swaps X and Y coordinates (used in Zimbabwe and some other countries)");
     angleForm->addRow(m_swapXY);
-    
+
     generalLayout->addWidget(angleGroup);
-    
+
     // Theme (moved from Appearance)
     QGroupBox* themeGroup = new QGroupBox("Appearance");
     themeGroup->setStyleSheet(groupStyle);
@@ -128,7 +129,7 @@ void SettingsDialog::setupUI()
     m_themeCombo->setCurrentIndex(currentTheme == "dark" ? 1 : 0);
     themeForm->addRow("Theme:", m_themeCombo);
     generalLayout->addWidget(themeGroup);
-    
+
     generalLayout->addStretch();
     tabs->addTab(generalTab, QIcon(":/icons/settings.svg"), "General");
 
@@ -136,115 +137,115 @@ void SettingsDialog::setupUI()
     QWidget* editorTab = new QWidget();
     QVBoxLayout* editorLayout = new QVBoxLayout(editorTab);
     editorLayout->setSpacing(10);
-    
+
     // Snapping Group
     QGroupBox* snapGroup = new QGroupBox("Snapping");
     snapGroup->setStyleSheet(groupStyle);
     QFormLayout* snapForm = new QFormLayout(snapGroup);
-    
+
     m_snapEnabled = new QCheckBox("Enable Snapping");
     snapForm->addRow(m_snapEnabled);
-    
+
     m_snapEndpoint = new QCheckBox("Snap to Endpoints");
     snapForm->addRow(m_snapEndpoint);
-    
+
     m_snapMidpoint = new QCheckBox("Snap to Midpoints");
     snapForm->addRow(m_snapMidpoint);
-    
+
     m_snapEdge = new QCheckBox("Snap to Edges");
     snapForm->addRow(m_snapEdge);
-    
+
     m_snapIntersection = new QCheckBox("Snap to Intersections");
     snapForm->addRow(m_snapIntersection);
-    
+
     m_snapTolerance = new QDoubleSpinBox();
     m_snapTolerance->setRange(1.0, 50.0);
     m_snapTolerance->setValue(10.0);
     m_snapTolerance->setSuffix(" px");
     snapForm->addRow("Tolerance:", m_snapTolerance);
-    
+
     editorLayout->addWidget(snapGroup);
-    
+
     // AutoSnap/Drafting Group
     QGroupBox* draftGroup = new QGroupBox("AutoSnap");
     draftGroup->setStyleSheet(groupStyle);
     QFormLayout* draftForm = new QFormLayout(draftGroup);
-    
+
     m_autoSnapCheck = new QCheckBox("Display AutoSnap Marker");
     draftForm->addRow(m_autoSnapCheck);
-    
+
     m_snapMarkerSizeSlider = new QSlider(Qt::Horizontal);
     m_snapMarkerSizeSlider->setRange(1, 20);
     m_snapMarkerSizeSlider->setValue(5);
     draftForm->addRow("Marker Size:", m_snapMarkerSizeSlider);
-    
+
     m_apertureSizeSlider = new QSlider(Qt::Horizontal);
     m_apertureSizeSlider->setRange(1, 50);
     m_apertureSizeSlider->setValue(10);
     draftForm->addRow("Aperture Size:", m_apertureSizeSlider);
-    
+
     editorLayout->addWidget(draftGroup);
-    
+
     // Selection Group
     QGroupBox* selectGroup = new QGroupBox("Selection");
     selectGroup->setStyleSheet(groupStyle);
     QFormLayout* selectForm = new QFormLayout(selectGroup);
-    
+
     m_pickboxSizeSlider = new QSlider(Qt::Horizontal);
     m_pickboxSizeSlider->setRange(1, 50);
     m_pickboxSizeSlider->setValue(5);
     selectForm->addRow("Pickbox Size:", m_pickboxSizeSlider);
-    
+
     m_gripSizeSlider = new QSlider(Qt::Horizontal);
     m_gripSizeSlider->setRange(1, 20);
     m_gripSizeSlider->setValue(5);
     selectForm->addRow("Grip Size:", m_gripSizeSlider);
-    
+
     editorLayout->addWidget(selectGroup);
     editorLayout->addStretch();
     tabs->addTab(editorTab, QIcon(":/icons/edit.svg"), "Editor");
 
-    
+
     // ========== Display Tab ==========
     QWidget* displayTab = new QWidget();
     QVBoxLayout* displayLayout = new QVBoxLayout(displayTab);
     displayLayout->setSpacing(12);
-    
+
     QGroupBox* displayGroup = new QGroupBox("Display Settings");
     displayGroup->setStyleSheet(groupStyle);
     QFormLayout* displayForm = new QFormLayout(displayGroup);
     displayForm->setSpacing(10);
     displayForm->setContentsMargins(12, 20, 12, 12);
-    
+
     m_showGrid = new QCheckBox("Show Grid");
     displayForm->addRow(m_showGrid);
-    
+
     m_gridSize = new QSpinBox();
     m_gridSize->setRange(1, 100);
     m_gridSize->setValue(10);
     m_gridSize->setSuffix(" units");
     displayForm->addRow("Grid Size:", m_gridSize);
-    
+
     m_pegMarkerSize = new QDoubleSpinBox();
     m_pegMarkerSize->setRange(0.1, 5.0);
     m_pegMarkerSize->setValue(0.5);
     m_pegMarkerSize->setSuffix(" units");
     displayForm->addRow("Peg Marker Size:", m_pegMarkerSize);
-    
+
     m_crosshairSizeSlider = new QSlider(Qt::Horizontal);
     m_crosshairSizeSlider->setRange(1, 100); // 1% to 100% of screen/canvas
     m_crosshairSizeSlider->setValue(5);
     displayForm->addRow("Crosshair Size:", m_crosshairSizeSlider);
-    
+
     displayLayout->addWidget(displayGroup);
-    
+
     // Colors
     QGroupBox* colorGroup = new QGroupBox("Colors");
     colorGroup->setStyleSheet(groupStyle);
     QFormLayout* colorForm = new QFormLayout(colorGroup);
     colorForm->setSpacing(10);
     colorForm->setContentsMargins(12, 20, 12, 12);
-    
+
     m_stationColorBtn = new QPushButton();
     m_stationColorBtn->setFixedSize(60, 24);
     m_stationColorBtn->setStyleSheet(QString("background-color: %1").arg(m_stationColor.name()));
@@ -256,7 +257,7 @@ void SettingsDialog::setupUI()
         }
     });
     colorForm->addRow("Station Color:", m_stationColorBtn);
-    
+
     m_backsightColorBtn = new QPushButton();
     m_backsightColorBtn->setFixedSize(60, 24);
     m_backsightColorBtn->setStyleSheet(QString("background-color: %1").arg(m_backsightColor.name()));
@@ -268,7 +269,7 @@ void SettingsDialog::setupUI()
         }
     });
     colorForm->addRow("Backsight Color:", m_backsightColorBtn);
-    
+
     m_pegColorBtn = new QPushButton();
     m_pegColorBtn->setFixedSize(60, 24);
     m_pegColorBtn->setStyleSheet(QString("background-color: %1").arg(m_pegColor.name()));
@@ -280,40 +281,40 @@ void SettingsDialog::setupUI()
         }
     });
     colorForm->addRow("Default Peg Color:", m_pegColorBtn);
-    
+
     displayLayout->addWidget(colorGroup);
     displayLayout->addStretch();
     tabs->addTab(displayTab, QIcon(":/icons/grid.svg"), "Display");
-    
+
     // ========== Survey Tab (Stakeout + Coordinates + GAMA) ==========
     QWidget* surveyTab = new QWidget();
     QVBoxLayout* surveyLayout = new QVBoxLayout(surveyTab);
     surveyLayout->setSpacing(10);
-    
+
     // Stakeout Group
     QGroupBox* stakeoutGroup = new QGroupBox("Stakeout");
     stakeoutGroup->setStyleSheet(groupStyle);
     QFormLayout* stakeoutForm = new QFormLayout(stakeoutGroup);
-    
+
     m_bearingPrecision = new QSpinBox();
     m_bearingPrecision->setRange(0, 4);
     m_bearingPrecision->setValue(2);
     m_bearingPrecision->setSuffix(" dp");
     stakeoutForm->addRow("Bearing Precision:", m_bearingPrecision);
-    
+
     m_distancePrecision = new QSpinBox();
     m_distancePrecision->setRange(0, 4);
     m_distancePrecision->setValue(3);
     m_distancePrecision->setSuffix(" dp");
     stakeoutForm->addRow("Distance Precision:", m_distancePrecision);
-    
+
     surveyLayout->addWidget(stakeoutGroup);
-    
+
     // Coordinates Group
     QGroupBox* crsGroup = new QGroupBox("Coordinate System");
     crsGroup->setStyleSheet(groupStyle);
     QFormLayout* crsForm = new QFormLayout(crsGroup);
-    
+
     m_crsCombo = new QComboBox();
     m_crsCombo->addItem("Local (No CRS)", "LOCAL");
     m_crsCombo->addItem("WGS 84 (EPSG:4326)", "EPSG:4326");
@@ -324,86 +325,86 @@ void SettingsDialog::setupUI()
     m_crsCombo->addItem("Hartebeesthoek94 Lo29 (EPSG:2050)", "EPSG:2050");
     m_crsCombo->addItem("Custom EPSG...", "CUSTOM");
     crsForm->addRow("Project CRS:", m_crsCombo);
-    
+
     m_customEpsg = new QLineEdit();
     m_customEpsg->setPlaceholderText("Enter EPSG code");
     m_customEpsg->setEnabled(false);
     crsForm->addRow("Custom EPSG:", m_customEpsg);
-    
+
     connect(m_crsCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
         m_customEpsg->setEnabled(m_crsCombo->currentData().toString() == "CUSTOM");
     });
-    
+
     m_targetCrsCombo = new QComboBox();
     m_targetCrsCombo->addItem("No Transformation", "NONE");
     m_targetCrsCombo->addItem("WGS 84 (EPSG:4326)", "EPSG:4326");
     m_targetCrsCombo->addItem("UTM Zone 35S", "EPSG:32735");
     crsForm->addRow("Transform To:", m_targetCrsCombo);
-    
+
     m_scaleFactor = new QDoubleSpinBox();
     m_scaleFactor->setDecimals(8);
     m_scaleFactor->setRange(0.99000000, 1.01000000);
     m_scaleFactor->setValue(1.00000000);
     m_scaleFactor->setSingleStep(0.00001);
     crsForm->addRow("Scale Factor:", m_scaleFactor);
-    
+
     surveyLayout->addWidget(crsGroup);
-    
+
     // GAMA Group
     QGroupBox* gamaGroup = new QGroupBox("Network Adjustment (GAMA)");
     gamaGroup->setStyleSheet(groupStyle);
     QFormLayout* gamaForm = new QFormLayout(gamaGroup);
-    
+
     m_gamaEnabled = new QCheckBox("Enable GAMA Integration");
     m_gamaEnabled->setChecked(false);
     gamaForm->addRow(m_gamaEnabled);
-    
+
     m_gamaPath = new QLineEdit();
     m_gamaPath->setPlaceholderText("gama-local (default)");
     m_gamaPath->setText("gama-local");
     gamaForm->addRow("Executable:", m_gamaPath);
-    
+
     surveyLayout->addWidget(gamaGroup);
     surveyLayout->addStretch();
     tabs->addTab(surveyTab, QIcon(":/icons/target.svg"), "Survey");
-    
+
     // ========== Account Tab ==========
     QWidget* accountTab = new QWidget();
     QVBoxLayout* accountLayout = new QVBoxLayout(accountTab);
     accountLayout->setSpacing(10);
-    
-    // User Profile Group
-    QGroupBox* userGroup = new QGroupBox("Profile");
-    userGroup->setStyleSheet(groupStyle);
-    QFormLayout* profileForm = new QFormLayout(userGroup);
-    profileForm->setSpacing(6);
-    
+
     if (m_auth && m_auth->isAuthenticated()) {
+        // User Profile Group
+        QGroupBox* userGroup = new QGroupBox("Profile");
+        userGroup->setStyleSheet(groupStyle);
+        QFormLayout* profileForm = new QFormLayout(userGroup);
+        profileForm->setSpacing(6);
+
         const UserProfile& profile = m_auth->userProfile();
-        
+
         QString displayName = profile.name.isEmpty() ? profile.username : profile.name;
         if (!displayName.isEmpty()) {
             QLabel* nameVal = new QLabel(displayName);
             nameVal->setStyleSheet("font-weight: bold;");
             profileForm->addRow("Name:", nameVal);
         }
-        
+
         if (!profile.username.isEmpty()) {
             profileForm->addRow("Username:", new QLabel("@" + profile.username));
         }
-        
+
         if (!profile.email.isEmpty()) {
             profileForm->addRow("Email:", new QLabel(profile.email));
         }
-        
+
         if (!profile.organization.isEmpty()) {
             profileForm->addRow("Organization:", new QLabel(profile.organization));
         }
-        
+
         if (!profile.userType.isEmpty()) {
             profileForm->addRow("Type:", new QLabel(profile.userType));
         }
-        
+
         QString location;
         if (!profile.city.isEmpty() && !profile.country.isEmpty()) {
             location = profile.city + ", " + profile.country;
@@ -415,46 +416,108 @@ void SettingsDialog::setupUI()
         if (!location.isEmpty()) {
             profileForm->addRow("Location:", new QLabel(location));
         }
+
+        accountLayout->addWidget(userGroup);
+
+        // Logout Button
+        QPushButton* logoutBtn = new QPushButton("Sign Out");
+        logoutBtn->setStyleSheet(isDark ?
+            "QPushButton { padding: 8px 16px; }" :
+            "QPushButton { padding: 8px 16px; }");
+        connect(logoutBtn, &QPushButton::clicked, this, [this]() {
+            if (m_auth) {
+                m_auth->logout();
+                accept();
+            }
+        });
+        accountLayout->addWidget(logoutBtn, 0, Qt::AlignLeft);
     } else {
-        profileForm->addRow("", new QLabel("Not logged in"));
+        // Not logged in - show sign-in form
+        QGroupBox* signInGroup = new QGroupBox("Sign In");
+        signInGroup->setStyleSheet(groupStyle);
+        QVBoxLayout* signInLayout = new QVBoxLayout(signInGroup);
+        signInLayout->setSpacing(8);
+
+        QLabel* infoLabel = new QLabel("Sign in to enable cloud sync and backup.");
+        infoLabel->setStyleSheet(QString("color: %1;").arg(isDark ? "#aaaaaa" : "#666666"));
+        signInLayout->addWidget(infoLabel);
+
+        m_settingsEmailEdit = new QLineEdit();
+        m_settingsEmailEdit->setPlaceholderText("Email");
+        m_settingsEmailEdit->setStyleSheet("padding: 8px;");
+        signInLayout->addWidget(m_settingsEmailEdit);
+
+        m_settingsPasswordEdit = new QLineEdit();
+        m_settingsPasswordEdit->setPlaceholderText("Password");
+        m_settingsPasswordEdit->setEchoMode(QLineEdit::Password);
+        m_settingsPasswordEdit->setStyleSheet("padding: 8px;");
+        signInLayout->addWidget(m_settingsPasswordEdit);
+
+        m_settingsStatusLabel = new QLabel();
+        m_settingsStatusLabel->setStyleSheet("color: #d83b01;");
+        m_settingsStatusLabel->setWordWrap(true);
+        signInLayout->addWidget(m_settingsStatusLabel);
+
+        QPushButton* signInBtn = new QPushButton("Sign In");
+        signInBtn->setStyleSheet(isDark ?
+            "QPushButton { background-color: #0078d4; color: white; padding: 10px; border-radius: 4px; }" :
+            "QPushButton { background-color: #0078d4; color: white; padding: 10px; border-radius: 4px; }");
+        connect(signInBtn, &QPushButton::clicked, this, [this]() {
+            if (!m_auth) return;
+            QString email = m_settingsEmailEdit->text().trimmed();
+            QString password = m_settingsPasswordEdit->text();
+
+            if (email.isEmpty() || password.isEmpty()) {
+                m_settingsStatusLabel->setText("Please enter email and password.");
+                return;
+            }
+
+            m_settingsStatusLabel->setText("Signing in...");
+            m_settingsStatusLabel->setStyleSheet("color: #0078d4;");
+
+            connect(m_auth, &AuthManager::loginSuccess, this, [this]() {
+                m_settingsStatusLabel->setStyleSheet("color: #107c10;");
+                m_settingsStatusLabel->setText("Signed in successfully!");
+                QTimer::singleShot(500, this, &QDialog::accept);
+            }, Qt::SingleShotConnection);
+
+            connect(m_auth, &AuthManager::loginError, this, [this](const QString& error) {
+                m_settingsStatusLabel->setStyleSheet("color: #d83b01;");
+                m_settingsStatusLabel->setText(error);
+            }, Qt::SingleShotConnection);
+
+            m_auth->login(email, password);
+        });
+        signInLayout->addWidget(signInBtn);
+
+        QLabel* registerLabel = new QLabel("<a href=\"https://sitesurveyor.dev/login/\" style=\"color: #0078d4;\">Create an account</a>");
+        registerLabel->setOpenExternalLinks(true);
+        signInLayout->addWidget(registerLabel);
+
+        accountLayout->addWidget(signInGroup);
     }
-    
-    accountLayout->addWidget(userGroup);
-    
-    // Logout Button
-    QPushButton* logoutBtn = new QPushButton("Sign Out");
-    logoutBtn->setStyleSheet(isDark ?
-        "QPushButton { padding: 8px 16px; }" :
-        "QPushButton { padding: 8px 16px; }");
-    connect(logoutBtn, &QPushButton::clicked, this, [this]() {
-        if (m_auth) {
-            m_auth->logout();
-            accept();
-        }
-    });
-    accountLayout->addWidget(logoutBtn, 0, Qt::AlignLeft);
-    
+
     accountLayout->addStretch();
     tabs->addTab(accountTab, QIcon(":/icons/settings.svg"), "Account");
-    
+
     mainLayout->addWidget(tabs);
-    
+
     // ========== Buttons ==========
     QHBoxLayout* buttonLayout = new QHBoxLayout();
-    
+
     QPushButton* resetBtn = new QPushButton("Reset to Defaults");
     connect(resetBtn, &QPushButton::clicked, this, &SettingsDialog::resetToDefaults);
     buttonLayout->addWidget(resetBtn);
-    
+
     buttonLayout->addStretch();
-    
+
     QDialogButtonBox* buttonBox = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply);
     connect(buttonBox, &QDialogButtonBox::accepted, this, &SettingsDialog::applySettings);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(buttonBox->button(QDialogButtonBox::Apply), &QPushButton::clicked, this, &SettingsDialog::applyChanges);
     buttonLayout->addWidget(buttonBox);
-    
+
     mainLayout->addLayout(buttonLayout);
 }
 
@@ -466,14 +529,14 @@ void SettingsDialog::loadCurrentSettings()
     // Load snapping settings
     m_snapEnabled->setChecked(m_canvas->isSnappingEnabled());
     m_showGrid->setChecked(m_canvas->showGrid());
-    
+
     // Load Units settings
     m_lengthUnitCombo->setCurrentIndex(settings.value("units/lengthUnit", 0).toInt());
     m_lengthPrecision->setValue(settings.value("units/lengthPrecision", 3).toInt());
     m_angleUnitCombo->setCurrentIndex(settings.value("units/angleUnit", 0).toInt());
     m_anglePrecision->setValue(settings.value("units/anglePrecision", 4).toInt());
     m_clockwiseCheck->setChecked(settings.value("units/clockwise", false).toBool());
-    
+
     // Logic to sync South Azimuth with Base Angle
     bool south = settings.value("coordinates/southAzimuth", false).toBool();
     if (south) {
@@ -493,7 +556,7 @@ void SettingsDialog::loadCurrentSettings()
 
     // Load Display settings (Crosshair)
     m_crosshairSizeSlider->setValue(settings.value("display/crosshairSize", 5).toInt());
-    
+
     // Load CRS settings
     QString crs = m_canvas->crs();
     int crsIndex = m_crsCombo->findData(crs);
@@ -503,15 +566,15 @@ void SettingsDialog::loadCurrentSettings()
         m_crsCombo->setCurrentIndex(m_crsCombo->findData("CUSTOM"));
         m_customEpsg->setText(crs.mid(5));
     }
-    
+
     QString targetCrs = m_canvas->targetCRS();
     int targetIndex = m_targetCrsCombo->findData(targetCrs);
     if (targetIndex >= 0) {
         m_targetCrsCombo->setCurrentIndex(targetIndex);
     }
-    
+
     m_scaleFactor->setValue(m_canvas->scaleFactor());
-    
+
 
     m_swapXY->setChecked(settings.value("coordinates/swapXY", false).toBool());
 }
@@ -526,11 +589,11 @@ void SettingsDialog::applyChanges()
 {
     if (!m_canvas) return;
     QSettings settings;
-    
+
     // Apply snapping settings
     m_canvas->setSnappingEnabled(m_snapEnabled->isChecked());
     m_canvas->setShowGrid(m_showGrid->isChecked());
-    
+
     // Save Units settings
     settings.setValue("units/lengthUnit", m_lengthUnitCombo->currentIndex());
     settings.setValue("units/lengthPrecision", m_lengthPrecision->value());
@@ -550,7 +613,7 @@ void SettingsDialog::applyChanges()
 
     // Save Display settings (Crosshair)
     settings.setValue("display/crosshairSize", m_crosshairSizeSlider->value());
-    
+
     // Apply CRS settings
     QString crs = m_crsCombo->currentData().toString();
     if (crs == "CUSTOM" && !m_customEpsg->text().isEmpty()) {
@@ -562,19 +625,19 @@ void SettingsDialog::applyChanges()
     bool south = (m_directionBaseCombo->currentData().toInt() == 3);
     m_canvas->setSouthAzimuth(south);
     m_canvas->setSwapXY(m_swapXY->isChecked());
-    
+
     // Save settings
     settings.setValue("coordinates/southAzimuth", south);
     settings.setValue("units/baseAngle", m_directionBaseCombo->currentIndex());
     settings.setValue("coordinates/swapXY", m_swapXY->isChecked());
-    
+
     // Apply theme settings
     QString selectedTheme = m_themeCombo->currentData().toString();
     settings.setValue("appearance/theme", selectedTheme);
-    
+
     // Apply the stylesheet immediately
-    QString themePath = (selectedTheme == "dark") 
-        ? ":/styles/dark-theme.qss" 
+    QString themePath = (selectedTheme == "dark")
+        ? ":/styles/dark-theme.qss"
         : ":/styles/light-theme.qss";
     QFile styleFile(themePath);
     if (styleFile.open(QFile::ReadOnly | QFile::Text)) {
@@ -582,7 +645,7 @@ void SettingsDialog::applyChanges()
         qApp->setStyleSheet(styleSheet);
         styleFile.close();
     }
-    
+
     // Update toolbar icons to match theme
     MainWindow* mainWindow = qobject_cast<MainWindow*>(parentWidget());
     if (mainWindow) {
@@ -619,12 +682,12 @@ void SettingsDialog::resetToDefaults()
     m_snapEdge->setChecked(false);
     m_snapIntersection->setChecked(false);
     m_snapTolerance->setValue(10.0);
-    
+
     // Display (Existing)
     m_showGrid->setChecked(true);
     m_gridSize->setValue(10);
     m_pegMarkerSize->setValue(0.5);
-    
+
     // Colors
     m_stationColor = Qt::green;
     m_backsightColor = Qt::cyan;
@@ -632,22 +695,22 @@ void SettingsDialog::resetToDefaults()
     m_stationColorBtn->setStyleSheet("background-color: green");
     m_backsightColorBtn->setStyleSheet("background-color: cyan");
     m_pegColorBtn->setStyleSheet("background-color: red");
-    
+
     // Stakeout
     m_bearingPrecision->setValue(2);
     m_distancePrecision->setValue(3);
-    
+
     // Coordinates
     m_crsCombo->setCurrentIndex(0);  // Local
     m_targetCrsCombo->setCurrentIndex(0);  // No Transformation
     m_scaleFactor->setValue(1.0);
     m_customEpsg->clear();
-    
+
     // GAMA
-    QSettings settings; 
+    QSettings settings;
     m_gamaEnabled->setChecked(settings.value("gama/enabled", false).toBool());
     m_gamaPath->setText(settings.value("gama/path", "gama-local").toString());
-    
+
     // Reset Direction/Coordinate Axis preferences
     m_directionBaseCombo->setCurrentIndex(1); // North
     m_swapXY->setChecked(false);

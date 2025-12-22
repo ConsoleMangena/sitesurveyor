@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QLineEdit>
 #include <QSlider>
+#include <QLabel>
 
 class CanvasWidget;
 class AuthManager;
@@ -30,10 +31,10 @@ private:
     void setupUI();
     void loadCurrentSettings();
     void applyChanges();
-    
+
     CanvasWidget* m_canvas;
     AuthManager* m_auth;
-    
+
     // Snapping settings
     QCheckBox* m_snapEnabled;
     QCheckBox* m_snapEndpoint;
@@ -41,18 +42,18 @@ private:
     QCheckBox* m_snapEdge;
     QCheckBox* m_snapIntersection;
     QDoubleSpinBox* m_snapTolerance;
-    
+
     // Display settings
     QCheckBox* m_showGrid;
     QSpinBox* m_gridSize;
     QDoubleSpinBox* m_pegMarkerSize;
     QCheckBox* m_southAzimuth;
     QCheckBox* m_swapXY;
-    
+
     // Stakeout settings
     QSpinBox* m_bearingPrecision;
     QSpinBox* m_distancePrecision;
-    
+
     // Colors
     QPushButton* m_stationColorBtn;
     QPushButton* m_backsightColorBtn;
@@ -60,20 +61,20 @@ private:
     QColor m_stationColor;
     QColor m_backsightColor;
     QColor m_pegColor;
-    
+
     // Coordinate System settings
     QComboBox* m_crsCombo;
     QComboBox* m_targetCrsCombo;
     QDoubleSpinBox* m_scaleFactor;
     QLineEdit* m_customEpsg;
-    
+
     // Appearance settings
     QComboBox* m_themeCombo;
-    
+
     // GAMA settings
     QCheckBox* m_gamaEnabled;
     QLineEdit* m_gamaPath;
-    
+
     // Units settings
     QComboBox* m_lengthUnitCombo;
     QSpinBox* m_lengthPrecision;
@@ -93,6 +94,11 @@ private:
 
     // Advanced Display settings
     QSlider* m_crosshairSizeSlider;
+
+    // Account tab sign-in form (shown when not logged in)
+    QLineEdit* m_settingsEmailEdit = nullptr;
+    QLineEdit* m_settingsPasswordEdit = nullptr;
+    QLabel* m_settingsStatusLabel = nullptr;
 };
 
 #endif // SETTINGSDIALOG_H
